@@ -44,7 +44,7 @@ class EnhancedSignalBot:
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
         
         # Bot settings
-        self.admin_name = self.config.ADMIN_USER_NAME if hasattr(self.config, 'ADMIN_USER_NAME') else "Trading Bot Admin"
+        self.admin_name = self.config.ADMIN_USER_NAME
         self.target_chat_id = None
         self.channel_id = None
         

@@ -43,6 +43,7 @@ class PerfectScalpingBot:
         # Bot settings
         self.admin_chat_id = None
         self.target_channel = "@SignalTactics"
+        self.channel_accessible = False  # Track channel accessibility
 
         # Scalping parameters - optimized for scalping only
         self.timeframes = ['3m', '5m', '15m', '1h', '4h']
@@ -568,6 +569,29 @@ class PerfectScalpingBot:
         signals.sort(key=lambda x: x['signal_strength'], reverse=True)
         return signals[:self.max_signals_per_hour]
 
+    async def verify_channel_access(self) -> bool:
+        """Verify if bot has access to the target channel"""
+        try:
+            url = f"{self.base_url}/getChat"
+            data = {'chat_id': self.target_channel}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data) as response:
+                    if response.status == 200:
+                        self.channel_accessible = True
+                        self.logger.info(f"✅ Channel {self.target_channel} is accessible")
+                        return True
+                    else:
+                        self.channel_accessible = False
+                        error = await response.text()
+                        self.logger.warning(f"⚠️ Channel {self.target_channel} not accessible: {error}")
+                        return False
+
+        except Exception as e:
+            self.channel_accessible = False
+            self.logger.error(f"Error verifying channel access: {e}")
+            return False
+
     async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
         """Send message to Telegram with error handling"""
         try:
@@ -583,10 +607,17 @@ class PerfectScalpingBot:
                 async with session.post(url, json=data) as response:
                     if response.status == 200:
                         self.logger.info(f"✅ Message sent successfully to {chat_id}")
+                        # Update channel accessibility status
+                        if chat_id == self.target_channel:
+                            self.channel_accessible = True
                         return True
                     else:
                         error = await response.text()
                         self.logger.warning(f"⚠️ Send message failed to {chat_id}: {error}")
+                        
+                        # Mark channel as inaccessible if it's the target channel
+                        if chat_id == self.target_channel:
+                            self.channel_accessible = False
                         
                         # Try sending to admin if channel fails
                         if chat_id == self.target_channel and self.admin_chat_id:
@@ -596,6 +627,9 @@ class PerfectScalpingBot:
 
         except Exception as e:
             self.logger.error(f"Error sending message to {chat_id}: {e}")
+            # Mark channel as inaccessible if error occurs
+            if chat_id == self.target_channel:
+                self.channel_accessible = False
             # Try admin fallback
             if chat_id == self.target_channel and self.admin_chat_id:
                 return await self._send_to_admin_fallback(text, parse_mode)
@@ -693,6 +727,11 @@ class PerfectScalpingBot:
             self.admin_chat_id = chat_id
             self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
 
+            # Verify channel access
+            await self.verify_channel_access()
+
+            channel_status = "✅ Accessible" if self.channel_accessible else "⚠️ Not Accessible"
+
             welcome = f"""
 🚀 **PERFECT SCALPING BOT**
 *Most Profitable Strategy Active*
@@ -714,8 +753,15 @@ class PerfectScalpingBot:
 • Win Rate: `{self.performance_stats['win_rate']:.1f}%`
 • Total Profit: `{self.performance_stats['total_profit']:.2f}%`
 
+**📢 Channel Status:**
+• Target: `{self.target_channel}`
+• Access: `{channel_status}`
+• Fallback: Admin messaging enabled
+
 *Bot running indefinitely with auto-session renewal*
 Use `/help` for all commands
+
+{f"⚠️ **Note:** Signals will be sent to you directly since channel access is limited." if not self.channel_accessible else "✅ **Note:** Signals will be posted to the channel and sent to you."}
             """
             await self.send_message(chat_id, welcome)
 
@@ -731,6 +777,7 @@ Use `/help` for all commands
 
 **⚙️ Settings:**
 • `/settings` - View current settings
+• `/channel` - Channel configuration
 • `/symbols` - List monitored symbols
 • `/timeframes` - Show timeframes
 
@@ -749,6 +796,7 @@ Use `/help` for all commands
 • Auto-session renewal
 • Real-time signal generation
 • Advanced risk management
+• Smart channel fallback
 
 *Bot operates 24/7 with perfect error recovery*
             """
@@ -794,6 +842,37 @@ Use `/help` for all commands
                 await self.send_message(chat_id, f"✅ **{len(signals)} PERFECT SIGNALS FOUND**\n\nTop signals delivered! Bot continues auto-scanning...")
             else:
                 await self.send_message(chat_id, "📊 **NO HIGH-STRENGTH SIGNALS**\n\nMarket conditions don't meet our strict criteria. Bot continues monitoring...")
+
+        elif text.startswith('/channel'):
+            await self.verify_channel_access()
+            channel_status = "✅ Accessible" if self.channel_accessible else "⚠️ Not Accessible"
+            
+            channel_info = f"""
+📢 **CHANNEL CONFIGURATION**
+
+**🎯 Target Channel:** `{self.target_channel}`
+**📡 Access Status:** `{channel_status}`
+**🔄 Last Check:** `{datetime.now().strftime('%H:%M:%S UTC')}`
+
+**📋 Channel Requirements:**
+• Bot must be added as admin
+• Channel must exist and be accessible
+• Proper permissions for posting
+
+**🛠️ Setup Instructions:**
+1. Create channel `{self.target_channel}` (if not exists)
+2. Add this bot as administrator
+3. Grant "Post Messages" permission
+4. Use `/start` to refresh status
+
+**📤 Current Behavior:**
+{f"• Signals sent to admin fallback" if not self.channel_accessible else "• Signals posted to channel + admin"}
+• All commands work normally
+• Performance tracking active
+
+*Channel access will be verified automatically*
+            """
+            await self.send_message(chat_id, channel_info)
 
         elif text.startswith('/settings'):
             settings = f"""
@@ -888,12 +967,25 @@ Use `/help` for all commands
                     # Format and send signal
                     signal_msg = self.format_signal_message(signal)
 
-                    # Send to admin
+                    # Send to admin first (always works)
+                    admin_sent = False
                     if self.admin_chat_id:
-                        await self.send_message(self.admin_chat_id, signal_msg)
+                        admin_sent = await self.send_message(self.admin_chat_id, signal_msg)
 
-                    # Send to channel
-                    await self.send_message(self.target_channel, signal_msg)
+                    # Send to channel if accessible
+                    channel_sent = False
+                    if self.channel_accessible:
+                        channel_sent = await self.send_message(self.target_channel, signal_msg)
+                    
+                    # Log delivery status
+                    delivery_status = []
+                    if admin_sent:
+                        delivery_status.append("Admin")
+                    if channel_sent:
+                        delivery_status.append("Channel")
+                    
+                    delivery_info = " + ".join(delivery_status) if delivery_status else "Failed"
+                    self.logger.info(f"📤 Signal delivered to: {delivery_info}")
 
                     # Start trade tracking
                     asyncio.create_task(self.process_trade_update(signal))
@@ -919,14 +1011,44 @@ Use `/help` for all commands
         # Create indefinite session
         await self.create_session()
 
+        # Verify channel access on startup
+        await self.verify_channel_access()
+
+        # Send startup notification to admin if available
+        if self.admin_chat_id:
+            startup_msg = f"""
+🚀 **PERFECT SCALPING BOT STARTED**
+
+✅ **System Status:** Online & Operational
+🔄 **Session:** Created with auto-renewal
+📢 **Channel:** {self.target_channel} - {"✅ Accessible" if self.channel_accessible else "⚠️ Setup Required"}
+🎯 **Scanning:** {len(self.symbols)} symbols across {len(self.timeframes)} timeframes
+
+**🛡️ Auto-Features Active:**
+• Indefinite session management
+• Advanced signal generation
+• Real-time market scanning
+• Automatic error recovery
+
+*Bot initialized successfully and ready for trading*
+            """
+            await self.send_message(self.admin_chat_id, startup_msg)
+
         # Start auto-scan task
         auto_scan_task = asyncio.create_task(self.auto_scan_loop())
 
         # Main bot loop for handling commands
         offset = None
+        last_channel_check = datetime.now()
 
         while self.running:
             try:
+                # Verify channel access every 30 minutes
+                now = datetime.now()
+                if (now - last_channel_check).total_seconds() > 1800:  # 30 minutes
+                    await self.verify_channel_access()
+                    last_channel_check = now
+
                 updates = await self.get_updates(offset, timeout=10)
 
                 for update in updates:

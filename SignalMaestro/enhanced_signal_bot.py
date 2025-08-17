@@ -9,10 +9,14 @@ import asyncio
 import logging
 import aiohttp
 import os
+import warnings
 from datetime import datetime
 from typing import Dict, Any, Optional
 import base64
 from io import BytesIO
+
+# Suppress pandas_ta warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pandas_ta")
 
 from advanced_trading_strategy import AdvancedTradingStrategy
 from binance_trader import BinanceTrader
@@ -39,8 +43,8 @@ class EnhancedSignalBot:
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
         
-        # Bot settings for Michael Joshua Tayam
-        self.admin_name = "Michael Joshua Tayam"
+        # Bot settings
+        self.admin_name = self.config.ADMIN_USER_NAME if hasattr(self.config, 'ADMIN_USER_NAME') else "Trading Bot Admin"
         self.target_chat_id = None
         self.channel_id = None
         
@@ -230,7 +234,7 @@ class EnhancedSignalBot:
 
 ---
 *🤖 Automated Signal by Enhanced Trading Bot*
-*📱 For: {self.admin_name}*
+*📱 Admin: {self.admin_name}*
 *⚡ Real-time Market Analysis*
         """
         
@@ -267,7 +271,7 @@ class EnhancedSignalBot:
 🚀 **Enhanced Trading Signal Bot**
 *Powered by Advanced Multi-Strategy Analysis*
 
-**🎯 Configured for:** {self.admin_name}
+**🎯 Ready for Trading**
 
 **📊 Features:**
 ✅ Multi-timeframe trend analysis
@@ -307,7 +311,7 @@ class EnhancedSignalBot:
 📊 **Enhanced Bot Status Report**
 
 ✅ **System:** Online & Optimized
-🤖 **User:** {self.admin_name}
+🤖 **Admin:** {self.admin_name}
 🎯 **Target Chat:** `{self.target_chat_id or 'Not set'}`
 📢 **Channel:** `{self.channel_id or 'Not set'}`
 
@@ -370,7 +374,7 @@ class EnhancedSignalBot:
     
     async def run_enhanced_bot(self):
         """Main enhanced bot loop with automated scanning"""
-        self.logger.info(f"Starting Enhanced Trading Signal Bot for {self.admin_name}")
+        self.logger.info(f"Starting Enhanced Trading Signal Bot - Admin: {self.admin_name}")
         
         offset = None
         last_scan_minute = -1
@@ -419,7 +423,7 @@ async def main():
     
     try:
         print("🚀 Starting Enhanced Trading Signal Bot")
-        print(f"👤 Configured for: {bot.admin_name}")
+        print(f"👤 Admin: {bot.admin_name}")
         print("📊 Advanced multi-strategy analysis enabled")
         print("📈 Chart generation active")
         print("🔄 Automated scanning every 30 minutes")
@@ -430,7 +434,7 @@ async def main():
         await bot.run_enhanced_bot()
         
     except KeyboardInterrupt:
-        print(f"\n🛑 Stopping enhanced bot for {bot.admin_name}")
+        print(f"\n🛑 Stopping enhanced bot - Admin: {bot.admin_name}")
         
     except Exception as e:
         print(f"❌ Error: {e}")

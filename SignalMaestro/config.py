@@ -73,6 +73,7 @@ class Config:
         # Security Settings
         self.AUTHORIZED_USERS = self._parse_authorized_users()
         self.ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "")
+        self.ADMIN_USER_NAME = os.getenv("ADMIN_USER_NAME", "Trading Bot Admin")
 
         # Webhook Security
         self.WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")

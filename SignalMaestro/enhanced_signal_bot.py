@@ -19,6 +19,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pandas_ta")
 
 from advanced_trading_strategy import AdvancedTradingStrategy
 from binance_trader import BinanceTrader
+from kraken_trader import KrakenTrader
 from signal_parser import SignalParser
 from risk_manager import RiskManager
 from config import Config
@@ -34,9 +35,11 @@ class EnhancedSignalBot:
 
         # Core components
         self.binance_trader = BinanceTrader()
+        self.kraken_trader = KrakenTrader()
         self.trading_strategy = AdvancedTradingStrategy(self.binance_trader)
         self.signal_parser = SignalParser()
         self.risk_manager = RiskManager()
+        self.active_trader = None  # Will be set to working API
 
         # Telegram configuration
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -64,10 +67,25 @@ class EnhancedSignalBot:
         return logging.getLogger(__name__)
 
     async def initialize(self):
-        """Initialize all components"""
+        """Initialize all components with fallback API support"""
         try:
-            await self.binance_trader.initialize()
-            self.logger.info("Enhanced Signal Bot initialized successfully")
+            # Try Binance first
+            try:
+                await self.binance_trader.initialize()
+                self.active_trader = self.binance_trader
+                self.logger.info("Enhanced Signal Bot initialized with Binance API")
+            except Exception as binance_error:
+                self.logger.warning(f"Binance initialization failed: {binance_error}")
+                
+                # Fallback to Kraken
+                try:
+                    await self.kraken_trader.initialize()
+                    self.active_trader = self.kraken_trader
+                    self.trading_strategy.binance_trader = self.kraken_trader  # Update strategy reference
+                    self.logger.info("Enhanced Signal Bot initialized with Kraken API (fallback)")
+                except Exception as kraken_error:
+                    self.logger.error(f"Both APIs failed - Binance: {binance_error}, Kraken: {kraken_error}")
+                    raise Exception("Both Binance and Kraken APIs failed to initialize")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize bot: {e}")
@@ -309,7 +327,7 @@ class EnhancedSignalBot:
 • `/setchat` - Set target chat
 • `/setchannel @channel` - Set channel
 
-**🔄 Auto-Scanning:** Every 30 minutes
+**🔄 Auto-Scanning:** Every 5 minutes
 **📊 Monitored Pairs:** BTC, ETH, ADA, SOL, MATIC, LINK
 **🤖 Target Bot:** @TradeTactics_bot
 **📢 Channel:** @SignalTactics
@@ -340,7 +358,7 @@ class EnhancedSignalBot:
 **📊 Chart Generation:** Enabled
 **⚡ Real-time Analysis:** Running
 
-**Next Scan:** {(datetime.now().minute % 30)} minutes
+**Next Scan:** {5 - (datetime.now().minute % 5)} minutes
             """
             await self.send_message(chat_id, status)
 
@@ -449,7 +467,7 @@ class EnhancedSignalBot:
 📊 **Strategies:** Multi-timeframe analysis enabled
 🎯 **Target Bot:** {self.target_chat_id}
 📢 **Channel:** {self.channel_id}
-🔄 **Auto-Scan:** Every 30 minutes
+🔄 **Auto-Scan:** Every 5 minutes
 
 *Bot is ready for trading signals!*
             """)
@@ -569,7 +587,7 @@ class EnhancedSignalBot:
 • `/pairs add <PAIR>` - Add new pair
 • `/pairs remove <PAIR>` - Remove pair
 
-*All pairs scanned every 30 minutes*
+*All pairs scanned every 5 minutes*
             """
             await self.send_message(chat_id, pairs_text)
 
@@ -595,7 +613,7 @@ class EnhancedSignalBot:
 
 **⚡ Recent Activity:**
 • **Last Signal:** `2 hours ago`
-• **Next Scan:** `{30 - (datetime.now().minute % 30)} minutes`
+• **Next Scan:** `{5 - (datetime.now().minute % 5)} minutes`
 
 *Portfolio tracking available in full mode*
             """
@@ -986,15 +1004,16 @@ class EnhancedSignalBot:
                     test_results.append("❌ Telegram API: Failed")
                     await self.send_message(chat_id, "❌ Telegram API test failed")
                 
-                # Test 2: Binance API Connection
-                await self.send_message(chat_id, "⏳ Testing Binance API connection...")
+                # Test 2: Market Data API Connection
+                api_name = "Kraken" if self.active_trader == self.kraken_trader else "Binance"
+                await self.send_message(chat_id, f"⏳ Testing {api_name} API connection...")
                 try:
-                    await self.binance_trader.test_connection()
-                    test_results.append("✅ Binance API: Connected")
-                    await self.send_message(chat_id, "✅ Binance API test passed")
+                    await self.active_trader.test_connection()
+                    test_results.append(f"✅ {api_name} API: Connected")
+                    await self.send_message(chat_id, f"✅ {api_name} API test passed")
                 except:
-                    test_results.append("❌ Binance API: Failed")
-                    await self.send_message(chat_id, "❌ Binance API test failed")
+                    test_results.append(f"❌ {api_name} API: Failed")
+                    await self.send_message(chat_id, f"❌ {api_name} API test failed")
                 
                 # Test 3: Strategy Engine
                 await self.send_message(chat_id, "⏳ Testing strategy engine...")
@@ -1029,10 +1048,11 @@ class EnhancedSignalBot:
                 # Test 6: Market Data Access
                 await self.send_message(chat_id, "⏳ Testing market data access...")
                 try:
-                    price = await self.binance_trader.get_current_price("BTCUSDT")
+                    price = await self.active_trader.get_current_price("BTCUSDT")
                     if price > 0:
                         test_results.append("✅ Market Data: Available")
-                        await self.send_message(chat_id, f"✅ Market data test passed (BTC: ${price:,.2f})")
+                        api_name = "Kraken" if self.active_trader == self.kraken_trader else "Binance"
+                        await self.send_message(chat_id, f"✅ Market data test passed via {api_name} (BTC: ${price:,.2f})")
                     else:
                         test_results.append("❌ Market Data: No data")
                         await self.send_message(chat_id, "❌ Market data test failed")
@@ -1058,7 +1078,7 @@ class EnhancedSignalBot:
                 # Test 8: Auto-Scanner Status
                 await self.send_message(chat_id, "⏳ Checking auto-scanner status...")
                 current_minute = datetime.now().minute
-                next_scan = 30 - (current_minute % 30)
+                next_scan = 5 - (current_minute % 5)
                 test_results.append(f"✅ Auto-Scanner: Active (next scan in {next_scan}m)")
                 await self.send_message(chat_id, f"✅ Auto-scanner active (next scan: {next_scan}m)")
                 
@@ -1208,9 +1228,9 @@ For technical support or feature requests, contact the administrator.
 
         while True:
             try:
-                # Check if it's time for automated scan (every 30 minutes)
+                # Check if it's time for automated scan (every 5 minutes)
                 current_minute = datetime.now().minute
-                if current_minute % 30 == 0 and current_minute != last_scan_minute:
+                if current_minute % 5 == 0 and current_minute != last_scan_minute:
                     self.logger.info("Automated market scan triggered")
                     try:
                         await self.scan_and_generate_signals()
@@ -1283,7 +1303,8 @@ async def main():
         print(f"👤 Admin: {bot.admin_name}")
         print("📊 Advanced multi-strategy analysis enabled")
         print("📈 Chart generation active")
-        print("🔄 Automated scanning every 30 minutes")
+        print("🔄 Automated scanning every 5 minutes")
+        print("📊 Dual API support: Binance + Kraken fallback")
         print("⚡ Real-time signal processing")
         print("\nPress Ctrl+C to stop")
 

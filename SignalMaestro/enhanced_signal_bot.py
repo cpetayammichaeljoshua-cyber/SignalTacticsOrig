@@ -17,6 +17,15 @@ from io import BytesIO
 # Suppress pandas_ta warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas_ta")
 
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    CHART_AVAILABLE = True
+except ImportError:
+    CHART_AVAILABLE = False
+
 from advanced_trading_strategy import AdvancedTradingStrategy
 from binance_trader import BinanceTrader
 from kraken_trader import KrakenTrader

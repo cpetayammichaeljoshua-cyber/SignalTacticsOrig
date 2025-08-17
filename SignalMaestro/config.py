@@ -17,14 +17,11 @@ class Config:
         )
 
         # Binance Configuration
-        self.BINANCE_API_KEY = os.getenv(
-            "BINANCE_API_KEY",
-            "AgeYpAwXe4oeSiFHjlzs7E3rSPumcvnPZGCbhuYrWycjumzmkA3iIYLwTXl051vb"
-        )
-        self.BINANCE_API_SECRET = os.getenv(
-            "BINANCE_API_SECRET",
-            "y2LEqOfxvh8wiz5m8zZ5pS5HKMnbTckvoza6WDJwAqvn6GIhLy7KwQwvM3wNwb3U"
-        )
+        self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
+        self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+        
+        # Use testnet by default if no valid API keys
+        self.BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 
         # Session Secret
         self.SESSION_SECRET = os.getenv(

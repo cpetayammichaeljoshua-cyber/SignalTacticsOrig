@@ -13,11 +13,26 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Optional
 import traceback
+import base64
+from io import BytesIO
+
+# Chart generation
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    import pandas as pd
+    import numpy as np
+    CHART_AVAILABLE = True
+except ImportError:
+    CHART_AVAILABLE = False
 
 # Import existing components
 from signal_parser import SignalParser
 from risk_manager import RiskManager
 from config import Config
+from binance_trader import BinanceTrader
 
 class PerfectSignalBot:
     """Perfect signal bot with 100% uptime and smooth forwarding to @SignalTactics"""
@@ -27,6 +42,9 @@ class PerfectSignalBot:
         self.logger = self._setup_logging()
         self.signal_parser = SignalParser()
         self.risk_manager = RiskManager()
+        
+        # Initialize Binance trader for market data
+        self.binance_trader = BinanceTrader()
 
         # Telegram configuration
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN') or self.config.TELEGRAM_BOT_TOKEN
@@ -74,6 +92,136 @@ class PerfectSignalBot:
         logger.addHandler(file_handler)
         
         return logger
+
+    async def generate_signal_chart(self, symbol: str, signal_data: Dict[str, Any]) -> Optional[str]:
+        """Generate price chart for signal with technical indicators"""
+        if not CHART_AVAILABLE:
+            return None
+            
+        try:
+            # Initialize Binance trader if not done
+            if not self.binance_trader.exchange:
+                await self.binance_trader.initialize()
+            
+            # Get market data
+            ohlcv_data = await self.binance_trader.get_market_data(symbol, '1h', 100)
+            if not ohlcv_data:
+                return None
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(ohlcv_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            
+            # Create figure
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[3, 1])
+            fig.patch.set_facecolor('#1a1a1a')
+            
+            # Price chart
+            ax1.set_facecolor('#1a1a1a')
+            ax1.plot(df['timestamp'], df['close'], color='#00ff88', linewidth=2, label='Price')
+            
+            # Add signal markers
+            current_price = float(signal_data.get('price', df['close'].iloc[-1]))
+            stop_loss = signal_data.get('stop_loss')
+            take_profit = signal_data.get('take_profit')
+            action = signal_data.get('action', '').upper()
+            
+            # Entry point
+            ax1.axhline(y=current_price, color='#ffff00', linestyle='--', linewidth=2, label=f'Entry: ${current_price:.4f}')
+            
+            # Stop loss
+            if stop_loss:
+                ax1.axhline(y=stop_loss, color='#ff4444', linestyle='--', linewidth=2, label=f'Stop Loss: ${stop_loss:.4f}')
+            
+            # Take profit
+            if take_profit:
+                ax1.axhline(y=take_profit, color='#44ff44', linestyle='--', linewidth=2, label=f'Take Profit: ${take_profit:.4f}')
+            
+            # Signal direction arrow
+            latest_time = df['timestamp'].iloc[-1]
+            if action in ['BUY', 'LONG']:
+                ax1.annotate('📈 BUY', xy=(latest_time, current_price), 
+                           xytext=(latest_time, current_price * 1.02),
+                           arrowprops=dict(arrowstyle='->', color='#00ff88', lw=2),
+                           fontsize=12, color='#00ff88', weight='bold')
+            else:
+                ax1.annotate('📉 SELL', xy=(latest_time, current_price),
+                           xytext=(latest_time, current_price * 0.98),
+                           arrowprops=dict(arrowstyle='->', color='#ff4444', lw=2),
+                           fontsize=12, color='#ff4444', weight='bold')
+            
+            # Moving averages
+            if len(df) >= 20:
+                df['sma_20'] = df['close'].rolling(20).mean()
+                ax1.plot(df['timestamp'], df['sma_20'], color='#ff8800', alpha=0.7, linewidth=1, label='SMA 20')
+            
+            ax1.set_title(f'{symbol} - Trading Signal Chart', color='white', fontsize=16, weight='bold')
+            ax1.set_ylabel('Price (USDT)', color='white')
+            ax1.legend(loc='upper left', facecolor='#2a2a2a', edgecolor='white')
+            ax1.tick_params(colors='white')
+            ax1.grid(True, alpha=0.3)
+            
+            # Volume chart
+            ax2.set_facecolor('#1a1a1a')
+            colors = ['#00ff88' if close >= open_price else '#ff4444' 
+                     for close, open_price in zip(df['close'], df['open'])]
+            ax2.bar(df['timestamp'], df['volume'], color=colors, alpha=0.7)
+            ax2.set_ylabel('Volume', color='white')
+            ax2.set_xlabel('Time', color='white')
+            ax2.tick_params(colors='white')
+            ax2.grid(True, alpha=0.3)
+            
+            # Format x-axis
+            ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            ax2.xaxis.set_major_locator(mdates.HourLocator(interval=4))
+            plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
+            
+            plt.tight_layout()
+            
+            # Save to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', facecolor='#1a1a1a', dpi=100, bbox_inches='tight')
+            buffer.seek(0)
+            
+            chart_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            plt.close(fig)
+            buffer.close()
+            
+            return chart_base64
+            
+        except Exception as e:
+            self.logger.error(f"Error generating chart: {e}")
+            return None
+
+    async def send_photo(self, chat_id: str, photo_base64: str, caption: str = "") -> bool:
+        """Send photo from base64 data"""
+        try:
+            url = f"{self.base_url}/sendPhoto"
+            
+            # Convert base64 to bytes
+            photo_bytes = base64.b64decode(photo_base64)
+            
+            data = aiohttp.FormData()
+            data.add_field('chat_id', chat_id)
+            data.add_field('photo', photo_bytes, filename='signal_chart.png', content_type='image/png')
+            if caption:
+                data.add_field('caption', caption)
+                data.add_field('parse_mode', 'Markdown')
+
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+                async with session.post(url, data=data) as response:
+                    if response.status == 200:
+                        self.logger.info(f"Photo sent successfully to {chat_id}")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        self.logger.warning(f"Send photo failed: {response.status} - {error_text}")
+                        return False
+
+        except Exception as e:
+            self.logger.error(f"Error sending photo: {e}")
+            return False
 
     async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
         """Send message with retry logic and error handling"""
@@ -222,15 +370,26 @@ class PerfectSignalBot:
             # Format professional signal
             formatted_signal = self.format_professional_signal(parsed_signal)
 
+            # Generate chart if available
+            chart_base64 = None
+            if CHART_AVAILABLE and parsed_signal.get('symbol'):
+                chart_base64 = await self.generate_signal_chart(parsed_signal.get('symbol'), parsed_signal)
+
             # Send to target channel
-            success = await self.send_message(self.target_channel, formatted_signal)
+            success = False
+            if chart_base64:
+                # Send chart with signal as caption
+                success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
+            else:
+                # Send text only if chart generation failed
+                success = await self.send_message(self.target_channel, formatted_signal)
             
             if success:
                 self.logger.info(f"Signal #{self.signal_counter} forwarded successfully: {parsed_signal.get('symbol')} {parsed_signal.get('action')}")
                 
                 # Send confirmation to admin if set
                 if self.admin_chat_id:
-                    confirm_msg = f"✅ **Signal #{self.signal_counter} Forwarded**\n\n📊 {parsed_signal.get('symbol')} {parsed_signal.get('action')}\n📢 Sent to @SignalTactics"
+                    confirm_msg = f"✅ **Signal #{self.signal_counter} Forwarded**\n\n📊 {parsed_signal.get('symbol')} {parsed_signal.get('action')}\n📢 Sent to @SignalTactics\n📈 Chart: {'✅ Included' if chart_base64 else '❌ Failed'}"
                     await self.send_message(self.admin_chat_id, confirm_msg)
                 
                 return True
@@ -353,6 +512,17 @@ Send any trading signal message and it will be automatically parsed, formatted, 
         if not await self.test_bot_connection():
             self.logger.error("❌ Bot connection failed! Check TELEGRAM_BOT_TOKEN")
             return
+        
+        # Initialize Binance trader for market data
+        try:
+            await self.binance_trader.initialize()
+            if await self.binance_trader.ping():
+                self.logger.info("✅ Binance API connected successfully")
+            else:
+                self.logger.warning("⚠️ Binance API connection failed, charts may not be available")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Binance initialization failed: {e}")
+            self.logger.info("📊 Bot will continue without market data features")
         
         # Start heartbeat task
         heartbeat_task = asyncio.create_task(self.heartbeat())

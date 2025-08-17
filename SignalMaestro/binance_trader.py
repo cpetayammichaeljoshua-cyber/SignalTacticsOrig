@@ -25,17 +25,25 @@ class BinanceTrader:
     async def initialize(self):
         """Initialize Binance exchange connection"""
         try:
+            # Use testnet if API keys are empty or testnet is enabled
+            use_testnet = (not self.config.BINANCE_API_KEY or 
+                          not self.config.BINANCE_API_SECRET or 
+                          self.config.BINANCE_TESTNET)
+            
             self.exchange = ccxt.binance({
-                'apiKey': self.config.BINANCE_API_KEY,
-                'secret': self.config.BINANCE_API_SECRET,
-                'sandbox': False,  # Set to True for testnet
+                'apiKey': self.config.BINANCE_API_KEY or 'dummy_key',
+                'secret': self.config.BINANCE_API_SECRET or 'dummy_secret',
+                'sandbox': use_testnet,
                 'timeout': self.config.BINANCE_REQUEST_TIMEOUT * 1000,
                 'rateLimit': 1200,
                 'enableRateLimit': True,
                 'options': {
-                    'defaultType': 'spot',  # 'spot', 'margin', 'future'
+                    'defaultType': 'spot',
                 }
             })
+            
+            if use_testnet:
+                self.logger.info("Using Binance testnet (sandbox mode)")
             
             # Test connection
             await self.exchange.load_markets()
@@ -53,11 +61,20 @@ class BinanceTrader:
     async def ping(self) -> bool:
         """Test exchange connectivity"""
         try:
-            await self.exchange.fetch_status()
+            # Try to fetch server time first (doesn't require API auth)
+            await self.exchange.fetch_time()
+            self.logger.info("Binance connection successful")
             return True
         except Exception as e:
             self.logger.warning(f"Binance ping failed: {e}")
-            return False
+            try:
+                # Fallback: try to fetch ticker for BTCUSDT (public endpoint)
+                await self.exchange.fetch_ticker('BTC/USDT')
+                self.logger.info("Binance public API accessible")
+                return True
+            except Exception as e2:
+                self.logger.error(f"Binance completely inaccessible: {e2}")
+                return False
     
     async def get_account_balance(self) -> Dict[str, Dict[str, float]]:
         """Get account balance for all assets"""

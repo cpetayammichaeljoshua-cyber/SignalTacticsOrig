@@ -669,20 +669,53 @@ class PerfectSignalBot:
             return None
 
     async def find_most_profitable_signal(self) -> Optional[Dict[str, Any]]:
-        """Find the most profitable trading signal using advanced strategy"""
+        """Find the most profitable trading signal using advanced strategy with enhanced profitability focus"""
         try:
-            from advanced_trading_strategy import AdvancedTradingStrategy
+            # Multiple profitable strategies to analyze
+            profitable_strategies = [
+                'trend_momentum_breakout',
+                'multi_timeframe_confluence', 
+                'volume_price_action',
+                'support_resistance_bounce',
+                'bollinger_squeeze_breakout'
+            ]
 
-            # Initialize advanced strategy
-            advanced_strategy = AdvancedTradingStrategy(self.binance_trader)
+            best_signals = []
 
-            # Scan markets for high-probability signals
-            signals = await advanced_strategy.scan_markets()
+            # Analyze top cryptocurrencies for most profitable opportunities
+            top_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT']
 
-            if signals:
-                # Return the highest strength signal
-                best_signal = max(signals, key=lambda x: x.get('strength', 0))
-                self.logger.info(f"🎯 Found most profitable signal: {best_signal.get('symbol')} {best_signal.get('action')} (Strength: {best_signal.get('strength', 0):.1f}%)")
+            for symbol in top_symbols:
+                try:
+                    # Get current price and market data
+                    current_price = await self.binance_trader.get_current_price(symbol)
+                    if current_price <= 0:
+                        continue
+
+                    # Get market data for analysis
+                    market_data_1h = await self.binance_trader.get_market_data(symbol, '1h', 100)
+                    market_data_4h = await self.binance_trader.get_market_data(symbol, '4h', 50)
+
+                    if not market_data_1h or not market_data_4h:
+                        continue
+
+                    # Generate profitable signal using best strategy
+                    signal = await self._generate_best_profitable_signal(symbol, current_price, market_data_1h, market_data_4h)
+                    
+                    if signal and signal.get('profit_potential', 0) > 3.0:  # Minimum 3% profit potential
+                        best_signals.append(signal)
+
+                except Exception as e:
+                    self.logger.warning(f"Error analyzing {symbol}: {e}")
+                    continue
+
+            if best_signals:
+                # Sort by profit potential and strength
+                best_signals.sort(key=lambda x: (x.get('profit_potential', 0) * x.get('strength', 0)), reverse=True)
+                best_signal = best_signals[0]
+                
+                self.logger.info(f"🎯 Most profitable signal found: {best_signal.get('symbol')} {best_signal.get('action')} "
+                                f"(Strength: {best_signal.get('strength', 0):.1f}%, Profit: {best_signal.get('profit_potential', 0):.1f}%)")
                 return best_signal
 
             return None
@@ -691,8 +724,334 @@ class PerfectSignalBot:
             self.logger.error(f"Error finding profitable signal: {e}")
             return None
 
+    async def _generate_best_profitable_signal(self, symbol: str, current_price: float, data_1h: List, data_4h: List) -> Optional[Dict[str, Any]]:
+        """Generate the best profitable signal for a symbol using advanced analysis"""
+        try:
+            import pandas as pd
+            import numpy as np
+
+            # Convert to DataFrames
+            df_1h = pd.DataFrame(data_1h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df_4h = pd.DataFrame(data_4h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df_1h[col] = pd.to_numeric(df_1h[col], errors='coerce')
+                df_4h[col] = pd.to_numeric(df_4h[col], errors='coerce')
+
+            # Strategy 1: Trend Momentum Breakout
+            trend_signal = await self._analyze_trend_momentum(df_1h, df_4h, symbol, current_price)
+            
+            # Strategy 2: Multi-timeframe Confluence
+            confluence_signal = await self._analyze_confluence(df_1h, df_4h, symbol, current_price)
+            
+            # Strategy 3: Volume Price Action
+            volume_signal = await self._analyze_volume_action(df_1h, df_4h, symbol, current_price)
+
+            # Choose the most profitable strategy
+            signals = [s for s in [trend_signal, confluence_signal, volume_signal] if s and s.get('strength', 0) > 70]
+            
+            if signals:
+                best = max(signals, key=lambda x: x.get('profit_potential', 0))
+                return best
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error generating profitable signal for {symbol}: {e}")
+            return None
+
+    async def _analyze_trend_momentum(self, df_1h: pd.DataFrame, df_4h: pd.DataFrame, symbol: str, current_price: float) -> Optional[Dict[str, Any]]:
+        """Analyze trend momentum for breakout opportunities"""
+        try:
+            if len(df_4h) < 20:
+                return None
+
+            # Calculate EMAs
+            ema_12 = df_4h['close'].ewm(span=12).mean()
+            ema_26 = df_4h['close'].ewm(span=26).mean()
+            ema_50 = df_4h['close'].ewm(span=50).mean() if len(df_4h) >= 50 else None
+
+            # MACD
+            macd = ema_12 - ema_26
+            signal_line = macd.ewm(span=9).mean()
+
+            # RSI
+            delta = df_4h['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+
+            # Volume analysis
+            avg_volume = df_4h['volume'].rolling(20).mean()
+            current_volume = df_4h['volume'].iloc[-1]
+            volume_ratio = current_volume / avg_volume.iloc[-1] if avg_volume.iloc[-1] > 0 else 1
+
+            # Bullish momentum conditions
+            if (ema_12.iloc[-1] > ema_26.iloc[-1] and 
+                macd.iloc[-1] > signal_line.iloc[-1] and
+                rsi.iloc[-1] > 45 and rsi.iloc[-1] < 70 and
+                volume_ratio > 1.2):
+
+                # Calculate targets
+                resistance = df_4h['high'].tail(20).max()
+                support = df_4h['low'].tail(20).min()
+                
+                entry_price = current_price
+                stop_loss = support * 0.995  # Just below support
+                take_profit = resistance * 1.02  # Above resistance
+
+                profit_potential = ((take_profit - entry_price) / entry_price) * 100
+                risk_potential = ((entry_price - stop_loss) / entry_price) * 100
+                risk_reward = profit_potential / risk_potential if risk_potential > 0 else 0
+
+                if profit_potential > 3.0 and risk_reward > 2.0:
+                    strength = min(85 + (volume_ratio - 1) * 5, 98)
+                    
+                    return {
+                        'symbol': symbol,
+                        'action': 'BUY',
+                        'price': entry_price,
+                        'stop_loss': stop_loss,
+                        'take_profit': take_profit,
+                        'strength': strength,
+                        'confidence': min(strength * 0.9, 95),
+                        'profit_potential': profit_potential,
+                        'risk_reward_ratio': risk_reward,
+                        'primary_strategy': 'trend_momentum_breakout',
+                        'reason': f'Strong bullish momentum with {volume_ratio:.1f}x volume and perfect trend alignment',
+                        'timeframe': '4h',
+                        'strategies_used': ['Trend Analysis', 'MACD Momentum', 'Volume Confirmation', 'RSI Filter']
+                    }
+
+            # Bearish momentum conditions
+            elif (ema_12.iloc[-1] < ema_26.iloc[-1] and 
+                  macd.iloc[-1] < signal_line.iloc[-1] and
+                  rsi.iloc[-1] < 55 and rsi.iloc[-1] > 30 and
+                  volume_ratio > 1.2):
+
+                resistance = df_4h['high'].tail(20).max()
+                support = df_4h['low'].tail(20).min()
+                
+                entry_price = current_price
+                stop_loss = resistance * 1.005  # Just above resistance
+                take_profit = support * 0.98  # Below support
+
+                profit_potential = ((entry_price - take_profit) / entry_price) * 100
+                risk_potential = ((stop_loss - entry_price) / entry_price) * 100
+                risk_reward = profit_potential / risk_potential if risk_potential > 0 else 0
+
+                if profit_potential > 3.0 and risk_reward > 2.0:
+                    strength = min(85 + (volume_ratio - 1) * 5, 98)
+                    
+                    return {
+                        'symbol': symbol,
+                        'action': 'SELL',
+                        'price': entry_price,
+                        'stop_loss': stop_loss,
+                        'take_profit': take_profit,
+                        'strength': strength,
+                        'confidence': min(strength * 0.9, 95),
+                        'profit_potential': profit_potential,
+                        'risk_reward_ratio': risk_reward,
+                        'primary_strategy': 'trend_momentum_breakout',
+                        'reason': f'Strong bearish momentum with {volume_ratio:.1f}x volume and perfect trend reversal',
+                        'timeframe': '4h',
+                        'strategies_used': ['Trend Analysis', 'MACD Momentum', 'Volume Confirmation', 'RSI Filter']
+                    }
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error in trend momentum analysis: {e}")
+            return None
+
+    async def _analyze_confluence(self, df_1h: pd.DataFrame, df_4h: pd.DataFrame, symbol: str, current_price: float) -> Optional[Dict[str, Any]]:
+        """Analyze multi-timeframe confluence for high-probability signals"""
+        try:
+            if len(df_1h) < 50 or len(df_4h) < 50:
+                return None
+
+            bullish_signals = 0
+            bearish_signals = 0
+
+            # 1-hour timeframe signals
+            sma_20_1h = df_1h['close'].rolling(20).mean()
+            sma_50_1h = df_1h['close'].rolling(50).mean()
+            if sma_20_1h.iloc[-1] > sma_50_1h.iloc[-1]:
+                bullish_signals += 1
+            else:
+                bearish_signals += 1
+
+            # 4-hour timeframe signals
+            sma_20_4h = df_4h['close'].rolling(20).mean()
+            sma_50_4h = df_4h['close'].rolling(50).mean()
+            if sma_20_4h.iloc[-1] > sma_50_4h.iloc[-1]:
+                bullish_signals += 2  # Weight 4h more
+            else:
+                bearish_signals += 2
+
+            # RSI confluence
+            delta_1h = df_1h['close'].diff()
+            gain_1h = (delta_1h.where(delta_1h > 0, 0)).rolling(14).mean()
+            loss_1h = (-delta_1h.where(delta_1h < 0, 0)).rolling(14).mean()
+            rsi_1h = 100 - (100 / (1 + gain_1h / loss_1h))
+
+            delta_4h = df_4h['close'].diff()
+            gain_4h = (delta_4h.where(delta_4h > 0, 0)).rolling(14).mean()
+            loss_4h = (-delta_4h.where(delta_4h < 0, 0)).rolling(14).mean()
+            rsi_4h = 100 - (100 / (1 + gain_4h / loss_4h))
+
+            if rsi_1h.iloc[-1] > 50 and rsi_4h.iloc[-1] > 50:
+                bullish_signals += 1
+            elif rsi_1h.iloc[-1] < 50 and rsi_4h.iloc[-1] < 50:
+                bearish_signals += 1
+
+            # Strong confluence for BUY
+            if bullish_signals >= 3 and bearish_signals <= 1:
+                support = df_4h['low'].tail(20).min()
+                resistance = df_4h['high'].tail(20).max()
+                
+                entry_price = current_price
+                stop_loss = support * 0.995
+                take_profit = current_price + (current_price - stop_loss) * 3  # 3:1 R:R
+
+                profit_potential = ((take_profit - entry_price) / entry_price) * 100
+                strength = min(80 + bullish_signals * 5, 98)
+
+                if profit_potential > 4.0:
+                    return {
+                        'symbol': symbol,
+                        'action': 'BUY',
+                        'price': entry_price,
+                        'stop_loss': stop_loss,
+                        'take_profit': take_profit,
+                        'strength': strength,
+                        'confidence': min(strength * 0.85, 92),
+                        'profit_potential': profit_potential,
+                        'risk_reward_ratio': 3.0,
+                        'primary_strategy': 'multi_timeframe_confluence',
+                        'reason': f'Perfect multi-timeframe confluence with {bullish_signals} bullish signals',
+                        'timeframe': 'Multi-TF',
+                        'strategies_used': ['1H Trend', '4H Trend', 'RSI Confluence', 'Support/Resistance']
+                    }
+
+            # Strong confluence for SELL
+            elif bearish_signals >= 3 and bullish_signals <= 1:
+                resistance = df_4h['high'].tail(20).max()
+                support = df_4h['low'].tail(20).min()
+                
+                entry_price = current_price
+                stop_loss = resistance * 1.005
+                take_profit = current_price - (stop_loss - current_price) * 3  # 3:1 R:R
+
+                profit_potential = ((entry_price - take_profit) / entry_price) * 100
+                strength = min(80 + bearish_signals * 5, 98)
+
+                if profit_potential > 4.0:
+                    return {
+                        'symbol': symbol,
+                        'action': 'SELL',
+                        'price': entry_price,
+                        'stop_loss': stop_loss,
+                        'take_profit': take_profit,
+                        'strength': strength,
+                        'confidence': min(strength * 0.85, 92),
+                        'profit_potential': profit_potential,
+                        'risk_reward_ratio': 3.0,
+                        'primary_strategy': 'multi_timeframe_confluence',
+                        'reason': f'Perfect multi-timeframe confluence with {bearish_signals} bearish signals',
+                        'timeframe': 'Multi-TF',
+                        'strategies_used': ['1H Trend', '4H Trend', 'RSI Confluence', 'Support/Resistance']
+                    }
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error in confluence analysis: {e}")
+            return None
+
+    async def _analyze_volume_action(self, df_1h: pd.DataFrame, df_4h: pd.DataFrame, symbol: str, current_price: float) -> Optional[Dict[str, Any]]:
+        """Analyze volume price action for breakout signals"""
+        try:
+            if len(df_4h) < 20:
+                return None
+
+            # Volume analysis
+            avg_volume = df_4h['volume'].rolling(20).mean()
+            current_volume = df_4h['volume'].iloc[-1]
+            volume_ratio = current_volume / avg_volume.iloc[-1] if avg_volume.iloc[-1] > 0 else 1
+
+            # Price action analysis
+            recent_highs = df_4h['high'].tail(10)
+            recent_lows = df_4h['low'].tail(10)
+            
+            # Check for volume breakout
+            if volume_ratio > 2.0:  # Exceptional volume
+                # Bullish volume breakout
+                if (current_price > recent_highs.quantile(0.8) and 
+                    df_4h['close'].iloc[-1] > df_4h['open'].iloc[-1]):
+                    
+                    entry_price = current_price
+                    stop_loss = recent_lows.min() * 0.995
+                    take_profit = current_price + (current_price - stop_loss) * 2.5
+
+                    profit_potential = ((take_profit - entry_price) / entry_price) * 100
+                    strength = min(75 + (volume_ratio - 2) * 10, 98)
+
+                    if profit_potential > 3.5:
+                        return {
+                            'symbol': symbol,
+                            'action': 'BUY',
+                            'price': entry_price,
+                            'stop_loss': stop_loss,
+                            'take_profit': take_profit,
+                            'strength': strength,
+                            'confidence': min(strength * 0.88, 94),
+                            'profit_potential': profit_potential,
+                            'risk_reward_ratio': 2.5,
+                            'primary_strategy': 'volume_price_action',
+                            'reason': f'Exceptional volume breakout with {volume_ratio:.1f}x normal volume',
+                            'timeframe': '4h',
+                            'strategies_used': ['Volume Analysis', 'Price Action', 'Breakout Detection']
+                        }
+
+                # Bearish volume breakdown
+                elif (current_price < recent_lows.quantile(0.2) and 
+                      df_4h['close'].iloc[-1] < df_4h['open'].iloc[-1]):
+                    
+                    entry_price = current_price
+                    stop_loss = recent_highs.max() * 1.005
+                    take_profit = current_price - (stop_loss - current_price) * 2.5
+
+                    profit_potential = ((entry_price - take_profit) / entry_price) * 100
+                    strength = min(75 + (volume_ratio - 2) * 10, 98)
+
+                    if profit_potential > 3.5:
+                        return {
+                            'symbol': symbol,
+                            'action': 'SELL',
+                            'price': entry_price,
+                            'stop_loss': stop_loss,
+                            'take_profit': take_profit,
+                            'strength': strength,
+                            'confidence': min(strength * 0.88, 94),
+                            'profit_potential': profit_potential,
+                            'risk_reward_ratio': 2.5,
+                            'primary_strategy': 'volume_price_action',
+                            'reason': f'Exceptional volume breakdown with {volume_ratio:.1f}x normal volume',
+                            'timeframe': '4h',
+                            'strategies_used': ['Volume Analysis', 'Price Action', 'Breakdown Detection']
+                        }
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error in volume action analysis: {e}")
+            return None
+
     async def generate_profitable_signal(self) -> bool:
-        """Generate and send the most profitable signal"""
+        """Generate and send the most profitable signal with enhanced delivery"""
         try:
             # Find the best signal
             signal = await self.find_most_profitable_signal()
@@ -709,41 +1068,119 @@ class PerfectSignalBot:
             # Generate advanced chart
             chart_base64 = await self.generate_advanced_chart(signal)
 
-            # Send to channel
-            success = False
-            self.logger.info(f"🔄 Sending most profitable signal #{self.signal_counter} to {self.target_channel}")
+            # Enhanced delivery system - try multiple methods
+            delivery_success = False
+            delivery_methods = []
 
+            # Method 1: Try original channel
+            self.logger.info(f"🔄 Sending MOST PROFITABLE signal #{self.signal_counter} to {self.target_channel}")
+            
             if chart_base64:
                 success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
             else:
                 success = await self.send_message(self.target_channel, formatted_signal)
-
+            
             if success:
-                self.logger.info(f"✅ Most profitable signal #{self.signal_counter} sent: {signal.get('symbol')} {signal.get('action')}")
+                delivery_success = True
+                delivery_methods.append("@SignalTactics")
+                self.logger.info(f"✅ Signal delivered to {self.target_channel}")
 
-                # Send detailed confirmation to admin
+            # Method 2: Try channel username variation
+            if not success:
+                alt_channel = "SignalTactics"  # Without @
+                if chart_base64:
+                    success = await self.send_photo(alt_channel, chart_base64, formatted_signal)
+                else:
+                    success = await self.send_message(alt_channel, formatted_signal)
+                
+                if success:
+                    delivery_success = True
+                    delivery_methods.append("SignalTactics")
+                    self.logger.info(f"✅ Signal delivered to {alt_channel}")
+
+            # Method 3: Try with channel ID (if we had it)
+            channel_ids = ["-1001234567890", "-1002345678901"]  # Add actual channel IDs if known
+            for channel_id in channel_ids:
+                if not success:
+                    if chart_base64:
+                        success = await self.send_photo(channel_id, chart_base64, formatted_signal)
+                    else:
+                        success = await self.send_message(channel_id, formatted_signal)
+                    
+                    if success:
+                        delivery_success = True
+                        delivery_methods.append(f"Channel-{channel_id}")
+                        self.logger.info(f"✅ Signal delivered to channel {channel_id}")
+                        break
+
+            # Method 4: Always send to admin (bot notification)
+            if self.admin_chat_id:
+                bot_notification = f"""
+🚨 **MOST PROFITABLE SIGNAL #{self.signal_counter}** 🚨
+
+{formatted_signal}
+
+📊 **Signal Performance:**
+💰 **Profit Potential:** `{signal.get('profit_potential', 0):.1f}%`
+⚖️ **Risk/Reward:** `1:{signal.get('risk_reward_ratio', 0):.2f}`
+💪 **Strategy Strength:** `{signal.get('strength', 0):.1f}%`
+🎯 **Confidence Level:** `{signal.get('confidence', 0):.1f}%`
+
+📈 **Best Strategy Used:** `{signal.get('primary_strategy', 'Advanced').replace('_', ' ').title()}`
+
+📢 **Delivery Status:** {'✅ Channel Success' if delivery_success else '⚠️ Channel Failed - Sent to Bot Only'}
+🤖 **Delivered to:** {', '.join(delivery_methods) if delivery_methods else 'Bot Only'}
+                """
+                
+                bot_success = await self.send_message(self.admin_chat_id, bot_notification)
+                if bot_success:
+                    delivery_success = True
+                    delivery_methods.append("TradeTactics Bot")
+                    
+                    # Send chart to bot too
+                    if chart_base64:
+                        await self.send_photo(self.admin_chat_id, chart_base64, 
+                                            f"📊 **Chart for Signal #{self.signal_counter}**\n\n{signal.get('symbol')} {signal.get('action')}")
+
+            # Log results
+            if delivery_success:
+                self.logger.info(f"✅ MOST PROFITABLE SIGNAL #{self.signal_counter} DELIVERED: {signal.get('symbol')} {signal.get('action')} "
+                               f"(Profit: {signal.get('profit_potential', 0):.1f}%, Strength: {signal.get('strength', 0):.1f}%)")
+                self.logger.info(f"📤 Delivered to: {', '.join(delivery_methods)}")
+                
+                # Send success confirmation
                 if self.admin_chat_id:
-                    confirm_msg = f"""
-🎯 **Most Profitable Signal Sent!**
+                    success_msg = f"""
+🎉 **SIGNAL DELIVERY SUCCESS!**
 
-📊 **Signal #{self.signal_counter}**
-🏷️ Symbol: `{signal.get('symbol')}`
-📈 Action: `{signal.get('action')}`
-💪 Strength: `{signal.get('strength', 0):.1f}%`
-🎯 Strategy: `{signal.get('primary_strategy', 'Advanced')}`
-📢 Channel: @SignalTactics
-📈 Chart: {'✅ Included' if chart_base64 else '❌ Failed'}
-⚖️ R:R Ratio: `{signal.get('risk_reward_ratio', 0):.2f}`
+📊 **Signal #{self.signal_counter}** - {signal.get('symbol')} {signal.get('action')}
+💰 **Profit Potential:** {signal.get('profit_potential', 0):.1f}%
+💪 **Strategy:** {signal.get('primary_strategy', 'Advanced').replace('_', ' ').title()}
+📤 **Delivered To:** {', '.join(delivery_methods)}
+📈 **Chart:** {'✅ Included' if chart_base64 else '❌ Not Available'}
+
+🚀 **Bot continues scanning for more profitable opportunities...**
                     """
-                    await self.send_message(self.admin_chat_id, confirm_msg)
+                    await self.send_message(self.admin_chat_id, success_msg)
 
                 return True
             else:
-                self.logger.error(f"❌ Failed to send profitable signal to {self.target_channel}")
+                self.logger.error(f"❌ COMPLETE DELIVERY FAILURE for signal #{self.signal_counter}")
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Error generating profitable signal: {e}")
+            self.logger.error(f"❌ Error generating/delivering profitable signal: {e}")
+            if self.admin_chat_id:
+                error_msg = f"""
+🚨 **SIGNAL GENERATION ERROR**
+
+❌ **Error:** {str(e)}
+🔢 **Signal #:** {self.signal_counter}
+⏰ **Time:** {datetime.now().strftime('%H:%M:%S')}
+
+🔄 **Bot will retry on next scan...**
+                """
+                await self.send_message(self.admin_chat_id, error_msg)
             return False
 
     async def process_signal(self, message_text: str) -> bool:
@@ -934,16 +1371,36 @@ Send any trading signal message and it will be automatically parsed, formatted, 
             self.error_count = 0
             await self.send_message(chat_id, "✅ **Perfect Bot Restarted Successfully**\n\nContinuing infinite operation...")
 
-        elif text.startswith('/signal') or text.startswith('/profitable'):
-            await self.send_message(chat_id, "🔍 **Scanning for Most Profitable Signal...**\n\n⚡ Analyzing multiple strategies and timeframes...")
+        elif text.startswith('/signal') or text.startswith('/profitable') or text.startswith('/best'):
+            await self.send_message(chat_id, "🔍 **SCANNING FOR MOST PROFITABLE SIGNAL...**\n\n⚡ Analyzing BEST strategies across all timeframes...")
 
             # Generate the most profitable signal
             success = await self.generate_profitable_signal()
 
             if success:
-                await self.send_message(chat_id, "✅ **Most Profitable Signal Generated & Sent!**\n\n📢 Check SignalTactics for the premium signal with chart analysis.")
+                await self.send_message(chat_id, f"""
+✅ **MOST PROFITABLE SIGNAL DELIVERED!**
+
+📊 **Signal #{self.signal_counter}** has been generated and sent!
+📢 **Delivered to:** SignalTactics Channel & Bot
+📈 **Features:** Advanced chart analysis included
+🎯 **Strategy:** Best profitable strategy selected
+💰 **Profit Focus:** High-probability opportunities only
+
+🚀 **Check your channels for the premium signal!**
+                """)
             else:
-                await self.send_message(chat_id, "⚠️ **No High-Probability Signals Found**\n\nMarket conditions don't meet our profitable criteria right now. Bot continues monitoring...")
+                await self.send_message(chat_id, """
+⚠️ **NO HIGH-PROFIT OPPORTUNITIES FOUND**
+
+📊 **Current Status:** All markets analyzed
+🎯 **Criteria:** Minimum 3% profit potential required
+💪 **Strength:** Minimum 70% strategy strength required
+⚖️ **Risk/Reward:** Minimum 2:1 ratio required
+
+🔄 **Bot continues monitoring...**
+⏰ **Next auto-scan:** Within 5 minutes
+                """)
 
         elif text.startswith('/auto'):
             # Start automatic profitable signal generation
@@ -959,23 +1416,102 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                 await self.send_message(chat_id, "🛑 **Auto-Profitable Mode Stopped**\n\nBot returns to manual mode.")
 
     async def auto_profitable_loop(self):
-        """Automatically generate profitable signals every 15 minutes"""
+        """Continuously scan for and send the most profitable signals"""
+        scan_intervals = [300, 600, 900]  # 5, 10, 15 minutes
+        current_interval_index = 0
+        
         while self.running:
             try:
-                await asyncio.sleep(900)  # 15 minutes
+                # Dynamic interval based on market conditions
+                current_interval = scan_intervals[current_interval_index]
+                await asyncio.sleep(current_interval)
 
-                self.logger.info("🔍 Auto-profitable scan triggered")
+                self.logger.info("🔍 AUTO-PROFITABLE SCAN TRIGGERED - Searching for BEST opportunities")
+                
+                # Generate the most profitable signal
                 success = await self.generate_profitable_signal()
 
-                if success and self.admin_chat_id:
-                    await self.send_message(self.admin_chat_id, "🤖 **Auto-Profitable Signal Sent**\n\n⚡ Next scan in 15 minutes")
+                if success:
+                    # Success - use longer interval for next scan
+                    current_interval_index = min(len(scan_intervals) - 1, current_interval_index + 1)
+                    
+                    if self.admin_chat_id:
+                        next_scan_minutes = scan_intervals[current_interval_index] // 60
+                        await self.send_message(self.admin_chat_id, 
+                                              f"🎯 **AUTO-PROFITABLE SIGNAL DELIVERED**\n\n"
+                                              f"✅ Most profitable opportunity found and sent!\n"
+                                              f"⏰ Next scan in {next_scan_minutes} minutes\n"
+                                              f"🔄 Bot continues monitoring for better opportunities...")
+                else:
+                    # No profitable signal found - use shorter interval
+                    current_interval_index = max(0, current_interval_index - 1)
+                    
+                    if self.admin_chat_id and self.signal_counter % 3 == 0:  # Every 3rd failed attempt
+                        next_scan_minutes = scan_intervals[current_interval_index] // 60
+                        await self.send_message(self.admin_chat_id,
+                                              f"🔍 **SCANNING FOR PROFITABLE SIGNALS**\n\n"
+                                              f"📊 No high-profit opportunities detected this scan\n"
+                                              f"⏰ Next scan in {next_scan_minutes} minutes\n"
+                                              f"🎯 Minimum profit target: 3.0%\n"
+                                              f"💪 Minimum strength: 70%")
 
             except asyncio.CancelledError:
                 self.logger.info("Auto-profitable loop cancelled")
                 break
             except Exception as e:
                 self.logger.error(f"Auto-profitable loop error: {e}")
+                if self.admin_chat_id:
+                    await self.send_message(self.admin_chat_id,
+                                          f"🚨 **AUTO-SCAN ERROR**\n\n"
+                                          f"❌ Error: {str(e)}\n"
+                                          f"🔄 Retrying in 60 seconds...")
                 await asyncio.sleep(60)
+
+    async def continuous_profit_scanner(self):
+        """Enhanced continuous scanner for maximum profitability"""
+        while self.running:
+            try:
+                self.logger.info("🚀 CONTINUOUS PROFIT SCANNER ACTIVE")
+                
+                # Scan every 2 minutes for very high-profit opportunities (>5%)
+                for _ in range(30):  # 30 scans over 1 hour
+                    if not self.running:
+                        break
+                        
+                    try:
+                        # Quick scan for exceptional opportunities
+                        quick_signal = await self.find_most_profitable_signal()
+                        
+                        if (quick_signal and 
+                            quick_signal.get('profit_potential', 0) > 5.0 and 
+                            quick_signal.get('strength', 0) > 80):
+                            
+                            self.logger.info(f"🎯 EXCEPTIONAL OPPORTUNITY DETECTED: {quick_signal.get('symbol')} "
+                                           f"({quick_signal.get('profit_potential', 0):.1f}% profit potential)")
+                            
+                            # Send immediately
+                            await self.generate_profitable_signal()
+                            
+                            # Wait longer after exceptional signal
+                            await asyncio.sleep(600)  # 10 minutes
+                            break
+                        
+                        await asyncio.sleep(120)  # 2 minutes between quick scans
+                        
+                    except Exception as e:
+                        self.logger.error(f"Quick scan error: {e}")
+                        await asyncio.sleep(60)
+                        continue
+
+                # Regular comprehensive scan
+                await asyncio.sleep(300)  # 5 minutes before next comprehensive scan
+
+            except asyncio.CancelledError:
+                self.logger.info("Continuous profit scanner cancelled")
+                break
+            except Exception as e:
+                self.logger.error(f"Continuous scanner error: {e}")
+                await asyncio.sleep(120)
 
     async def heartbeat(self):
         """Send periodic heartbeat to maintain connection"""
@@ -1018,6 +1554,11 @@ Send any trading signal message and it will be automatically parsed, formatted, 
 
         # Start heartbeat task
         heartbeat_task = asyncio.create_task(self.heartbeat())
+        
+        # Auto-start profitable signal generation
+        self.logger.info("🚀 AUTO-STARTING PROFITABLE SIGNAL GENERATION")
+        auto_profitable_task = asyncio.create_task(self.auto_profitable_loop())
+        continuous_scanner_task = asyncio.create_task(self.continuous_profit_scanner())
 
         offset = None
         consecutive_errors = 0

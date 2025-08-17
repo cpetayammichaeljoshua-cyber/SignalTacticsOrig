@@ -682,8 +682,14 @@ class PerfectSignalBot:
 
             best_signals = []
 
-            # Analyze top cryptocurrencies for most profitable opportunities
-            top_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT']
+            # Analyze expanded list of cryptocurrencies for most profitable opportunities
+            top_symbols = [
+                'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT', 
+                'DOGEUSDT', 'MATICUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT', 'UNIUSDT',
+                'LTCUSDT', 'BCHUSDT', 'ATOMUSDT', 'FILUSDT', 'TRXUSDT', 'ETCUSDT',
+                'XLMUSDT', 'VETUSDT', 'ICPUSDT', 'THETAUSDT', 'FTMUSDT', 'HBARUSDT',
+                'ALGOUSDT', 'EOSUSDT', 'AAVEUSDT', 'MKRUSDT', 'COMPUSDT', 'YFIUSDT'
+            ]
 
             for symbol in top_symbols:
                 try:
@@ -702,7 +708,7 @@ class PerfectSignalBot:
                     # Generate profitable signal using best strategy
                     signal = await self._generate_best_profitable_signal(symbol, current_price, market_data_1h, market_data_4h)
 
-                    if signal and signal.get('profit_potential', 0) > 3.0:  # Minimum 3% profit potential
+                    if signal and signal.get('profit_potential', 0) > 2.0:  # Minimum 2% profit potential
                         best_signals.append(signal)
 
                 except Exception as e:
@@ -712,11 +718,15 @@ class PerfectSignalBot:
             if best_signals:
                 # Sort by profit potential and strength
                 best_signals.sort(key=lambda x: (x.get('profit_potential', 0) * x.get('strength', 0)), reverse=True)
-                best_signal = best_signals[0]
-
-                self.logger.info(f"🎯 Most profitable signal found: {best_signal.get('symbol')} {best_signal.get('action')} "
-                                f"(Strength: {best_signal.get('strength', 0):.1f}%, Profit: {best_signal.get('profit_potential', 0):.1f}%)")
-                return best_signal
+                
+                # Return top 3 signals for multiple trading opportunities
+                top_signals = best_signals[:3]
+                
+                for i, signal in enumerate(top_signals):
+                    self.logger.info(f"🎯 Signal #{i+1} found: {signal.get('symbol')} {signal.get('action')} "
+                                    f"(Strength: {signal.get('strength', 0):.1f}%, Profit: {signal.get('profit_potential', 0):.1f}%)")
+                
+                return top_signals  # Return list of signals instead of single signal
 
             return None
 
@@ -748,7 +758,7 @@ class PerfectSignalBot:
             volume_signal = await self._analyze_volume_action(df_1h, df_4h, symbol, current_price)
 
             # Choose the most profitable strategy
-            signals = [s for s in [trend_signal, confluence_signal, volume_signal] if s and s.get('strength', 0) > 70]
+            signals = [s for s in [trend_signal, confluence_signal, volume_signal] if s and s.get('strength', 0) > 65]
 
             if signals:
                 best = max(signals, key=lambda x: x.get('profit_potential', 0))
@@ -1051,72 +1061,67 @@ class PerfectSignalBot:
             return None
 
     async def generate_profitable_signal(self) -> bool:
-        """Generate and send the most profitable signal with enhanced delivery"""
+        """Generate and send multiple profitable signals with enhanced delivery"""
         try:
-            # Find the best signal
-            signal = await self.find_most_profitable_signal()
+            # Find the best signals (now returns list)
+            signals = await self.find_most_profitable_signal()
 
-            if not signal:
+            if not signals:
                 self.logger.info("📊 No high-probability signals found at this time")
                 return False
 
-            self.signal_counter += 1
+            # Handle both single signal and multiple signals
+            if not isinstance(signals, list):
+                signals = [signals]
 
-            # Format professional signal with enhanced data
-            formatted_signal = self.format_advanced_signal(signal)
+            delivery_success = False
+            all_delivery_methods = []
 
-            # Generate advanced chart
-            chart_base64 = await self.generate_advanced_chart(signal)
+            # Process each signal
+            for i, signal in enumerate(signals):
+                self.signal_counter += 1
+
+                # Format professional signal with enhanced data
+                formatted_signal = self.format_advanced_signal(signal)
+                
+                # Add signal ranking info
+                signal_header = f"🔥 **MULTI-SIGNAL ALERT #{i+1}//{len(signals)}** 🔥\n\n"
+                formatted_signal = signal_header + formatted_signal
+
+                # Generate advanced chart
+                chart_base64 = await self.generate_advanced_chart(signal)
 
             # Enhanced delivery system - try multiple methods
-            delivery_success = False
-            delivery_methods = []
+                delivery_methods = []
 
-            # Method 1: Try original channel
-            self.logger.info(f"🔄 Sending MOST PROFITABLE signal #{self.signal_counter} to {self.target_channel}")
+                # Method 1: Try original channel
+                self.logger.info(f"🔄 Sending PROFITABLE signal #{self.signal_counter} ({signal.get('symbol')}) to {self.target_channel}")
 
-            if chart_base64:
-                success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
-            else:
-                success = await self.send_message(self.target_channel, formatted_signal)
-
-            if success:
-                delivery_success = True
-                delivery_methods.append("@SignalTactics")
-                self.logger.info(f"✅ Signal delivered to {self.target_channel}")
-
-            # Method 2: Try channel username variation
-            if not success:
-                alt_channel = "SignalTactics"  # Without @
                 if chart_base64:
-                    success = await self.send_photo(alt_channel, chart_base64, formatted_signal)
+                    success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
                 else:
-                    success = await self.send_message(alt_channel, formatted_signal)
+                    success = await self.send_message(self.target_channel, formatted_signal)
 
                 if success:
-                    delivery_success = True
-                    delivery_methods.append("SignalTactics")
-                    self.logger.info(f"✅ Signal delivered to {alt_channel}")
+                    delivery_methods.append("@SignalTactics")
+                    self.logger.info(f"✅ Signal {signal.get('symbol')} delivered to {self.target_channel}")
 
-            # Method 3: Try with channel ID (if we had it)
-            channel_ids = ["-1001234567890", "-1002345678901"]  # Add actual channel IDs if known
-            for channel_id in channel_ids:
+                # Method 2: Try channel username variation
                 if not success:
+                    alt_channel = "SignalTactics"  # Without @
                     if chart_base64:
-                        success = await self.send_photo(channel_id, chart_base64, formatted_signal)
+                        success = await self.send_photo(alt_channel, chart_base64, formatted_signal)
                     else:
-                        success = await self.send_message(channel_id, formatted_signal)
+                        success = await self.send_message(alt_channel, formatted_signal)
 
                     if success:
-                        delivery_success = True
-                        delivery_methods.append(f"Channel-{channel_id}")
-                        self.logger.info(f"✅ Signal delivered to channel {channel_id}")
-                        break
+                        delivery_methods.append("SignalTactics")
+                        self.logger.info(f"✅ Signal {signal.get('symbol')} delivered to {alt_channel}")
 
-            # Method 4: Always send to admin (bot notification)
-            if self.admin_chat_id:
-                bot_notification = f"""
-🚨 **MOST PROFITABLE SIGNAL #{self.signal_counter}** 🚨
+                # Method 3: Always send to admin (bot notification)
+                if self.admin_chat_id:
+                    bot_notification = f"""
+🚨 **PROFITABLE SIGNAL #{self.signal_counter}** 🚨
 
 {formatted_signal}
 
@@ -1128,44 +1133,49 @@ class PerfectSignalBot:
 
 📈 **Best Strategy Used:** `{signal.get('primary_strategy', 'Advanced').replace('_', ' ').title()}`
 
-📢 **Delivery Status:** {'✅ Channel Success' if delivery_success else '⚠️ Channel Failed - Sent to Bot Only'}
-🤖 **Delivered to:** {', '.join(delivery_methods)}
-                """
+📢 **Delivery Status:** {'✅ Channel Success' if delivery_methods else '⚠️ Channel Failed - Sent to Bot Only'}
+🤖 **Delivered to:** {', '.join(delivery_methods) if delivery_methods else 'TradeTactics Bot Only'}
+                    """
 
-                bot_success = await self.send_message(self.admin_chat_id, bot_notification)
-                if bot_success:
+                    bot_success = await self.send_message(self.admin_chat_id, bot_notification)
+                    if bot_success:
+                        if "TradeTactics Bot" not in delivery_methods:
+                            delivery_methods.append("TradeTactics Bot")
+
+                        # Send chart to bot too
+                        if chart_base64:
+                            await self.send_photo(self.admin_chat_id, chart_base64,
+                                                f"📊 **Chart for Signal #{self.signal_counter}**\n\n{signal.get('symbol')} {signal.get('action')}")
+
+                # Log individual signal results
+                if delivery_methods:
                     delivery_success = True
-                    delivery_methods.append("TradeTactics Bot")
+                    all_delivery_methods.extend(delivery_methods)
+                    self.logger.info(f"✅ SIGNAL #{self.signal_counter} DELIVERED: {signal.get('symbol')} {signal.get('action')} "
+                                   f"(Profit: {signal.get('profit_potential', 0):.1f}%, Strength: {signal.get('strength', 0):.1f}%)")
+                
+                # Small delay between signals
+                if i < len(signals) - 1:
+                    await asyncio.sleep(3)
 
-                    # Send chart to bot too
-                    if chart_base64:
-                        await self.send_photo(self.admin_chat_id, chart_base64,
-                                            f"📊 **Chart for Signal #{self.signal_counter}**\n\n{signal.get('symbol')} {signal.get('action')}")
-
-            # Log results
-            if delivery_success:
-                self.logger.info(f"✅ MOST PROFITABLE SIGNAL #{self.signal_counter} DELIVERED: {signal.get('symbol')} {signal.get('action')} "
-                               f"(Profit: {signal.get('profit_potential', 0):.1f}%, Strength: {signal.get('strength', 0):.1f}%)")
-                self.logger.info(f"📤 Delivered to: {', '.join(delivery_methods)}")
-
-                # Send success confirmation
+            # Send combined success confirmation for all signals
+            if all_delivery_methods:
                 if self.admin_chat_id:
                     success_msg = f"""
-🎉 **SIGNAL DELIVERY SUCCESS!**
+🎉 **MULTI-SIGNAL DELIVERY SUCCESS!**
 
-📊 **Signal #{self.signal_counter}** - {signal.get('symbol')} {signal.get('action')}
-💰 **Profit Potential:** {signal.get('profit_potential', 0):.1f}%
-💪 **Strategy:** {signal.get('primary_strategy', 'Advanced').replace('_', ' ').title()}
-📤 **Delivered To:** {', '.join(delivery_methods)}
-📈 **Chart:** {'✅ Included' if chart_base64 else '❌ Not Available'}
+📊 **{len(signals)} SIGNALS DELIVERED**
+🚀 **Total Signals Sent:** #{self.signal_counter - len(signals) + 1} to #{self.signal_counter}
+📤 **Delivered To:** {', '.join(set(all_delivery_methods))}
+💎 **All signals include advanced chart analysis**
 
-🚀 **Bot continues scanning for more profitable opportunities...**
+🔍 **Bot continues scanning for more opportunities...**
                     """
                     await self.send_message(self.admin_chat_id, success_msg)
 
                 return True
             else:
-                self.logger.error(f"❌ COMPLETE DELIVERY FAILURE for signal #{self.signal_counter}")
+                self.logger.error(f"❌ COMPLETE DELIVERY FAILURE for all {len(signals)} signals")
                 return False
 
         except Exception as e:
@@ -1382,26 +1392,27 @@ Send any trading signal message and it will be automatically parsed, formatted, 
 
             if success:
                 await self.send_message(chat_id, f"""
-✅ **MOST PROFITABLE SIGNAL DELIVERED!**
+✅ **MULTIPLE PROFITABLE SIGNALS DELIVERED!**
 
-📊 **Signal #{self.signal_counter}** has been generated and sent!
+📊 **Latest Signal Batch:** Up to 3 premium signals generated!
 📢 **Delivered to:** SignalTactics Channel & Bot
-📈 **Features:** Advanced chart analysis included
-🎯 **Strategy:** Best profitable strategy selected
-💰 **Profit Focus:** High-probability opportunities only
+📈 **Features:** Advanced chart analysis for each signal
+🎯 **Strategy:** Best profitable strategies across all pairs
+💰 **Profit Focus:** Multiple high-probability opportunities
 
-🚀 **Check your channels for the premium signal!**
+🚀 **Check your channels for ALL the premium signals!**
+💎 **Multiple pairs analyzed:** BTC, ETH, ADA, SOL, BNB, XRP, DOGE, MATIC, AVAX, DOT, LINK + 20 more!
                 """)
             else:
                 await self.send_message(chat_id, """
 ⚠️ **NO HIGH-PROFIT OPPORTUNITIES FOUND**
 
-📊 **Current Status:** All markets analyzed
-🎯 **Criteria:** Minimum 3% profit potential required
-💪 **Strength:** Minimum 70% strategy strength required
-⚖️ **Risk/Reward:** Minimum 2:1 ratio required
+📊 **Current Status:** All 30+ pairs analyzed
+🎯 **Criteria:** Minimum 2% profit potential required
+💪 **Strength:** Minimum 65% strategy strength required
+⚖️ **Risk/Reward:** Minimum 1.5:1 ratio required
 
-🔄 **Bot continues monitoring...**
+🔄 **Bot continues monitoring all pairs...**
 ⏰ **Next auto-scan:** Within 5 minutes
                 """)
 

@@ -10,7 +10,7 @@ import aiohttp
 import os
 import json
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import traceback
 import base64
 from io import BytesIO
@@ -206,7 +206,7 @@ class PerfectSignalBot:
             # Signal direction arrow
             latest_time = df['timestamp'].iloc[-1]
             if action in ['BUY', 'LONG']:
-                ax1.annotate('📈 BUY', xy=(latest_time, current_price), 
+                ax1.annotate('📈 BUY', xy=(latest_time, current_price),
                            xytext=(latest_time, current_price * 1.02),
                            arrowprops=dict(arrowstyle='->', color='#00ff88', lw=2),
                            fontsize=12, color='#00ff88', weight='bold')
@@ -229,7 +229,7 @@ class PerfectSignalBot:
 
             # Volume chart
             ax2.set_facecolor('#1a1a1a')
-            colors = ['#00ff88' if close >= open_price else '#ff4444' 
+            colors = ['#00ff88' if close >= open_price else '#ff4444'
                      for close, open_price in zip(df['close'], df['open'])]
             ax2.bar(df['timestamp'], df['volume'], color=colors, alpha=0.7)
             ax2.set_ylabel('Volume', color='white')
@@ -537,14 +537,14 @@ class PerfectSignalBot:
             ax1.set_facecolor('#0a0a0a')
 
             # Plot candlestick-style price
-            colors = ['#00ff88' if close >= open_price else '#ff4444' 
+            colors = ['#00ff88' if close >= open_price else '#ff4444'
                      for close, open_price in zip(df_1h['close'], df_1h['open'])]
 
             for i in range(len(df_1h)):
                 high = df_1h['high'].iloc[i]
                 low = df_1h['low'].iloc[i]
                 close = df_1h['close'].iloc[i]
-                ax1.plot([df_1h['timestamp'].iloc[i], df_1h['timestamp'].iloc[i]], [low, high], 
+                ax1.plot([df_1h['timestamp'].iloc[i], df_1h['timestamp'].iloc[i]], [low, high],
                         color=colors[i], linewidth=1, alpha=0.8)
 
             ax1.plot(df_1h['timestamp'], df_1h['close'], color='#00ff88', linewidth=2, label='Price')
@@ -574,7 +574,7 @@ class PerfectSignalBot:
             # Signal arrow
             latest_time = df_1h['timestamp'].iloc[-1]
             if action in ['BUY', 'LONG']:
-                ax1.annotate('🚀 BUY', xy=(latest_time, current_price), 
+                ax1.annotate('🚀 BUY', xy=(latest_time, current_price),
                            xytext=(latest_time, current_price * 1.03),
                            arrowprops=dict(arrowstyle='->', color='#00ff88', lw=3),
                            fontsize=14, color='#00ff88', weight='bold')
@@ -588,7 +588,7 @@ class PerfectSignalBot:
             strategy = signal_data.get('primary_strategy', 'Advanced')
 
             ax1.set_title(f'{symbol} - 💎 PREMIUM SIGNAL | {strategy.title()} Strategy\n'
-                         f'Strength: {strength:.1f}% | R:R = {signal_data.get("risk_reward_ratio", 0):.2f} | Signal #{self.signal_counter}', 
+                         f'Strength: {strength:.1f}% | R:R = {signal_data.get("risk_reward_ratio", 0):.2f} | Signal #{self.signal_counter}',
                          color='#00ff88', fontsize=16, weight='bold')
             ax1.legend(loc='upper left', facecolor='#1a1a1a', edgecolor='#00ff88', labelcolor='white')
             ax1.tick_params(colors='white')
@@ -597,7 +597,7 @@ class PerfectSignalBot:
             # Volume chart
             ax2 = fig.add_subplot(gs[1, :])
             ax2.set_facecolor('#0a0a0a')
-            volume_colors = ['#00ff88' if close >= open_price else '#ff4444' 
+            volume_colors = ['#00ff88' if close >= open_price else '#ff4444'
                            for close, open_price in zip(df_1h['close'], df_1h['open'])]
             ax2.bar(df_1h['timestamp'], df_1h['volume'], color=volume_colors, alpha=0.7)
             ax2.set_title('Volume', color='white', fontsize=12)
@@ -648,7 +648,7 @@ class PerfectSignalBot:
                 plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, color='white')
 
             # Add watermark
-            fig.text(0.99, 0.01, '@SignalTactics - Premium Signals', ha='right', va='bottom', 
+            fig.text(0.99, 0.01, '@SignalTactics - Premium Signals', ha='right', va='bottom',
                     color='#555555', fontsize=10, style='italic')
 
             plt.tight_layout()
@@ -674,7 +674,7 @@ class PerfectSignalBot:
             # Multiple profitable strategies to analyze
             profitable_strategies = [
                 'trend_momentum_breakout',
-                'multi_timeframe_confluence', 
+                'multi_timeframe_confluence',
                 'volume_price_action',
                 'support_resistance_bounce',
                 'bollinger_squeeze_breakout'
@@ -701,7 +701,7 @@ class PerfectSignalBot:
 
                     # Generate profitable signal using best strategy
                     signal = await self._generate_best_profitable_signal(symbol, current_price, market_data_1h, market_data_4h)
-                    
+
                     if signal and signal.get('profit_potential', 0) > 3.0:  # Minimum 3% profit potential
                         best_signals.append(signal)
 
@@ -713,7 +713,7 @@ class PerfectSignalBot:
                 # Sort by profit potential and strength
                 best_signals.sort(key=lambda x: (x.get('profit_potential', 0) * x.get('strength', 0)), reverse=True)
                 best_signal = best_signals[0]
-                
+
                 self.logger.info(f"🎯 Most profitable signal found: {best_signal.get('symbol')} {best_signal.get('action')} "
                                 f"(Strength: {best_signal.get('strength', 0):.1f}%, Profit: {best_signal.get('profit_potential', 0):.1f}%)")
                 return best_signal
@@ -740,16 +740,16 @@ class PerfectSignalBot:
 
             # Strategy 1: Trend Momentum Breakout
             trend_signal = await self._analyze_trend_momentum(df_1h, df_4h, symbol, current_price)
-            
+
             # Strategy 2: Multi-timeframe Confluence
             confluence_signal = await self._analyze_confluence(df_1h, df_4h, symbol, current_price)
-            
+
             # Strategy 3: Volume Price Action
             volume_signal = await self._analyze_volume_action(df_1h, df_4h, symbol, current_price)
 
             # Choose the most profitable strategy
             signals = [s for s in [trend_signal, confluence_signal, volume_signal] if s and s.get('strength', 0) > 70]
-            
+
             if signals:
                 best = max(signals, key=lambda x: x.get('profit_potential', 0))
                 return best
@@ -788,7 +788,7 @@ class PerfectSignalBot:
             volume_ratio = current_volume / avg_volume.iloc[-1] if avg_volume.iloc[-1] > 0 else 1
 
             # Bullish momentum conditions
-            if (ema_12.iloc[-1] > ema_26.iloc[-1] and 
+            if (ema_12.iloc[-1] > ema_26.iloc[-1] and
                 macd.iloc[-1] > signal_line.iloc[-1] and
                 rsi.iloc[-1] > 45 and rsi.iloc[-1] < 70 and
                 volume_ratio > 1.2):
@@ -796,7 +796,7 @@ class PerfectSignalBot:
                 # Calculate targets
                 resistance = df_4h['high'].tail(20).max()
                 support = df_4h['low'].tail(20).min()
-                
+
                 entry_price = current_price
                 stop_loss = support * 0.995  # Just below support
                 take_profit = resistance * 1.02  # Above resistance
@@ -805,9 +805,9 @@ class PerfectSignalBot:
                 risk_potential = ((entry_price - stop_loss) / entry_price) * 100
                 risk_reward = profit_potential / risk_potential if risk_potential > 0 else 0
 
-                if profit_potential > 3.0 and risk_reward > 2.0:
+                if profit_potential > 2.0 and risk_reward > 1.5:
                     strength = min(85 + (volume_ratio - 1) * 5, 98)
-                    
+
                     return {
                         'symbol': symbol,
                         'action': 'BUY',
@@ -825,14 +825,14 @@ class PerfectSignalBot:
                     }
 
             # Bearish momentum conditions
-            elif (ema_12.iloc[-1] < ema_26.iloc[-1] and 
+            elif (ema_12.iloc[-1] < ema_26.iloc[-1] and
                   macd.iloc[-1] < signal_line.iloc[-1] and
                   rsi.iloc[-1] < 55 and rsi.iloc[-1] > 30 and
                   volume_ratio > 1.2):
 
                 resistance = df_4h['high'].tail(20).max()
                 support = df_4h['low'].tail(20).min()
-                
+
                 entry_price = current_price
                 stop_loss = resistance * 1.005  # Just above resistance
                 take_profit = support * 0.98  # Below support
@@ -841,9 +841,9 @@ class PerfectSignalBot:
                 risk_potential = ((stop_loss - entry_price) / entry_price) * 100
                 risk_reward = profit_potential / risk_potential if risk_potential > 0 else 0
 
-                if profit_potential > 3.0 and risk_reward > 2.0:
+                if profit_potential > 2.0 and risk_reward > 1.5:
                     strength = min(85 + (volume_ratio - 1) * 5, 98)
-                    
+
                     return {
                         'symbol': symbol,
                         'action': 'SELL',
@@ -911,7 +911,7 @@ class PerfectSignalBot:
             if bullish_signals >= 3 and bearish_signals <= 1:
                 support = df_4h['low'].tail(20).min()
                 resistance = df_4h['high'].tail(20).max()
-                
+
                 entry_price = current_price
                 stop_loss = support * 0.995
                 take_profit = current_price + (current_price - stop_loss) * 3  # 3:1 R:R
@@ -919,7 +919,7 @@ class PerfectSignalBot:
                 profit_potential = ((take_profit - entry_price) / entry_price) * 100
                 strength = min(80 + bullish_signals * 5, 98)
 
-                if profit_potential > 4.0:
+                if profit_potential > 2.5:
                     return {
                         'symbol': symbol,
                         'action': 'BUY',
@@ -940,7 +940,7 @@ class PerfectSignalBot:
             elif bearish_signals >= 3 and bullish_signals <= 1:
                 resistance = df_4h['high'].tail(20).max()
                 support = df_4h['low'].tail(20).min()
-                
+
                 entry_price = current_price
                 stop_loss = resistance * 1.005
                 take_profit = current_price - (stop_loss - current_price) * 3  # 3:1 R:R
@@ -948,7 +948,7 @@ class PerfectSignalBot:
                 profit_potential = ((entry_price - take_profit) / entry_price) * 100
                 strength = min(80 + bearish_signals * 5, 98)
 
-                if profit_potential > 4.0:
+                if profit_potential > 2.5:
                     return {
                         'symbol': symbol,
                         'action': 'SELL',
@@ -985,13 +985,13 @@ class PerfectSignalBot:
             # Price action analysis
             recent_highs = df_4h['high'].tail(10)
             recent_lows = df_4h['low'].tail(10)
-            
+
             # Check for volume breakout
             if volume_ratio > 2.0:  # Exceptional volume
                 # Bullish volume breakout
-                if (current_price > recent_highs.quantile(0.8) and 
+                if (current_price > recent_highs.quantile(0.8) and
                     df_4h['close'].iloc[-1] > df_4h['open'].iloc[-1]):
-                    
+
                     entry_price = current_price
                     stop_loss = recent_lows.min() * 0.995
                     take_profit = current_price + (current_price - stop_loss) * 2.5
@@ -999,7 +999,7 @@ class PerfectSignalBot:
                     profit_potential = ((take_profit - entry_price) / entry_price) * 100
                     strength = min(75 + (volume_ratio - 2) * 10, 98)
 
-                    if profit_potential > 3.5:
+                    if profit_potential > 2.0:
                         return {
                             'symbol': symbol,
                             'action': 'BUY',
@@ -1017,9 +1017,9 @@ class PerfectSignalBot:
                         }
 
                 # Bearish volume breakdown
-                elif (current_price < recent_lows.quantile(0.2) and 
+                elif (current_price < recent_lows.quantile(0.2) and
                       df_4h['close'].iloc[-1] < df_4h['open'].iloc[-1]):
-                    
+
                     entry_price = current_price
                     stop_loss = recent_highs.max() * 1.005
                     take_profit = current_price - (stop_loss - current_price) * 2.5
@@ -1027,7 +1027,7 @@ class PerfectSignalBot:
                     profit_potential = ((entry_price - take_profit) / entry_price) * 100
                     strength = min(75 + (volume_ratio - 2) * 10, 98)
 
-                    if profit_potential > 3.5:
+                    if profit_potential > 2.0:
                         return {
                             'symbol': symbol,
                             'action': 'SELL',
@@ -1074,12 +1074,12 @@ class PerfectSignalBot:
 
             # Method 1: Try original channel
             self.logger.info(f"🔄 Sending MOST PROFITABLE signal #{self.signal_counter} to {self.target_channel}")
-            
+
             if chart_base64:
                 success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
             else:
                 success = await self.send_message(self.target_channel, formatted_signal)
-            
+
             if success:
                 delivery_success = True
                 delivery_methods.append("@SignalTactics")
@@ -1092,7 +1092,7 @@ class PerfectSignalBot:
                     success = await self.send_photo(alt_channel, chart_base64, formatted_signal)
                 else:
                     success = await self.send_message(alt_channel, formatted_signal)
-                
+
                 if success:
                     delivery_success = True
                     delivery_methods.append("SignalTactics")
@@ -1106,7 +1106,7 @@ class PerfectSignalBot:
                         success = await self.send_photo(channel_id, chart_base64, formatted_signal)
                     else:
                         success = await self.send_message(channel_id, formatted_signal)
-                    
+
                     if success:
                         delivery_success = True
                         delivery_methods.append(f"Channel-{channel_id}")
@@ -1129,17 +1129,17 @@ class PerfectSignalBot:
 📈 **Best Strategy Used:** `{signal.get('primary_strategy', 'Advanced').replace('_', ' ').title()}`
 
 📢 **Delivery Status:** {'✅ Channel Success' if delivery_success else '⚠️ Channel Failed - Sent to Bot Only'}
-🤖 **Delivered to:** {', '.join(delivery_methods) if delivery_methods else 'Bot Only'}
+🤖 **Delivered to:** {', '.join(delivery_methods)}
                 """
-                
+
                 bot_success = await self.send_message(self.admin_chat_id, bot_notification)
                 if bot_success:
                     delivery_success = True
                     delivery_methods.append("TradeTactics Bot")
-                    
+
                     # Send chart to bot too
                     if chart_base64:
-                        await self.send_photo(self.admin_chat_id, chart_base64, 
+                        await self.send_photo(self.admin_chat_id, chart_base64,
                                             f"📊 **Chart for Signal #{self.signal_counter}**\n\n{signal.get('symbol')} {signal.get('action')}")
 
             # Log results
@@ -1147,7 +1147,7 @@ class PerfectSignalBot:
                 self.logger.info(f"✅ MOST PROFITABLE SIGNAL #{self.signal_counter} DELIVERED: {signal.get('symbol')} {signal.get('action')} "
                                f"(Profit: {signal.get('profit_potential', 0):.1f}%, Strength: {signal.get('strength', 0):.1f}%)")
                 self.logger.info(f"📤 Delivered to: {', '.join(delivery_methods)}")
-                
+
                 # Send success confirmation
                 if self.admin_chat_id:
                     success_msg = f"""
@@ -1285,6 +1285,9 @@ class PerfectSignalBot:
             session_token = self.session_manager.create_session(user_id)
             self.active_sessions[user_id] = session_token
 
+            # Immediately trigger profitable signal generation
+            asyncio.create_task(self.immediate_signal_trigger())
+
             welcome = f"""
 🚀 **Perfect Signal Bot - @SignalTactics**
 
@@ -1357,7 +1360,7 @@ Send any trading signal message and it will be automatically parsed, formatted, 
 
             self.signal_counter += 1
             formatted = self.format_professional_signal(test_signal)
-            
+
             # Use the channel link for testing send
             test_success = await self.send_message(self.target_channel, formatted)
 
@@ -1415,11 +1418,19 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                 self.auto_profitable_task.cancel()
                 await self.send_message(chat_id, "🛑 **Auto-Profitable Mode Stopped**\n\nBot returns to manual mode.")
 
+    async def immediate_signal_trigger(self):
+        """Trigger the profitable signal generation once on startup"""
+        self.logger.info("🚀 IMMEDIATELY TRIGGERING PROFITABLE SIGNAL SCAN...")
+        # Wait a bit to ensure Binance connection is established
+        await asyncio.sleep(10)
+        await self.generate_profitable_signal()
+
+
     async def auto_profitable_loop(self):
         """Continuously scan for and send the most profitable signals"""
         scan_intervals = [300, 600, 900]  # 5, 10, 15 minutes
         current_interval_index = 0
-        
+
         while self.running:
             try:
                 # Dynamic interval based on market conditions
@@ -1427,17 +1438,17 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                 await asyncio.sleep(current_interval)
 
                 self.logger.info("🔍 AUTO-PROFITABLE SCAN TRIGGERED - Searching for BEST opportunities")
-                
+
                 # Generate the most profitable signal
                 success = await self.generate_profitable_signal()
 
                 if success:
                     # Success - use longer interval for next scan
                     current_interval_index = min(len(scan_intervals) - 1, current_interval_index + 1)
-                    
+
                     if self.admin_chat_id:
                         next_scan_minutes = scan_intervals[current_interval_index] // 60
-                        await self.send_message(self.admin_chat_id, 
+                        await self.send_message(self.admin_chat_id,
                                               f"🎯 **AUTO-PROFITABLE SIGNAL DELIVERED**\n\n"
                                               f"✅ Most profitable opportunity found and sent!\n"
                                               f"⏰ Next scan in {next_scan_minutes} minutes\n"
@@ -1445,7 +1456,7 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                 else:
                     # No profitable signal found - use shorter interval
                     current_interval_index = max(0, current_interval_index - 1)
-                    
+
                     if self.admin_chat_id and self.signal_counter % 3 == 0:  # Every 3rd failed attempt
                         next_scan_minutes = scan_intervals[current_interval_index] // 60
                         await self.send_message(self.admin_chat_id,
@@ -1472,32 +1483,32 @@ Send any trading signal message and it will be automatically parsed, formatted, 
         while self.running:
             try:
                 self.logger.info("🚀 CONTINUOUS PROFIT SCANNER ACTIVE")
-                
+
                 # Scan every 2 minutes for very high-profit opportunities (>5%)
                 for _ in range(30):  # 30 scans over 1 hour
                     if not self.running:
                         break
-                        
+
                     try:
                         # Quick scan for exceptional opportunities
                         quick_signal = await self.find_most_profitable_signal()
-                        
-                        if (quick_signal and 
-                            quick_signal.get('profit_potential', 0) > 5.0 and 
+
+                        if (quick_signal and
+                            quick_signal.get('profit_potential', 0) > 5.0 and
                             quick_signal.get('strength', 0) > 80):
-                            
+
                             self.logger.info(f"🎯 EXCEPTIONAL OPPORTUNITY DETECTED: {quick_signal.get('symbol')} "
                                            f"({quick_signal.get('profit_potential', 0):.1f}% profit potential)")
-                            
+
                             # Send immediately
                             await self.generate_profitable_signal()
-                            
+
                             # Wait longer after exceptional signal
                             await asyncio.sleep(600)  # 10 minutes
                             break
-                        
+
                         await asyncio.sleep(120)  # 2 minutes between quick scans
-                        
+
                     except Exception as e:
                         self.logger.error(f"Quick scan error: {e}")
                         await asyncio.sleep(60)
@@ -1554,7 +1565,7 @@ Send any trading signal message and it will be automatically parsed, formatted, 
 
         # Start heartbeat task
         heartbeat_task = asyncio.create_task(self.heartbeat())
-        
+
         # Auto-start profitable signal generation
         self.logger.info("🚀 AUTO-STARTING PROFITABLE SIGNAL GENERATION")
         auto_profitable_task = asyncio.create_task(self.auto_profitable_loop())

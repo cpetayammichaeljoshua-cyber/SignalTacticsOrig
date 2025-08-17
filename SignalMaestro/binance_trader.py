@@ -110,21 +110,43 @@ class BinanceTrader:
         """Get current market price for symbol"""
         try:
             ticker = await self.exchange.fetch_ticker(symbol)
-            return float(ticker['last'])
+            price = ticker.get('last') or ticker.get('close') or ticker.get('price')
+            
+            if price is None:
+                self.logger.warning(f"No price data available for {symbol}")
+                return 0.0
+                
+            return float(price)
             
         except Exception as e:
             self.logger.error(f"Error getting price for {symbol}: {e}")
-            raise
+            return 0.0
     
     async def get_market_data(self, symbol: str, timeframe: str = '1h', limit: int = 100) -> List[List]:
         """Get OHLCV market data"""
         try:
             ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            return ohlcv
+            
+            # Validate the data
+            if not ohlcv or len(ohlcv) == 0:
+                self.logger.warning(f"No OHLCV data returned for {symbol} {timeframe}")
+                return []
+                
+            # Check if data contains valid values
+            valid_data = []
+            for candle in ohlcv:
+                if len(candle) >= 6 and all(x is not None for x in candle[:6]):
+                    valid_data.append(candle)
+            
+            if len(valid_data) == 0:
+                self.logger.warning(f"No valid OHLCV data for {symbol} {timeframe}")
+                return []
+                
+            return valid_data
             
         except Exception as e:
-            self.logger.error(f"Error getting market data for {symbol}: {e}")
-            raise
+            self.logger.error(f"Error getting market data for {symbol} {timeframe}: {e}")
+            return []
     
     async def get_technical_analysis(self, symbol: str) -> Dict[str, Any]:
         """Get technical analysis for symbol"""
@@ -134,24 +156,37 @@ class BinanceTrader:
             ohlcv_4h = await self.get_market_data(symbol, '4h', 100)
             ohlcv_1d = await self.get_market_data(symbol, '1d', 50)
             
-            # Get 24h price change
-            ticker = await self.exchange.fetch_ticker(symbol)
-            price_change_24h = ticker['percentage']
+            # Check if we have valid market data
+            if not ohlcv_1h and not ohlcv_4h and not ohlcv_1d:
+                self.logger.warning(f"No market data available for {symbol}")
+                return {'symbol': symbol, 'error': 'No market data available'}
+            
+            # Get 24h price change with fallback
+            try:
+                ticker = await self.exchange.fetch_ticker(symbol)
+                price_change_24h = ticker.get('percentage', 0)
+                volume = ticker.get('baseVolume', 0)
+            except Exception as ticker_error:
+                self.logger.warning(f"Error getting ticker data for {symbol}: {ticker_error}")
+                price_change_24h = 0
+                volume = 0
             
             # Calculate technical indicators
             analysis = await self.technical_analysis.analyze(
                 ohlcv_1h, ohlcv_4h, ohlcv_1d
             )
             
-            analysis['price_change_24h'] = price_change_24h
-            analysis['volume'] = ticker['baseVolume']
-            analysis['symbol'] = symbol
+            # Only add these if analysis was successful
+            if 'error' not in analysis:
+                analysis['price_change_24h'] = price_change_24h
+                analysis['volume'] = volume
+                analysis['symbol'] = symbol
             
             return analysis
             
         except Exception as e:
             self.logger.error(f"Error getting technical analysis for {symbol}: {e}")
-            return {}
+            return {'symbol': symbol, 'error': str(e)}
     
     async def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get open futures positions (if using futures)"""

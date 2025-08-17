@@ -120,17 +120,27 @@ class AdvancedTradingStrategy:
 
     async def analyze_symbol(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
-        Comprehensive analysis of a single symbol using multiple strategies
+        Analyze a single symbol and return signal if found
         """
         try:
-            # Get market data for all timeframes
-            market_data = {}
-            for timeframe in self.timeframes:
-                ohlcv = await self.binance_trader.get_market_data(symbol, timeframe, 200)
-                market_data[timeframe] = ohlcv
+            self.logger.info(f"Analyzing {symbol}...")
 
-            # Get current price and basic info
+            # Get current price first
             current_price = await self.binance_trader.get_current_price(symbol)
+            if current_price <= 0:
+                self.logger.warning(f"Invalid price for {symbol}: {current_price}")
+                return None
+
+            # Get market data for multiple timeframes
+            market_data = {}
+            market_data['1h'] = await self.binance_trader.get_market_data(symbol, '1h', 100)
+            market_data['4h'] = await self.binance_trader.get_market_data(symbol, '4h', 50)
+            market_data['1d'] = await self.binance_trader.get_market_data(symbol, '1d', 30)
+
+            # Check if we have sufficient data
+            if not any(len(data) > 20 for data in market_data.values()):
+                self.logger.warning(f"Insufficient market data for {symbol}")
+                return None
 
             # Strategy 1: Multi-timeframe trend alignment
             trend_signal = await self._trend_alignment_strategy(market_data, symbol)
@@ -316,7 +326,10 @@ class AdvancedTradingStrategy:
             current_price = df['close'].iloc[-1]
             current_volume = df['volume'].iloc[-1]
             avg_volume = df['volume'].rolling(20).mean().iloc[-1]
-            volume_ratio = current_volume / avg_volume
+            volume_ratio = current_price / avg_volume
+            #Fixing Division by zero error for avg_volume
+            if avg_volume == 0:
+                volume_ratio = 1.0 # Default to 1 if avg_volume is zero
 
             # Check for breakout
             if resistance_levels:
@@ -384,12 +397,14 @@ class AdvancedTradingStrategy:
                 nearest_support = min(support_levels, key=lambda x: abs(x - current_price) if x < current_price else float('inf'))
                 distance_to_support = abs(current_price - nearest_support) / current_price
 
-                if distance_to_support < 0.02:  # Within 2% of support
+                if current_price > 0 and distance_to_support < 0.02:  # Within 2% of support
                     # Check if RSI is oversold
                     delta = df['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                     rs = gain / loss
+                    #Fixing division by zero for rs
+                    rs = rs.fillna(0)
                     rsi = 100 - (100 / (1 + rs))
 
                     if rsi.iloc[-1] < 40:
@@ -408,12 +423,14 @@ class AdvancedTradingStrategy:
                 nearest_resistance = min(resistance_levels, key=lambda x: abs(x - current_price) if x > current_price else float('inf'))
                 distance_to_resistance = abs(current_price - nearest_resistance) / current_price
 
-                if distance_to_resistance < 0.02:  # Within 2% of resistance
+                if current_price > 0 and distance_to_resistance < 0.02:  # Within 2% of resistance
                     # Check if RSI is overbought
                     delta = df['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                     rs = gain / loss
+                    #Fixing division by zero for rs
+                    rs = rs.fillna(0)
                     rsi = 100 - (100 / (1 + rs))
 
                     if rsi.iloc[-1] > 60:
@@ -488,7 +505,7 @@ class AdvancedTradingStrategy:
                 'reason': strongest_signal.get('reason', 'Combined signal analysis'),
                 'confidence': min(combined_strength, 100),
                 'timeframe': '4h',  # Primary timeframe
-                'risk_reward_ratio': abs(take_profit - current_price) / abs(current_price - stop_loss) if stop_loss else 0
+                'risk_reward_ratio': abs(take_profit - current_price) / abs(current_price - stop_loss) if stop_loss and current_price and current_price != stop_loss else 0
             }
 
             return final_signal
@@ -529,6 +546,9 @@ class AdvancedTradingStrategy:
             low_close = np.abs(df['low'] - df['close'].shift())
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
             atr = true_range.rolling(14).mean().iloc[-1]
+            #Fixing division by zero for atr
+            if atr == 0:
+                atr = current_price * 0.01 # Use 1% of current price as ATR
 
             # Calculate support/resistance levels
             recent_highs = df['high'].tail(20).max()

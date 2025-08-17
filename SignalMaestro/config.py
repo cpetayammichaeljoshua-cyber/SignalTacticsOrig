@@ -20,8 +20,8 @@ class Config:
         self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
         self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
         
-        # Use testnet by default if no valid API keys
-        self.BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+        # Use mainnet by default for live trading
+        self.BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
 
         # Session Secret
         self.SESSION_SECRET = os.getenv(

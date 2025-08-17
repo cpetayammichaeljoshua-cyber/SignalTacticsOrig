@@ -313,9 +313,11 @@ class PerfectSignalBot:
                             error_msg = response_data.get('description', 'Unknown error')
                             self.logger.error(f"❌ Send message failed (attempt {attempt + 1}): {response.status} - {error_msg}")
                             
-                            # Handle specific errors
-                            if "chat not found" in error_msg.lower():
-                                self.logger.error(f"❌ Chat {chat_id} not found - check channel username")
+                            # Handle specific errors - try admin chat if channel fails
+                            if "chat not found" in error_msg.lower() and chat_id.startswith('@'):
+                                self.logger.warning(f"⚠️ Channel {chat_id} not accessible, sending to admin instead")
+                                if self.admin_chat_id and chat_id != self.admin_chat_id:
+                                    return await self.send_message(self.admin_chat_id, f"📢 **Signal for {chat_id}:**\n\n{text}")
                                 return False
                             elif "bot was blocked" in error_msg.lower():
                                 self.logger.error(f"❌ Bot was blocked by user {chat_id}")
@@ -427,6 +429,322 @@ class PerfectSignalBot:
         
         return formatted_signal.strip()
 
+    def format_advanced_signal(self, signal_data: Dict[str, Any]) -> str:
+        """Format advanced profitable signal with detailed information"""
+        
+        # Extract signal details
+        symbol = signal_data.get('symbol', 'N/A')
+        action = signal_data.get('action', '').upper()
+        price = signal_data.get('price', 0)
+        stop_loss = signal_data.get('stop_loss', 0)
+        take_profit = signal_data.get('take_profit', 0)
+        strength = signal_data.get('strength', 0)
+        confidence = signal_data.get('confidence', strength)
+        strategy = signal_data.get('primary_strategy', 'Advanced Analysis')
+        reason = signal_data.get('reason', 'Multi-indicator confluence')
+        risk_reward = signal_data.get('risk_reward_ratio', 0)
+        
+        # Direction styling
+        if action in ['BUY', 'LONG']:
+            emoji = "🟢"
+            action_text = "💎 PREMIUM BUY SIGNAL"
+            direction_emoji = "🚀"
+            color_bar = "🟢🟢🟢🟢🟢"
+        else:
+            emoji = "🔴"
+            action_text = "💎 PREMIUM SELL SIGNAL"
+            direction_emoji = "📉"
+            color_bar = "🔴🔴🔴🔴🔴"
+
+        # Profit potential
+        if take_profit and price:
+            profit_percent = abs((take_profit - price) / price * 100)
+        else:
+            profit_percent = 0
+        
+        # Risk percent
+        if stop_loss and price:
+            risk_percent = abs((price - stop_loss) / price * 100)
+        else:
+            risk_percent = 0
+
+        # Build advanced message
+        timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S UTC')
+        
+        formatted_signal = f"""
+{color_bar}
+{emoji} **{action_text}** {direction_emoji}
+
+🏷️ **Pair:** `{symbol}`
+💰 **Entry:** `${price:.4f}`
+🛑 **Stop Loss:** `${stop_loss:.4f}` (-{risk_percent:.1f}%)
+🎯 **Take Profit:** `${take_profit:.4f}` (+{profit_percent:.1f}%)
+
+📊 **ANALYSIS:**
+💪 **Signal Strength:** `{strength:.1f}%`
+🎯 **Confidence:** `{confidence:.1f}%`
+⚖️ **Risk/Reward:** `1:{risk_reward:.2f}`
+🧠 **Strategy:** `{strategy.title()}`
+📈 **Reason:** `{reason}`
+
+💰 **PROFIT POTENTIAL:** `+{profit_percent:.1f}%`
+🛡️ **Max Risk:** `-{risk_percent:.1f}%`
+
+⏰ **Generated:** `{timestamp}`
+🔢 **Signal #:** `{self.signal_counter}`
+
+{color_bar}
+*🤖 AI-Powered Signal by Perfect Bot*
+*📢 @SignalTactics - Premium Signals*
+*💎 Most Profitable Strategy Active*
+        """
+        
+        return formatted_signal.strip()
+
+    async def generate_advanced_chart(self, signal_data: Dict[str, Any]) -> Optional[str]:
+        """Generate advanced chart with technical indicators for profitable signals"""
+        if not CHART_AVAILABLE:
+            return None
+            
+        try:
+            symbol = signal_data.get('symbol', 'BTCUSDT')
+            
+            # Initialize Binance trader if not done
+            if not self.binance_trader.exchange:
+                await self.binance_trader.initialize()
+            
+            # Get multiple timeframe data
+            ohlcv_1h = await self.binance_trader.get_market_data(symbol, '1h', 168)  # 1 week
+            ohlcv_4h = await self.binance_trader.get_market_data(symbol, '4h', 168)  # 4 weeks
+            
+            if not ohlcv_1h or not ohlcv_4h:
+                return None
+            
+            # Convert to DataFrame
+            df_1h = pd.DataFrame(ohlcv_1h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df_1h['timestamp'] = pd.to_datetime(df_1h['timestamp'], unit='ms')
+            
+            df_4h = pd.DataFrame(ohlcv_4h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df_4h['timestamp'] = pd.to_datetime(df_4h['timestamp'], unit='ms')
+            
+            # Create advanced figure
+            fig = plt.figure(figsize=(16, 12), facecolor='#0a0a0a')
+            gs = fig.add_gridspec(4, 2, height_ratios=[3, 1, 1, 1], hspace=0.3, wspace=0.2)
+            
+            # Main price chart (1h)
+            ax1 = fig.add_subplot(gs[0, :])
+            ax1.set_facecolor('#0a0a0a')
+            
+            # Plot candlestick-style price
+            colors = ['#00ff88' if close >= open_price else '#ff4444' 
+                     for close, open_price in zip(df_1h['close'], df_1h['open'])]
+            
+            for i in range(len(df_1h)):
+                high = df_1h['high'].iloc[i]
+                low = df_1h['low'].iloc[i]
+                close = df_1h['close'].iloc[i]
+                ax1.plot([df_1h['timestamp'].iloc[i], df_1h['timestamp'].iloc[i]], [low, high], 
+                        color=colors[i], linewidth=1, alpha=0.8)
+            
+            ax1.plot(df_1h['timestamp'], df_1h['close'], color='#00ff88', linewidth=2, label='Price')
+            
+            # Add moving averages
+            if len(df_1h) >= 50:
+                df_1h['sma_20'] = df_1h['close'].rolling(20).mean()
+                df_1h['sma_50'] = df_1h['close'].rolling(50).mean()
+                ax1.plot(df_1h['timestamp'], df_1h['sma_20'], color='#ff8800', alpha=0.8, linewidth=1.5, label='SMA 20')
+                ax1.plot(df_1h['timestamp'], df_1h['sma_50'], color='#8800ff', alpha=0.8, linewidth=1.5, label='SMA 50')
+            
+            # Signal markers
+            current_price = float(signal_data.get('price', df_1h['close'].iloc[-1]))
+            stop_loss = signal_data.get('stop_loss')
+            take_profit = signal_data.get('take_profit')
+            action = signal_data.get('action', '').upper()
+            
+            # Entry point
+            ax1.axhline(y=current_price, color='#ffff00', linestyle='--', linewidth=3, label=f'Entry: ${current_price:.4f}')
+            
+            # Stop loss and take profit
+            if stop_loss:
+                ax1.axhline(y=stop_loss, color='#ff0000', linestyle='--', linewidth=2, label=f'Stop Loss: ${stop_loss:.4f}')
+            if take_profit:
+                ax1.axhline(y=take_profit, color='#00ff00', linestyle='--', linewidth=2, label=f'Take Profit: ${take_profit:.4f}')
+            
+            # Signal arrow
+            latest_time = df_1h['timestamp'].iloc[-1]
+            if action in ['BUY', 'LONG']:
+                ax1.annotate('🚀 BUY', xy=(latest_time, current_price), 
+                           xytext=(latest_time, current_price * 1.03),
+                           arrowprops=dict(arrowstyle='->', color='#00ff88', lw=3),
+                           fontsize=14, color='#00ff88', weight='bold')
+            else:
+                ax1.annotate('📉 SELL', xy=(latest_time, current_price),
+                           xytext=(latest_time, current_price * 0.97),
+                           arrowprops=dict(arrowstyle='->', color='#ff4444', lw=3),
+                           fontsize=14, color='#ff4444', weight='bold')
+            
+            strength = signal_data.get('strength', 85)
+            strategy = signal_data.get('primary_strategy', 'Advanced')
+            
+            ax1.set_title(f'{symbol} - 💎 PREMIUM SIGNAL | {strategy.title()} Strategy\n'
+                         f'Strength: {strength:.1f}% | R:R = {signal_data.get("risk_reward_ratio", 0):.2f} | Signal #{self.signal_counter}', 
+                         color='#00ff88', fontsize=16, weight='bold')
+            ax1.legend(loc='upper left', facecolor='#1a1a1a', edgecolor='#00ff88', labelcolor='white')
+            ax1.tick_params(colors='white')
+            ax1.grid(True, alpha=0.2, color='#333333')
+            
+            # Volume chart
+            ax2 = fig.add_subplot(gs[1, :])
+            ax2.set_facecolor('#0a0a0a')
+            volume_colors = ['#00ff88' if close >= open_price else '#ff4444' 
+                           for close, open_price in zip(df_1h['close'], df_1h['open'])]
+            ax2.bar(df_1h['timestamp'], df_1h['volume'], color=volume_colors, alpha=0.7)
+            ax2.set_title('Volume', color='white', fontsize=12)
+            ax2.tick_params(colors='white')
+            ax2.grid(True, alpha=0.2, color='#333333')
+            
+            # RSI chart
+            ax3 = fig.add_subplot(gs[2, :])
+            ax3.set_facecolor('#0a0a0a')
+            if len(df_1h) >= 14:
+                delta = df_1h['close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+                
+                ax3.plot(df_1h['timestamp'], rsi, color='#ffaa00', linewidth=2)
+                ax3.axhline(y=70, color='#ff4444', linestyle='--', alpha=0.7)
+                ax3.axhline(y=30, color='#00ff88', linestyle='--', alpha=0.7)
+                ax3.fill_between(df_1h['timestamp'], 30, 70, alpha=0.1, color='#888888')
+            ax3.set_title('RSI (14)', color='white', fontsize=12)
+            ax3.set_ylim(0, 100)
+            ax3.tick_params(colors='white')
+            ax3.grid(True, alpha=0.2, color='#333333')
+            
+            # MACD chart
+            ax4 = fig.add_subplot(gs[3, :])
+            ax4.set_facecolor('#0a0a0a')
+            if len(df_1h) >= 26:
+                ema_12 = df_1h['close'].ewm(span=12).mean()
+                ema_26 = df_1h['close'].ewm(span=26).mean()
+                macd = ema_12 - ema_26
+                signal_line = macd.ewm(span=9).mean()
+                histogram = macd - signal_line
+                
+                ax4.plot(df_1h['timestamp'], macd, color='#00aaff', linewidth=2, label='MACD')
+                ax4.plot(df_1h['timestamp'], signal_line, color='#ff8800', linewidth=2, label='Signal')
+                ax4.bar(df_1h['timestamp'], histogram, color=['#00ff88' if h > 0 else '#ff4444' for h in histogram], alpha=0.6)
+                ax4.legend(loc='upper left', facecolor='#1a1a1a', labelcolor='white')
+            ax4.set_title('MACD', color='white', fontsize=12)
+            ax4.tick_params(colors='white')
+            ax4.grid(True, alpha=0.2, color='#333333')
+            
+            # Format all x-axes
+            for ax in [ax1, ax2, ax3, ax4]:
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+                ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, color='white')
+            
+            # Add watermark
+            fig.text(0.99, 0.01, '@SignalTactics - Premium Signals', ha='right', va='bottom', 
+                    color='#555555', fontsize=10, style='italic')
+            
+            plt.tight_layout()
+            
+            # Save to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', facecolor='#0a0a0a', dpi=150, bbox_inches='tight')
+            buffer.seek(0)
+            chart_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            plt.close(fig)
+            buffer.close()
+            
+            return chart_base64
+            
+        except Exception as e:
+            self.logger.error(f"Error generating advanced chart: {e}")
+            return None
+
+    async def find_most_profitable_signal(self) -> Optional[Dict[str, Any]]:
+        """Find the most profitable trading signal using advanced strategy"""
+        try:
+            from advanced_trading_strategy import AdvancedTradingStrategy
+            
+            # Initialize advanced strategy
+            advanced_strategy = AdvancedTradingStrategy(self.binance_trader)
+            
+            # Scan markets for high-probability signals
+            signals = await advanced_strategy.scan_markets()
+            
+            if signals:
+                # Return the highest strength signal
+                best_signal = max(signals, key=lambda x: x.get('strength', 0))
+                self.logger.info(f"🎯 Found most profitable signal: {best_signal.get('symbol')} {best_signal.get('action')} (Strength: {best_signal.get('strength', 0):.1f}%)")
+                return best_signal
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error finding profitable signal: {e}")
+            return None
+
+    async def generate_profitable_signal(self) -> bool:
+        """Generate and send the most profitable signal"""
+        try:
+            # Find the best signal
+            signal = await self.find_most_profitable_signal()
+            
+            if not signal:
+                self.logger.info("📊 No high-probability signals found at this time")
+                return False
+            
+            self.signal_counter += 1
+            
+            # Format professional signal with enhanced data
+            formatted_signal = self.format_advanced_signal(signal)
+            
+            # Generate advanced chart
+            chart_base64 = await self.generate_advanced_chart(signal)
+            
+            # Send to channel
+            success = False
+            self.logger.info(f"🔄 Sending most profitable signal #{self.signal_counter} to {self.target_channel}")
+            
+            if chart_base64:
+                success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
+            else:
+                success = await self.send_message(self.target_channel, formatted_signal)
+            
+            if success:
+                self.logger.info(f"✅ Most profitable signal #{self.signal_counter} sent: {signal.get('symbol')} {signal.get('action')}")
+                
+                # Send detailed confirmation to admin
+                if self.admin_chat_id:
+                    confirm_msg = f"""
+🎯 **Most Profitable Signal Sent!**
+
+📊 **Signal #{self.signal_counter}**
+🏷️ Symbol: `{signal.get('symbol')}`
+📈 Action: `{signal.get('action')}`
+💪 Strength: `{signal.get('strength', 0):.1f}%`
+🎯 Strategy: `{signal.get('primary_strategy', 'Advanced')}`
+📢 Channel: @SignalTactics
+📈 Chart: {'✅ Included' if chart_base64 else '❌ Failed'}
+⚖️ R:R Ratio: `{signal.get('risk_reward_ratio', 0):.2f}`
+                    """
+                    await self.send_message(self.admin_chat_id, confirm_msg)
+                
+                return True
+            else:
+                self.logger.error(f"❌ Failed to send profitable signal to {self.target_channel}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error generating profitable signal: {e}")
+            return False
+
     async def process_signal(self, message_text: str) -> bool:
         """Process and forward signal to channel"""
         try:
@@ -453,7 +771,7 @@ class PerfectSignalBot:
             if CHART_AVAILABLE and parsed_signal.get('symbol'):
                 chart_base64 = await self.generate_signal_chart(parsed_signal.get('symbol'), parsed_signal)
 
-            # ACTUAL SEND TO TARGET CHANNEL - This was missing!
+            # Send to target channel
             success = False
             
             self.logger.info(f"🔄 Attempting to send signal #{self.signal_counter} to {self.target_channel}")
@@ -576,6 +894,49 @@ Send any trading signal message and it will be automatically parsed, formatted, 
             await self.send_message(chat_id, "🔄 **Restarting Perfect Bot...**")
             self.error_count = 0
             await self.send_message(chat_id, "✅ **Perfect Bot Restarted Successfully**\n\nContinuing infinite operation...")
+            
+        elif text.startswith('/signal') or text.startswith('/profitable'):
+            await self.send_message(chat_id, "🔍 **Scanning for Most Profitable Signal...**\n\n⚡ Analyzing multiple strategies and timeframes...")
+            
+            # Generate the most profitable signal
+            success = await self.generate_profitable_signal()
+            
+            if success:
+                await self.send_message(chat_id, "✅ **Most Profitable Signal Generated & Sent!**\n\n📢 Check @SignalTactics for the premium signal with chart analysis.")
+            else:
+                await self.send_message(chat_id, "⚠️ **No High-Probability Signals Found**\n\nMarket conditions don't meet our profitable criteria right now. Bot continues monitoring...")
+                
+        elif text.startswith('/auto'):
+            # Start automatic profitable signal generation
+            await self.send_message(chat_id, "🚀 **Auto-Profitable Mode Activated!**\n\n⚡ Bot will now automatically find and send the most profitable signals every 15 minutes.")
+            
+            # Start the auto-profitable task
+            if not hasattr(self, 'auto_profitable_task') or self.auto_profitable_task.done():
+                self.auto_profitable_task = asyncio.create_task(self.auto_profitable_loop())
+                
+        elif text.startswith('/stop_auto'):
+            if hasattr(self, 'auto_profitable_task') and not self.auto_profitable_task.done():
+                self.auto_profitable_task.cancel()
+                await self.send_message(chat_id, "🛑 **Auto-Profitable Mode Stopped**\n\nBot returns to manual mode.")
+
+    async def auto_profitable_loop(self):
+        """Automatically generate profitable signals every 15 minutes"""
+        while self.running:
+            try:
+                await asyncio.sleep(900)  # 15 minutes
+                
+                self.logger.info("🔍 Auto-profitable scan triggered")
+                success = await self.generate_profitable_signal()
+                
+                if success and self.admin_chat_id:
+                    await self.send_message(self.admin_chat_id, "🤖 **Auto-Profitable Signal Sent**\n\n⚡ Next scan in 15 minutes")
+                
+            except asyncio.CancelledError:
+                self.logger.info("Auto-profitable loop cancelled")
+                break
+            except Exception as e:
+                self.logger.error(f"Auto-profitable loop error: {e}")
+                await asyncio.sleep(60)
 
     async def heartbeat(self):
         """Send periodic heartbeat to maintain connection"""

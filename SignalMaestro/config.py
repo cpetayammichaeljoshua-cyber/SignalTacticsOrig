@@ -19,7 +19,7 @@ class Config:
         # Binance Configuration
         self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
         self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
-        
+
         # Use mainnet by default for live trading
         self.BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
 

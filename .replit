@@ -4,10 +4,10 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["glibcLocales"]
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Project"
+runButton = "Enhanced Signal Bot"
 
 [[workflows.workflow]]
 name = "Project"
@@ -28,6 +28,15 @@ args = "python automated_signal_bot.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow]]
+name = "Enhanced Signal Bot"
+author = 46518829
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/enhanced_signal_bot.py"
 
 [[ports]]
 localPort = 5000

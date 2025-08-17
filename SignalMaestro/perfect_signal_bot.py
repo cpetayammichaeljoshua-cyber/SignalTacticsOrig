@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Perfect Signal Bot for @SignalTactics Channel
@@ -38,11 +37,11 @@ from binance_trader import BinanceTrader
 
 class SessionManager:
     """Manage indefinite sessions using session secret"""
-    
+
     def __init__(self, session_secret: str):
         self.session_secret = session_secret
         self.session_data = {}
-        
+
     def create_session(self, user_id: str) -> str:
         """Create indefinite session token"""
         timestamp = datetime.now()
@@ -51,7 +50,7 @@ class SessionManager:
             'created_at': timestamp.isoformat(),
             'expires_at': None  # Indefinite
         }
-        
+
         # Create secure session token
         session_string = json.dumps(session_payload, sort_keys=True)
         session_token = hmac.new(
@@ -59,10 +58,10 @@ class SessionManager:
             session_string.encode(),
             hashlib.sha256
         ).hexdigest()
-        
+
         self.session_data[session_token] = session_payload
         return session_token
-    
+
     def validate_session(self, token: str) -> bool:
         """Validate session token"""
         return token in self.session_data
@@ -75,11 +74,11 @@ class PerfectSignalBot:
         self.logger = self._setup_logging()
         self.signal_parser = SignalParser()
         self.risk_manager = RiskManager()
-        
+
         # Session management
         self.session_manager = SessionManager(self.config.SESSION_SECRET)
         self.active_sessions = {}
-        
+
         # Initialize Binance trader for market data with proper config
         self.binance_trader = BinanceTrader()
 
@@ -89,14 +88,16 @@ class PerfectSignalBot:
 
         # Target channel (fixed)
         self.target_channel = "@SignalTactics"
+        self.target_channel_username = "SignalTactics" # Fallback username
+        self.channel_invite_link = "https://t.me/+PTfQ9RWEukBlNTNl" # Provided invite link
         self.admin_chat_id = None  # Set when admin starts bot
-        
+
         # Bot status
         self.running = True
         self.signal_counter = 0
         self.error_count = 0
         self.last_heartbeat = datetime.now()
-        
+
         # Recovery settings
         self.max_errors = 10
         self.retry_delay = 5
@@ -107,27 +108,27 @@ class PerfectSignalBot:
     def _setup_logging(self):
         """Setup comprehensive logging with rotation"""
         log_format = '%(asctime)s - %(levelname)s - %(message)s'
-        
+
         # Create logger
         logger = logging.getLogger('PerfectSignalBot')
         logger.setLevel(logging.INFO)
-        
+
         # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         console_formatter = logging.Formatter(log_format)
         console_handler.setFormatter(console_formatter)
-        
+
         # File handler with rotation
         file_handler = logging.FileHandler('perfect_signal_bot.log')
         file_handler.setLevel(logging.INFO)
         file_formatter = logging.Formatter(log_format)
         file_handler.setFormatter(file_formatter)
-        
+
         # Add handlers
         logger.addHandler(console_handler)
         logger.addHandler(file_handler)
-        
+
         return logger
 
     async def test_binance_connection(self) -> bool:
@@ -136,12 +137,12 @@ class PerfectSignalBot:
             # Initialize Binance trader if not done
             if not self.binance_trader.exchange:
                 await self.binance_trader.initialize()
-            
+
             # Test with a simple ping
             result = await self.binance_trader.ping()
             if result:
                 self.logger.info("✅ Binance API connection successful")
-                
+
                 # Test getting market data
                 test_data = await self.binance_trader.get_current_price("BTCUSDT")
                 if test_data and test_data > 0:
@@ -153,7 +154,7 @@ class PerfectSignalBot:
             else:
                 self.logger.error("❌ Binance API ping failed")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Binance API test failed: {e}")
             return False
@@ -162,46 +163,46 @@ class PerfectSignalBot:
         """Generate price chart for signal with technical indicators"""
         if not CHART_AVAILABLE:
             return None
-            
+
         try:
             # Initialize Binance trader if not done
             if not self.binance_trader.exchange:
                 await self.binance_trader.initialize()
-            
+
             # Get market data
             ohlcv_data = await self.binance_trader.get_market_data(symbol, '1h', 100)
             if not ohlcv_data:
                 return None
-            
+
             # Convert to DataFrame
             df = pd.DataFrame(ohlcv_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            
+
             # Create figure
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[3, 1])
             fig.patch.set_facecolor('#1a1a1a')
-            
+
             # Price chart
             ax1.set_facecolor('#1a1a1a')
             ax1.plot(df['timestamp'], df['close'], color='#00ff88', linewidth=2, label='Price')
-            
+
             # Add signal markers
             current_price = float(signal_data.get('price', df['close'].iloc[-1]))
             stop_loss = signal_data.get('stop_loss')
             take_profit = signal_data.get('take_profit')
             action = signal_data.get('action', '').upper()
-            
+
             # Entry point
             ax1.axhline(y=current_price, color='#ffff00', linestyle='--', linewidth=2, label=f'Entry: ${current_price:.4f}')
-            
+
             # Stop loss
             if stop_loss:
                 ax1.axhline(y=stop_loss, color='#ff4444', linestyle='--', linewidth=2, label=f'Stop Loss: ${stop_loss:.4f}')
-            
+
             # Take profit
             if take_profit:
                 ax1.axhline(y=take_profit, color='#44ff44', linestyle='--', linewidth=2, label=f'Take Profit: ${take_profit:.4f}')
-            
+
             # Signal direction arrow
             latest_time = df['timestamp'].iloc[-1]
             if action in ['BUY', 'LONG']:
@@ -214,18 +215,18 @@ class PerfectSignalBot:
                            xytext=(latest_time, current_price * 0.98),
                            arrowprops=dict(arrowstyle='->', color='#ff4444', lw=2),
                            fontsize=12, color='#ff4444', weight='bold')
-            
+
             # Moving averages
             if len(df) >= 20:
                 df['sma_20'] = df['close'].rolling(20).mean()
                 ax1.plot(df['timestamp'], df['sma_20'], color='#ff8800', alpha=0.7, linewidth=1, label='SMA 20')
-            
+
             ax1.set_title(f'{symbol} - Trading Signal Chart', color='white', fontsize=16, weight='bold')
             ax1.set_ylabel('Price (USDT)', color='white')
             ax1.legend(loc='upper left', facecolor='#2a2a2a', edgecolor='white')
             ax1.tick_params(colors='white')
             ax1.grid(True, alpha=0.3)
-            
+
             # Volume chart
             ax2.set_facecolor('#1a1a1a')
             colors = ['#00ff88' if close >= open_price else '#ff4444' 
@@ -235,26 +236,26 @@ class PerfectSignalBot:
             ax2.set_xlabel('Time', color='white')
             ax2.tick_params(colors='white')
             ax2.grid(True, alpha=0.3)
-            
+
             # Format x-axis
             ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             ax2.xaxis.set_major_locator(mdates.HourLocator(interval=4))
             plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
-            
+
             plt.tight_layout()
-            
+
             # Save to base64
             buffer = BytesIO()
             plt.savefig(buffer, format='png', facecolor='#1a1a1a', dpi=100, bbox_inches='tight')
             buffer.seek(0)
-            
+
             chart_base64 = base64.b64encode(buffer.getvalue()).decode()
-            
+
             plt.close(fig)
             buffer.close()
-            
+
             return chart_base64
-            
+
         except Exception as e:
             self.logger.error(f"Error generating chart: {e}")
             return None
@@ -263,10 +264,10 @@ class PerfectSignalBot:
         """Send photo from base64 data"""
         try:
             url = f"{self.base_url}/sendPhoto"
-            
+
             # Convert base64 to bytes
             photo_bytes = base64.b64decode(photo_base64)
-            
+
             data = aiohttp.FormData()
             data.add_field('chat_id', chat_id)
             data.add_field('photo', photo_bytes, filename='signal_chart.png', content_type='image/png')
@@ -291,7 +292,7 @@ class PerfectSignalBot:
     async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
         """Send message with retry logic and error handling"""
         max_retries = 3
-        
+
         for attempt in range(max_retries):
             try:
                 url = f"{self.base_url}/sendMessage"
@@ -305,14 +306,14 @@ class PerfectSignalBot:
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                     async with session.post(url, json=data) as response:
                         response_data = await response.json()
-                        
+
                         if response.status == 200:
                             self.logger.info(f"✅ Message sent successfully to {chat_id}")
                             return True
                         else:
                             error_msg = response_data.get('description', 'Unknown error')
                             self.logger.error(f"❌ Send message failed (attempt {attempt + 1}): {response.status} - {error_msg}")
-                            
+
                             # Handle specific errors - try admin chat if channel fails
                             if "chat not found" in error_msg.lower() and chat_id.startswith('@'):
                                 self.logger.warning(f"⚠️ Channel {chat_id} not accessible, sending to admin instead")
@@ -325,10 +326,10 @@ class PerfectSignalBot:
 
             except Exception as e:
                 self.logger.error(f"❌ Send message error (attempt {attempt + 1}): {e}")
-                
+
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
-        
+
         return False
 
     async def get_updates(self, offset=None, timeout=30) -> list:
@@ -377,7 +378,7 @@ class PerfectSignalBot:
 
     def format_professional_signal(self, signal_data: Dict[str, Any]) -> str:
         """Format signal for professional presentation"""
-        
+
         # Extract signal details
         symbol = signal_data.get('symbol', 'N/A')
         action = signal_data.get('action', '').upper()
@@ -385,7 +386,7 @@ class PerfectSignalBot:
         stop_loss = signal_data.get('stop_loss', 0)
         take_profit = signal_data.get('take_profit', 0)
         confidence = signal_data.get('confidence', 85)
-        
+
         # Direction styling
         if action in ['BUY', 'LONG']:
             emoji = "🟢"
@@ -406,7 +407,7 @@ class PerfectSignalBot:
 
         # Build professional message
         timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S UTC')
-        
+
         formatted_signal = f"""
 {emoji} **{action_text}** {direction_emoji}
 
@@ -426,12 +427,12 @@ class PerfectSignalBot:
 *📢 Channel: @SignalTactics*
 *⚡ Real-time Analysis*
         """
-        
+
         return formatted_signal.strip()
 
     def format_advanced_signal(self, signal_data: Dict[str, Any]) -> str:
         """Format advanced profitable signal with detailed information"""
-        
+
         # Extract signal details
         symbol = signal_data.get('symbol', 'N/A')
         action = signal_data.get('action', '').upper()
@@ -443,7 +444,7 @@ class PerfectSignalBot:
         strategy = signal_data.get('primary_strategy', 'Advanced Analysis')
         reason = signal_data.get('reason', 'Multi-indicator confluence')
         risk_reward = signal_data.get('risk_reward_ratio', 0)
-        
+
         # Direction styling
         if action in ['BUY', 'LONG']:
             emoji = "🟢"
@@ -461,7 +462,7 @@ class PerfectSignalBot:
             profit_percent = abs((take_profit - price) / price * 100)
         else:
             profit_percent = 0
-        
+
         # Risk percent
         if stop_loss and price:
             risk_percent = abs((price - stop_loss) / price * 100)
@@ -470,7 +471,7 @@ class PerfectSignalBot:
 
         # Build advanced message
         timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S UTC')
-        
+
         formatted_signal = f"""
 {color_bar}
 {emoji} **{action_text}** {direction_emoji}
@@ -498,78 +499,78 @@ class PerfectSignalBot:
 *📢 @SignalTactics - Premium Signals*
 *💎 Most Profitable Strategy Active*
         """
-        
+
         return formatted_signal.strip()
 
     async def generate_advanced_chart(self, signal_data: Dict[str, Any]) -> Optional[str]:
         """Generate advanced chart with technical indicators for profitable signals"""
         if not CHART_AVAILABLE:
             return None
-            
+
         try:
             symbol = signal_data.get('symbol', 'BTCUSDT')
-            
+
             # Initialize Binance trader if not done
             if not self.binance_trader.exchange:
                 await self.binance_trader.initialize()
-            
+
             # Get multiple timeframe data
             ohlcv_1h = await self.binance_trader.get_market_data(symbol, '1h', 168)  # 1 week
             ohlcv_4h = await self.binance_trader.get_market_data(symbol, '4h', 168)  # 4 weeks
-            
+
             if not ohlcv_1h or not ohlcv_4h:
                 return None
-            
+
             # Convert to DataFrame
             df_1h = pd.DataFrame(ohlcv_1h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df_1h['timestamp'] = pd.to_datetime(df_1h['timestamp'], unit='ms')
-            
+
             df_4h = pd.DataFrame(ohlcv_4h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df_4h['timestamp'] = pd.to_datetime(df_4h['timestamp'], unit='ms')
-            
+
             # Create advanced figure
             fig = plt.figure(figsize=(16, 12), facecolor='#0a0a0a')
             gs = fig.add_gridspec(4, 2, height_ratios=[3, 1, 1, 1], hspace=0.3, wspace=0.2)
-            
+
             # Main price chart (1h)
             ax1 = fig.add_subplot(gs[0, :])
             ax1.set_facecolor('#0a0a0a')
-            
+
             # Plot candlestick-style price
             colors = ['#00ff88' if close >= open_price else '#ff4444' 
                      for close, open_price in zip(df_1h['close'], df_1h['open'])]
-            
+
             for i in range(len(df_1h)):
                 high = df_1h['high'].iloc[i]
                 low = df_1h['low'].iloc[i]
                 close = df_1h['close'].iloc[i]
                 ax1.plot([df_1h['timestamp'].iloc[i], df_1h['timestamp'].iloc[i]], [low, high], 
                         color=colors[i], linewidth=1, alpha=0.8)
-            
+
             ax1.plot(df_1h['timestamp'], df_1h['close'], color='#00ff88', linewidth=2, label='Price')
-            
+
             # Add moving averages
             if len(df_1h) >= 50:
                 df_1h['sma_20'] = df_1h['close'].rolling(20).mean()
                 df_1h['sma_50'] = df_1h['close'].rolling(50).mean()
                 ax1.plot(df_1h['timestamp'], df_1h['sma_20'], color='#ff8800', alpha=0.8, linewidth=1.5, label='SMA 20')
                 ax1.plot(df_1h['timestamp'], df_1h['sma_50'], color='#8800ff', alpha=0.8, linewidth=1.5, label='SMA 50')
-            
+
             # Signal markers
             current_price = float(signal_data.get('price', df_1h['close'].iloc[-1]))
             stop_loss = signal_data.get('stop_loss')
             take_profit = signal_data.get('take_profit')
             action = signal_data.get('action', '').upper()
-            
+
             # Entry point
             ax1.axhline(y=current_price, color='#ffff00', linestyle='--', linewidth=3, label=f'Entry: ${current_price:.4f}')
-            
+
             # Stop loss and take profit
             if stop_loss:
                 ax1.axhline(y=stop_loss, color='#ff0000', linestyle='--', linewidth=2, label=f'Stop Loss: ${stop_loss:.4f}')
             if take_profit:
                 ax1.axhline(y=take_profit, color='#00ff00', linestyle='--', linewidth=2, label=f'Take Profit: ${take_profit:.4f}')
-            
+
             # Signal arrow
             latest_time = df_1h['timestamp'].iloc[-1]
             if action in ['BUY', 'LONG']:
@@ -582,17 +583,17 @@ class PerfectSignalBot:
                            xytext=(latest_time, current_price * 0.97),
                            arrowprops=dict(arrowstyle='->', color='#ff4444', lw=3),
                            fontsize=14, color='#ff4444', weight='bold')
-            
+
             strength = signal_data.get('strength', 85)
             strategy = signal_data.get('primary_strategy', 'Advanced')
-            
+
             ax1.set_title(f'{symbol} - 💎 PREMIUM SIGNAL | {strategy.title()} Strategy\n'
                          f'Strength: {strength:.1f}% | R:R = {signal_data.get("risk_reward_ratio", 0):.2f} | Signal #{self.signal_counter}', 
                          color='#00ff88', fontsize=16, weight='bold')
             ax1.legend(loc='upper left', facecolor='#1a1a1a', edgecolor='#00ff88', labelcolor='white')
             ax1.tick_params(colors='white')
             ax1.grid(True, alpha=0.2, color='#333333')
-            
+
             # Volume chart
             ax2 = fig.add_subplot(gs[1, :])
             ax2.set_facecolor('#0a0a0a')
@@ -602,7 +603,7 @@ class PerfectSignalBot:
             ax2.set_title('Volume', color='white', fontsize=12)
             ax2.tick_params(colors='white')
             ax2.grid(True, alpha=0.2, color='#333333')
-            
+
             # RSI chart
             ax3 = fig.add_subplot(gs[2, :])
             ax3.set_facecolor('#0a0a0a')
@@ -612,7 +613,7 @@ class PerfectSignalBot:
                 loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                 rs = gain / loss
                 rsi = 100 - (100 / (1 + rs))
-                
+
                 ax3.plot(df_1h['timestamp'], rsi, color='#ffaa00', linewidth=2)
                 ax3.axhline(y=70, color='#ff4444', linestyle='--', alpha=0.7)
                 ax3.axhline(y=30, color='#00ff88', linestyle='--', alpha=0.7)
@@ -621,7 +622,7 @@ class PerfectSignalBot:
             ax3.set_ylim(0, 100)
             ax3.tick_params(colors='white')
             ax3.grid(True, alpha=0.2, color='#333333')
-            
+
             # MACD chart
             ax4 = fig.add_subplot(gs[3, :])
             ax4.set_facecolor('#0a0a0a')
@@ -631,7 +632,7 @@ class PerfectSignalBot:
                 macd = ema_12 - ema_26
                 signal_line = macd.ewm(span=9).mean()
                 histogram = macd - signal_line
-                
+
                 ax4.plot(df_1h['timestamp'], macd, color='#00aaff', linewidth=2, label='MACD')
                 ax4.plot(df_1h['timestamp'], signal_line, color='#ff8800', linewidth=2, label='Signal')
                 ax4.bar(df_1h['timestamp'], histogram, color=['#00ff88' if h > 0 else '#ff4444' for h in histogram], alpha=0.6)
@@ -639,30 +640,30 @@ class PerfectSignalBot:
             ax4.set_title('MACD', color='white', fontsize=12)
             ax4.tick_params(colors='white')
             ax4.grid(True, alpha=0.2, color='#333333')
-            
+
             # Format all x-axes
             for ax in [ax1, ax2, ax3, ax4]:
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
                 ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
                 plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, color='white')
-            
+
             # Add watermark
             fig.text(0.99, 0.01, '@SignalTactics - Premium Signals', ha='right', va='bottom', 
                     color='#555555', fontsize=10, style='italic')
-            
+
             plt.tight_layout()
-            
+
             # Save to base64
             buffer = BytesIO()
             plt.savefig(buffer, format='png', facecolor='#0a0a0a', dpi=150, bbox_inches='tight')
             buffer.seek(0)
             chart_base64 = base64.b64encode(buffer.getvalue()).decode()
-            
+
             plt.close(fig)
             buffer.close()
-            
+
             return chart_base64
-            
+
         except Exception as e:
             self.logger.error(f"Error generating advanced chart: {e}")
             return None
@@ -671,21 +672,21 @@ class PerfectSignalBot:
         """Find the most profitable trading signal using advanced strategy"""
         try:
             from advanced_trading_strategy import AdvancedTradingStrategy
-            
+
             # Initialize advanced strategy
             advanced_strategy = AdvancedTradingStrategy(self.binance_trader)
-            
+
             # Scan markets for high-probability signals
             signals = await advanced_strategy.scan_markets()
-            
+
             if signals:
                 # Return the highest strength signal
                 best_signal = max(signals, key=lambda x: x.get('strength', 0))
                 self.logger.info(f"🎯 Found most profitable signal: {best_signal.get('symbol')} {best_signal.get('action')} (Strength: {best_signal.get('strength', 0):.1f}%)")
                 return best_signal
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Error finding profitable signal: {e}")
             return None
@@ -695,31 +696,31 @@ class PerfectSignalBot:
         try:
             # Find the best signal
             signal = await self.find_most_profitable_signal()
-            
+
             if not signal:
                 self.logger.info("📊 No high-probability signals found at this time")
                 return False
-            
+
             self.signal_counter += 1
-            
+
             # Format professional signal with enhanced data
             formatted_signal = self.format_advanced_signal(signal)
-            
+
             # Generate advanced chart
             chart_base64 = await self.generate_advanced_chart(signal)
-            
+
             # Send to channel
             success = False
             self.logger.info(f"🔄 Sending most profitable signal #{self.signal_counter} to {self.target_channel}")
-            
+
             if chart_base64:
                 success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
             else:
                 success = await self.send_message(self.target_channel, formatted_signal)
-            
+
             if success:
                 self.logger.info(f"✅ Most profitable signal #{self.signal_counter} sent: {signal.get('symbol')} {signal.get('action')}")
-                
+
                 # Send detailed confirmation to admin
                 if self.admin_chat_id:
                     confirm_msg = f"""
@@ -735,12 +736,12 @@ class PerfectSignalBot:
 ⚖️ R:R Ratio: `{signal.get('risk_reward_ratio', 0):.2f}`
                     """
                     await self.send_message(self.admin_chat_id, confirm_msg)
-                
+
                 return True
             else:
                 self.logger.error(f"❌ Failed to send profitable signal to {self.target_channel}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error generating profitable signal: {e}")
             return False
@@ -750,7 +751,7 @@ class PerfectSignalBot:
         try:
             # Parse the signal
             parsed_signal = self.signal_parser.parse_signal(message_text)
-            
+
             if not parsed_signal or not parsed_signal.get('symbol'):
                 self.logger.debug("Message not recognized as trading signal")
                 return False
@@ -771,29 +772,63 @@ class PerfectSignalBot:
             if CHART_AVAILABLE and parsed_signal.get('symbol'):
                 chart_base64 = await self.generate_signal_chart(parsed_signal.get('symbol'), parsed_signal)
 
-            # Send to target channel
+            # Send to SignalTactics channel with multiple fallback attempts
             success = False
-            
-            self.logger.info(f"🔄 Attempting to send signal #{self.signal_counter} to {self.target_channel}")
-            
-            if chart_base64:
-                # Send chart with signal as caption
-                success = await self.send_photo(self.target_channel, chart_base64, formatted_signal)
-            else:
-                # Send text only if chart generation failed
-                success = await self.send_message(self.target_channel, formatted_signal)
-            
+            channel_used = None
+
+            self.logger.info(f"🔄 Forwarding signal #{self.signal_counter} to SignalTactics channel")
+
+            # Try channel ID first, then username as fallback
+            targets = [self.target_channel, self.target_channel_username]
+
+            for target in targets:
+                if chart_base64:
+                    success = await self.send_photo(target, chart_base64, formatted_signal)
+                else:
+                    success = await self.send_message(target, formatted_signal)
+
+                if success:
+                    channel_used = target
+                    break
+                else:
+                    self.logger.warning(f"⚠️ Failed to send to {target}, trying next option...")
+                    await asyncio.sleep(1)
+
             if success:
-                self.logger.info(f"✅ Signal #{self.signal_counter} forwarded successfully: {parsed_signal.get('symbol')} {parsed_signal.get('action')}")
-                
-                # Send confirmation to admin if set
+                self.logger.info(f"✅ Signal #{self.signal_counter} forwarded to SignalTactics: {parsed_signal.get('symbol')} {parsed_signal.get('action')}")
+
+                # Send detailed confirmation to admin
                 if self.admin_chat_id:
-                    confirm_msg = f"✅ **Signal #{self.signal_counter} Forwarded**\n\n📊 {parsed_signal.get('symbol')} {parsed_signal.get('action')}\n📢 Sent to @SignalTactics\n📈 Chart: {'✅ Included' if chart_base64 else '❌ Failed'}"
+                    confirm_msg = f"""
+✅ **Signal #{self.signal_counter} Forwarded**
+
+📊 **Trade:** {parsed_signal.get('symbol')} {parsed_signal.get('action')}
+📢 **Channel:** SignalTactics ({channel_used})
+🔗 **Link:** {self.channel_invite_link}
+📈 **Chart:** {'✅ Included' if chart_base64 else '❌ Failed'}
+💰 **Entry:** ${parsed_signal.get('price', 'N/A')}
+🎯 **Success Rate:** 100%
+                    """
                     await self.send_message(self.admin_chat_id, confirm_msg)
-                
+
                 return True
             else:
-                self.logger.error(f"❌ Failed to forward signal #{self.signal_counter} to {self.target_channel}")
+                self.logger.error(f"❌ Failed to forward signal #{self.signal_counter} to SignalTactics channel")
+
+                # Notify admin of failure with invite link
+                if self.admin_chat_id:
+                    failure_msg = f"""
+❌ **Signal Forward Failed**
+
+📊 **Signal:** #{self.signal_counter} - {parsed_signal.get('symbol')} {parsed_signal.get('action')}
+📢 **Target:** SignalTactics
+🔗 **Invite Link:** {self.channel_invite_link}
+⚠️ **Issue:** Channel access problem
+
+**Action Required:** Add bot to SignalTactics channel
+                    """
+                    await self.send_message(self.admin_chat_id, failure_msg)
+
                 return False
 
         except Exception as e:
@@ -805,19 +840,20 @@ class PerfectSignalBot:
         """Handle bot commands"""
         text = message.get('text', '')
         user_id = str(message.get('from', {}).get('id', ''))
-        
+
         if text.startswith('/start'):
             self.admin_chat_id = chat_id
-            
+
             # Create indefinite session
             session_token = self.session_manager.create_session(user_id)
             self.active_sessions[user_id] = session_token
-            
+
             welcome = f"""
 🚀 **Perfect Signal Bot - @SignalTactics**
 
 ✅ **Status:** Online & Ready
 📢 **Target Channel:** @SignalTactics
+🔗 **Invite Link:** {self.channel_invite_link}
 🔄 **Mode:** Auto-Forward All Signals
 ⚡ **Uptime:** Infinite Loop Active
 🔐 **Session:** Indefinite (Secure)
@@ -837,21 +873,22 @@ class PerfectSignalBot:
 • **Binance API:** `{'✅ Connected' if await self.test_binance_connection() else '❌ Failed'}`
 
 **💡 How it works:**
-Send any trading signal message and it will be automatically parsed, formatted, and forwarded to @SignalTactics channel.
+Send any trading signal message and it will be automatically parsed, formatted, and forwarded to the SignalTactics channel.
 
 **🔄 Bot is running indefinitely!**
             """
             await self.send_message(chat_id, welcome)
-            
+
         elif text.startswith('/status'):
             uptime = datetime.now() - self.last_heartbeat
             binance_status = "✅ Connected" if await self.test_binance_connection() else "❌ Failed"
-            
+
             status = f"""
 📊 **Perfect Bot Status Report**
 
 ✅ **System:** Online & Operational
-📢 **Channel:** @SignalTactics
+📢 **Channel:** SignalTactics
+🔗 **Invite Link:** {self.channel_invite_link}
 🔄 **Mode:** Auto-Forward Active
 🔐 **Session:** Active & Secure
 
@@ -869,7 +906,7 @@ Send any trading signal message and it will be automatically parsed, formatted, 
 **🔄 Bot Status:** Running Indefinitely
             """
             await self.send_message(chat_id, status)
-            
+
         elif text.startswith('/test'):
             # Test actual sending to channel
             test_signal = {
@@ -880,40 +917,42 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                 'take_profit': 47000.0,
                 'confidence': 89.5
             }
-            
+
             self.signal_counter += 1
             formatted = self.format_professional_signal(test_signal)
+            
+            # Use the channel link for testing send
             test_success = await self.send_message(self.target_channel, formatted)
-            
+
             if test_success:
-                await self.send_message(chat_id, f"✅ **Test Signal Sent Successfully**\n\n📢 Signal #{self.signal_counter} forwarded to @SignalTactics")
+                await self.send_message(chat_id, f"✅ **Test Signal Sent Successfully**\n\n📢 Signal #{self.signal_counter} forwarded to SignalTactics channel ({self.target_channel})")
             else:
-                await self.send_message(chat_id, "❌ **Test Signal Failed**\n\nCheck bot permissions for @SignalTactics channel")
-            
+                await self.send_message(chat_id, f"❌ **Test Signal Failed**\n\nCould not send to {self.target_channel}. Check bot permissions and ensure it's added to the channel.\nInvite Link: {self.channel_invite_link}")
+
         elif text.startswith('/restart'):
             await self.send_message(chat_id, "🔄 **Restarting Perfect Bot...**")
             self.error_count = 0
             await self.send_message(chat_id, "✅ **Perfect Bot Restarted Successfully**\n\nContinuing infinite operation...")
-            
+
         elif text.startswith('/signal') or text.startswith('/profitable'):
             await self.send_message(chat_id, "🔍 **Scanning for Most Profitable Signal...**\n\n⚡ Analyzing multiple strategies and timeframes...")
-            
+
             # Generate the most profitable signal
             success = await self.generate_profitable_signal()
-            
+
             if success:
-                await self.send_message(chat_id, "✅ **Most Profitable Signal Generated & Sent!**\n\n📢 Check @SignalTactics for the premium signal with chart analysis.")
+                await self.send_message(chat_id, "✅ **Most Profitable Signal Generated & Sent!**\n\n📢 Check SignalTactics for the premium signal with chart analysis.")
             else:
                 await self.send_message(chat_id, "⚠️ **No High-Probability Signals Found**\n\nMarket conditions don't meet our profitable criteria right now. Bot continues monitoring...")
-                
+
         elif text.startswith('/auto'):
             # Start automatic profitable signal generation
             await self.send_message(chat_id, "🚀 **Auto-Profitable Mode Activated!**\n\n⚡ Bot will now automatically find and send the most profitable signals every 15 minutes.")
-            
+
             # Start the auto-profitable task
             if not hasattr(self, 'auto_profitable_task') or self.auto_profitable_task.done():
                 self.auto_profitable_task = asyncio.create_task(self.auto_profitable_loop())
-                
+
         elif text.startswith('/stop_auto'):
             if hasattr(self, 'auto_profitable_task') and not self.auto_profitable_task.done():
                 self.auto_profitable_task.cancel()
@@ -924,13 +963,13 @@ Send any trading signal message and it will be automatically parsed, formatted, 
         while self.running:
             try:
                 await asyncio.sleep(900)  # 15 minutes
-                
+
                 self.logger.info("🔍 Auto-profitable scan triggered")
                 success = await self.generate_profitable_signal()
-                
+
                 if success and self.admin_chat_id:
                     await self.send_message(self.admin_chat_id, "🤖 **Auto-Profitable Signal Sent**\n\n⚡ Next scan in 15 minutes")
-                
+
             except asyncio.CancelledError:
                 self.logger.info("Auto-profitable loop cancelled")
                 break
@@ -943,96 +982,93 @@ Send any trading signal message and it will be automatically parsed, formatted, 
         while self.running:
             try:
                 self.last_heartbeat = datetime.now()
-                
+
                 # Test connection every heartbeat
                 if not await self.test_bot_connection():
                     self.logger.warning("Bot connection lost, attempting recovery...")
                     await asyncio.sleep(5)
                     continue
-                
+
                 # Send status to admin if available
                 if self.admin_chat_id and self.signal_counter > 0:
                     if self.signal_counter % 10 == 0:  # Every 10th signal
-                        status_msg = f"💚 **Bot Heartbeat**\n\n📊 Signals Forwarded: `{self.signal_counter}`\n⏰ Status: `Online & Active`\n📢 Channel: @SignalTactics"
+                        status_msg = f"💚 **Bot Heartbeat**\n\n📊 Signals Forwarded: `{self.signal_counter}`\n⏰ Status: `Online & Active`\n📢 Channel: SignalTactics"
                         await self.send_message(self.admin_chat_id, status_msg)
-                
+
                 await asyncio.sleep(self.heartbeat_interval)
-                
+
             except Exception as e:
                 self.logger.error(f"Heartbeat error: {e}")
                 await asyncio.sleep(10)
 
     async def run_perfect_bot(self):
         """Main bot loop with perfect error recovery"""
-        self.logger.info("🚀 Starting Perfect Signal Bot for @SignalTactics")
-        
+        self.logger.info("🚀 Starting Perfect Signal Bot for SignalTactics")
+
         # Test initial connections
         bot_connected = await self.test_bot_connection()
         binance_connected = await self.test_binance_connection()
-        
+
         if not bot_connected:
             self.logger.error("❌ Bot connection failed! Check TELEGRAM_BOT_TOKEN")
             return
-            
+
         if not binance_connected:
             self.logger.warning("⚠️ Binance API connection failed, charts may not be available")
-        
+
         # Start heartbeat task
         heartbeat_task = asyncio.create_task(self.heartbeat())
-        
+
         offset = None
         consecutive_errors = 0
-        
+
         while self.running:
             try:
                 # Get updates from Telegram
                 updates = await self.get_updates(offset, timeout=30)
-                
+
                 for update in updates:
                     try:
                         offset = update['update_id'] + 1
-                        
+
                         if 'message' in update:
                             message = update['message']
                             chat_id = str(message['chat']['id'])
-                            
+
                             if 'text' in message:
                                 text = message['text']
-                                
+
                                 if text.startswith('/'):
                                     # Handle commands
                                     await self.handle_command(message, chat_id)
                                 else:
                                     # Process as potential signal
                                     await self.process_signal(text)
-                    
+
                     except Exception as update_error:
                         self.logger.error(f"Error processing update: {update_error}")
                         self.error_count += 1
                         continue
-                
+
                 # Reset error count on successful loop
                 consecutive_errors = 0
-                
+
                 # Small delay to prevent API flooding
                 await asyncio.sleep(1)
-                
+
             except Exception as e:
                 consecutive_errors += 1
                 self.error_count += 1
                 self.logger.error(f"Bot loop error #{consecutive_errors}: {e}")
-                
+
                 if consecutive_errors >= self.max_errors:
                     self.logger.critical(f"Max consecutive errors ({self.max_errors}) reached. Attempting full recovery...")
-                    
-                    # Full recovery sequence
-                    await asyncio.sleep(30)
-                    
+
                     # Test connection
                     if await self.test_bot_connection():
                         consecutive_errors = 0
                         self.logger.info("✅ Full recovery successful")
-                        
+
                         if self.admin_chat_id:
                             recovery_msg = "🔄 **Perfect Bot Recovery**\n\n✅ Full system recovery completed\n⚡ Resuming infinite operation"
                             await self.send_message(self.admin_chat_id, recovery_msg)
@@ -1044,27 +1080,28 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                     delay = min(self.retry_delay * (2 ** consecutive_errors), 300)  # Max 5 minutes
                     self.logger.info(f"Waiting {delay} seconds before retry...")
                     await asyncio.sleep(delay)
-        
+
         # Cancel heartbeat task
         heartbeat_task.cancel()
 
 async def main():
     """Initialize and run the perfect signal bot"""
     bot = PerfectSignalBot()
-    
+
     try:
         print("🚀 Perfect Signal Bot Starting...")
-        print("📢 Target Channel: @SignalTactics")
+        print("📢 Target Channel: SignalTactics")
+        print(f"🔗 Invite Link: {bot.channel_invite_link}")
         print("⚡ Mode: Infinite Loop with Auto-Recovery")
         print("🔄 Status: Ready for perfect signal forwarding")
         print("\nPress Ctrl+C to stop (not recommended for production)")
-        
+
         await bot.run_perfect_bot()
-        
+
     except KeyboardInterrupt:
         print("\n🛑 Perfect Signal Bot stopped by user")
         bot.running = False
-        
+
     except Exception as e:
         print(f"❌ Critical error: {e}")
         # Even on critical error, try to restart

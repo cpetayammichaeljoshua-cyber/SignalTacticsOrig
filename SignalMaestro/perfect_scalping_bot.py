@@ -44,8 +44,8 @@ class PerfectScalpingBot:
         self.admin_chat_id = None
         self.target_channel = "@SignalTactics"
 
-        # Scalping parameters
-        self.timeframes = ['3m', '5m', '15m', '1h', '4h', '1d']
+        # Scalping parameters - optimized for scalping only
+        self.timeframes = ['3m', '5m', '15m', '1h', '4h']
         self.symbols = [
             'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT',
             'DOGEUSDT', 'MATICUSDT', 'DOTUSDT', 'AVAXUSDT', 'LINKUSDT', 'LTCUSDT',
@@ -53,10 +53,10 @@ class PerfectScalpingBot:
             'MANAUSDT', 'ALGOUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT'
         ]
 
-        # Risk management
+        # Risk management - optimized for scalping
         self.risk_reward_ratio = 3.0  # 1:3 RR
-        self.min_signal_strength = 85
-        self.max_signals_per_hour = 5
+        self.min_signal_strength = 90  # Higher threshold for scalping
+        self.max_signals_per_hour = 8  # More signals for scalping
 
         # Signal tracking
         self.signal_counter = 0
@@ -165,11 +165,19 @@ class PerfectScalpingBot:
         try:
             indicators = {}
 
+            # Validate data
+            if df.empty or len(df) < 55:  # Need at least 55 periods for longest MA
+                return {}
+
             # Price data
             high = df['high'].values
             low = df['low'].values
             close = df['close'].values
             volume = df['volume'].values
+
+            # Validate arrays
+            if len(high) == 0 or len(low) == 0 or len(close) == 0:
+                return {}
 
             # 1. SUPERTREND (Most profitable for scalping)
             hl2 = (high + low) / 2
@@ -284,7 +292,10 @@ class PerfectScalpingBot:
         return ema
 
     def _calculate_rsi(self, values: np.array, period: int) -> np.array:
-        """Calculate Relative Strength Index"""
+        """Calculate Relative Strength Index with division by zero handling"""
+        if len(values) < period + 1:
+            return np.full(len(values), 50.0)  # Return neutral RSI if not enough data
+            
         deltas = np.diff(values)
         gains = np.where(deltas > 0, deltas, 0)
         losses = np.where(deltas < 0, -deltas, 0)
@@ -292,15 +303,25 @@ class PerfectScalpingBot:
         avg_gains = np.zeros(len(values))
         avg_losses = np.zeros(len(values))
 
-        avg_gains[period] = np.mean(gains[:period])
-        avg_losses[period] = np.mean(losses[:period])
+        # Initialize with first period averages
+        if period <= len(gains):
+            avg_gains[period] = np.mean(gains[:period])
+            avg_losses[period] = np.mean(losses[:period])
 
+        # Calculate subsequent values
         for i in range(period + 1, len(values)):
             avg_gains[i] = (avg_gains[i-1] * (period-1) + gains[i-1]) / period
             avg_losses[i] = (avg_losses[i-1] * (period-1) + losses[i-1]) / period
 
-        rs = avg_gains / avg_losses
-        rsi = 100 - (100 / (1 + rs))
+        # Handle division by zero
+        rsi = np.zeros(len(values))
+        for i in range(len(values)):
+            if avg_losses[i] == 0:
+                rsi[i] = 100.0 if avg_gains[i] > 0 else 50.0
+            else:
+                rs = avg_gains[i] / avg_losses[i]
+                rsi[i] = 100 - (100 / (1 + rs))
+                
         return rsi
 
     def _calculate_macd(self, values: np.array) -> tuple:
@@ -854,8 +875,8 @@ Use `/help` for all commands
                 # Update heartbeat
                 self.last_heartbeat = datetime.now()
 
-                # Scan every 2 minutes for scalping
-                await asyncio.sleep(120)
+                # Scan every 90 seconds for scalping opportunities
+                await asyncio.sleep(90)
 
             except Exception as e:
                 self.logger.error(f"Auto-scan loop error: {e}")

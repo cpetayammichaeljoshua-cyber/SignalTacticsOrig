@@ -569,7 +569,7 @@ class PerfectScalpingBot:
         return signals[:self.max_signals_per_hour]
 
     async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
-        """Send message to Telegram"""
+        """Send message to Telegram with error handling"""
         try:
             url = f"{self.base_url}/sendMessage"
             data = {
@@ -582,14 +582,43 @@ class PerfectScalpingBot:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=data) as response:
                     if response.status == 200:
+                        self.logger.info(f"✅ Message sent successfully to {chat_id}")
                         return True
                     else:
                         error = await response.text()
-                        self.logger.error(f"Send message failed: {error}")
+                        self.logger.warning(f"⚠️ Send message failed to {chat_id}: {error}")
+                        
+                        # Try sending to admin if channel fails
+                        if chat_id == self.target_channel and self.admin_chat_id:
+                            self.logger.info(f"🔄 Retrying message to admin {self.admin_chat_id}")
+                            return await self._send_to_admin_fallback(text, parse_mode)
                         return False
 
         except Exception as e:
-            self.logger.error(f"Error sending message: {e}")
+            self.logger.error(f"Error sending message to {chat_id}: {e}")
+            # Try admin fallback
+            if chat_id == self.target_channel and self.admin_chat_id:
+                return await self._send_to_admin_fallback(text, parse_mode)
+            return False
+
+    async def _send_to_admin_fallback(self, text: str, parse_mode: str) -> bool:
+        """Fallback to send message to admin"""
+        try:
+            url = f"{self.base_url}/sendMessage"
+            data = {
+                'chat_id': self.admin_chat_id,
+                'text': f"📢 **CHANNEL FALLBACK**\n\n{text}",
+                'parse_mode': parse_mode,
+                'disable_web_page_preview': True
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data) as response:
+                    if response.status == 200:
+                        self.logger.info(f"✅ Fallback message sent to admin {self.admin_chat_id}")
+                        return True
+                    return False
+        except:
             return False
 
     async def get_updates(self, offset=None, timeout=30) -> list:
@@ -662,6 +691,7 @@ class PerfectScalpingBot:
 
         if text.startswith('/start'):
             self.admin_chat_id = chat_id
+            self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
 
             welcome = f"""
 🚀 **PERFECT SCALPING BOT**
@@ -914,7 +944,7 @@ Use `/help` for all commands
                 await asyncio.sleep(5)
 
 async def main():
-    """Run the perfect scalping bot"""
+    """Run the perfect scalping bot with auto-recovery"""
     bot = PerfectScalpingBot()
 
     try:
@@ -924,25 +954,52 @@ async def main():
         print("🎯 3 Take Profits + SL to Entry")
         print("🔄 Indefinite Session Management")
         print("📈 Advanced Multi-Indicator Analysis")
-        print("\nPress Ctrl+C to stop")
+        print("🛡️ Auto-Restart Protection Active")
+        print("\nBot will run continuously with error recovery")
 
         await bot.run_bot()
 
     except KeyboardInterrupt:
-        print("\n🛑 Perfect Scalping Bot stopped")
+        print("\n🛑 Perfect Scalping Bot stopped by user")
         bot.running = False
+        return False  # Don't restart on manual stop
     except Exception as e:
-        print(f"❌ Error: {e}")
-        # Auto-restart on any error
-        await asyncio.sleep(10)
-        await main()
+        print(f"❌ Bot Error: {e}")
+        bot.logger.error(f"Bot crashed: {e}")
+        return True  # Restart on error
+
+async def run_with_auto_restart():
+    """Run bot with automatic restart capability"""
+    restart_count = 0
+    max_restarts = 100  # Prevent infinite restart loops
+    
+    while restart_count < max_restarts:
+        try:
+            should_restart = await main()
+            if not should_restart:
+                break  # Manual stop
+                
+            restart_count += 1
+            print(f"🔄 Auto-restart #{restart_count} in 15 seconds...")
+            await asyncio.sleep(15)
+            
+        except Exception as e:
+            restart_count += 1
+            print(f"💥 Critical error #{restart_count}: {e}")
+            print(f"🔄 Restarting in 30 seconds...")
+            await asyncio.sleep(30)
+    
+    print(f"⚠️ Maximum restart limit reached ({max_restarts})")
 
 if __name__ == "__main__":
-    # Run with auto-restart
-    while True:
-        try:
-            asyncio.run(main())
-        except Exception as e:
-            print(f"💥 Bot crashed: {e}")
-            print("🔄 Auto-restarting in 30 seconds...")
-            time.sleep(30)
+    print("🚀 Perfect Scalping Bot - Auto-Restart Mode")
+    print("🛡️ The bot will automatically restart if it stops")
+    print("⚡ Press Ctrl+C to stop permanently")
+    
+    try:
+        asyncio.run(run_with_auto_restart())
+    except KeyboardInterrupt:
+        print("\n🛑 Perfect Scalping Bot shutdown complete")
+    except Exception as e:
+        print(f"💥 Fatal error: {e}")
+        print("🔄 Please restart manually")

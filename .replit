@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Enhanced Signal Bot"
+runButton = "Perfect Signal Bot"
 
 [[workflows.workflow]]
 name = "Project"
@@ -37,6 +37,15 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python SignalMaestro/enhanced_signal_bot.py"
+
+[[workflows.workflow]]
+name = "Perfect Signal Bot"
+author = 46537226
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/perfect_signal_bot.py"
 
 [[ports]]
 localPort = 5000

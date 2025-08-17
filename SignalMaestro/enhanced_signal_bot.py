@@ -45,8 +45,8 @@ class EnhancedSignalBot:
         
         # Bot settings
         self.admin_name = self.config.ADMIN_USER_NAME
-        self.target_chat_id = None
-        self.channel_id = None
+        self.target_chat_id = "@TradeTactics_bot"
+        self.channel_id = "@SignalTactics"
         
         # Signal tracking
         self.signal_counter = 0
@@ -298,6 +298,8 @@ class EnhancedSignalBot:
 
 **🔄 Auto-Scanning:** Every 30 minutes
 **📊 Monitored Pairs:** BTC, ETH, ADA, SOL, MATIC, LINK
+**🤖 Target Bot:** @TradeTactics_bot
+**📢 Channel:** @SignalTactics
 
 *Ready for professional trading signals!*
             """
@@ -312,8 +314,8 @@ class EnhancedSignalBot:
 
 ✅ **System:** Online & Optimized
 🤖 **Admin:** {self.admin_name}
-🎯 **Target Chat:** `{self.target_chat_id or 'Not set'}`
-📢 **Channel:** `{self.channel_id or 'Not set'}`
+🎯 **Target Bot:** `{self.target_chat_id}`
+📢 **Channel:** `{self.channel_id}`
 
 **📈 Performance Today:**
 • **Signals Generated:** `{self.signal_counter}`

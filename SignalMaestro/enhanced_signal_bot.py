@@ -58,6 +58,7 @@ class EnhancedSignalBot:
         self.admin_name = self.config.ADMIN_USER_NAME
         self.target_chat_id = "@TradeTactics_bot"
         self.channel_id = "@SignalTactics"
+        self.channel_enabled = True  # Toggle for channel posting
 
         # Signal tracking
         self.signal_counter = 0
@@ -197,8 +198,8 @@ class EnhancedSignalBot:
 
                     await self.send_photo(self.target_chat_id, signal['chart'], chart_caption)
 
-            # Send to channel
-            if self.channel_id:
+            # Send to channel (only if enabled)
+            if self.channel_id and self.channel_enabled:
                 await self.send_message(self.channel_id, formatted_message)
                 if signal.get('chart'):
                     await self.send_photo(self.channel_id, signal['chart'], chart_caption)
@@ -355,7 +356,7 @@ class EnhancedSignalBot:
 ✅ **System:** Online & Optimized
 🤖 **Admin:** {self.admin_name}
 🎯 **Target Bot:** `{self.target_chat_id}`
-📢 **Channel:** `{self.channel_id}`
+📢 **Channel:** `{self.channel_id}` {'✅' if self.channel_enabled else '🔕'}
 
 **📈 Performance Today:**
 • **Signals Generated:** `{self.signal_counter}`
@@ -414,6 +415,22 @@ class EnhancedSignalBot:
             else:
                 await self.send_message(chat_id, "**Usage:** `/setchannel @your_channel_username`")
 
+        elif text.startswith('/channel'):
+            parts = text.split()
+            if len(parts) > 1:
+                action = parts[1].lower()
+                if action == 'on' or action == 'enable':
+                    self.channel_enabled = True
+                    await self.send_message(chat_id, f"✅ **Channel Posting Enabled**\n\nSignals will be sent to: `{self.channel_id}`")
+                elif action == 'off' or action == 'disable':
+                    self.channel_enabled = False
+                    await self.send_message(chat_id, f"🔕 **Channel Posting Disabled**\n\nSignals will NOT be sent to: `{self.channel_id}`")
+                else:
+                    await self.send_message(chat_id, "**Usage:** `/channel on` or `/channel off`")
+            else:
+                status = "Enabled" if self.channel_enabled else "Disabled"
+                await self.send_message(chat_id, f"📢 **Channel Status:** {status}\n\nChannel: `{self.channel_id}`\n\nUse `/channel on` or `/channel off` to toggle.")
+
         elif text.startswith('/help') or text == '/commands':
             help_text = f"""
 🤖 **Enhanced Trading Bot Commands**
@@ -445,6 +462,7 @@ class EnhancedSignalBot:
 **⚙️ Settings & Config:**
 • `/setchat` - Set target chat
 • `/setchannel @channel` - Set target channel
+• `/channel on/off` - Enable/disable channel posting
 • `/risk <percent>` - Set risk percentage
 • `/timeframe <tf>` - Set analysis timeframe
 • `/alerts on/off` - Toggle alert notifications

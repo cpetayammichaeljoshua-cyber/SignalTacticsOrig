@@ -326,7 +326,7 @@ class PerfectScalpingBot:
     async def calculate_cvd_btc_perp(self) -> Dict[str, Any]:
         """Calculate Cumulative Volume Delta for BTC PERP for convergence/divergence analysis"""
         try:
-            # Get BTC PERP futures data (already using futures API)
+            # Get BTC PERP futures data
             url = "https://fapi.binance.com/fapi/v1/klines"
             params = {
                 'symbol': 'BTCUSDT',
@@ -398,10 +398,9 @@ class PerfectScalpingBot:
             return self.cvd_data
 
     async def get_binance_data(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
-        """Get USD-M futures market data from Binance Futures API"""
+        """Get market data from Binance API"""
         try:
-            # Use Binance USD-M Futures API endpoint
-            url = f"https://fapi.binance.com/fapi/v1/klines"
+            url = f"https://api.binance.com/api/v3/klines"
             params = {
                 'symbol': symbol,
                 'interval': interval,
@@ -431,7 +430,7 @@ class PerfectScalpingBot:
             return None
 
         except Exception as e:
-            self.logger.error(f"Error fetching futures data for {symbol}: {e}")
+            self.logger.error(f"Error fetching data for {symbol}: {e}")
             return None
 
     def calculate_advanced_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -597,12 +596,11 @@ class PerfectScalpingBot:
                 # Accumulation/Distribution Line
                 # Handle division by zero when high == low
                 price_range = high - low
-                money_flow = np.zeros(len(high))
-                for i in range(len(high)):
-                    if price_range[i] != 0 and not np.isnan(price_range[i]) and not np.isinf(price_range[i]):
-                        money_flow[i] = ((close[i] - low[i]) - (high[i] - close[i])) / price_range[i] * volume[i]
-                    else:
-                        money_flow[i] = 0
+                money_flow = np.where(
+                    price_range != 0,
+                    ((close - low) - (high - close)) / price_range * volume,
+                    0
+                )
                 indicators['money_flow'] = np.mean(money_flow[-5:])
             
             # 11. SCALPING MOMENTUM OSCILLATORS
@@ -1203,31 +1201,24 @@ class PerfectScalpingBot:
 • **CVD Strength:** `{self.cvd_data['cvd_strength']:.1f}%`
 • **Divergence:** `{'⚠️ Yes' if self.cvd_data['cvd_divergence'] else '✅ No'}`
 
-⚡ **Futures Trading:**
-• **Market:** USD-M Futures
-• **Leverage:** 10x Recommended
-• **Margin:** Cross/Isolated
-• **Position Type:** Perpetual Contract
-
 ⚠️ **Trade Management:**
 • Use only 5% of total capital
 • Move SL to entry after TP1 hit
 • Scale out at each TP level
 • Maximum 3 signals per hour
-• Manage leverage responsibly
 
 ⏰ **Generated:** `{timestamp}`
 🔢 **Signal #:** `{self.signal_counter}`
 
 ---
-*🤖 Perfect Scalping Bot - USD-M Futures Strategy*
+*🤖 Perfect Scalping Bot - 5% Capital Strategy*
 *💎 1:3 RR - Controlled Risk Management*
         """
 
         return message.strip()
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
-        """Format signal in Cornix-compatible format for USD-M futures"""
+        """Format signal in Cornix-compatible format"""
         try:
             # Use Cornix validator if available
             if self.cornix_validator:
@@ -1248,7 +1239,7 @@ class PerfectScalpingBot:
             tp2 = signal['tp2']
             tp3 = signal['tp3']
 
-            # Format symbol for Cornix futures (remove USDT suffix if present)
+            # Format symbol for Cornix (remove USDT suffix if present)
             if symbol.endswith('USDT'):
                 cornix_symbol = symbol[:-4] + '/USDT'
             else:
@@ -1256,7 +1247,7 @@ class PerfectScalpingBot:
 
             formatted_message = f"""**Channel:** SignalTactics
 **Symbol:** {cornix_symbol}
-**Exchanges:** Binance Futures, BingX Futures, Bitget Futures, ByBit Futures, OKX Futures
+**Exchanges:** Binance, BingX Spot, Bitget Spot, ByBit Spot, Coinbase Advanced Spot, Huobi.pro, KuCoin, OKX
 
 **{direction}** {'📈' if direction == 'BUY' else '📉'}
 **Entry:** {entry:.6f}
@@ -1265,9 +1256,6 @@ class PerfectScalpingBot:
 **Take Profit 2:** {tp2:.6f}
 **Take Profit 3:** {tp3:.6f}
 
-**Leverage:** 10x (Recommended)
-**Margin:** Cross/Isolated
-**Type:** USD-M Futures
 **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
 **Signal Strength:** {signal['signal_strength']:.0f}%"""
 
@@ -1276,15 +1264,14 @@ class PerfectScalpingBot:
         except Exception as e:
             self.logger.error(f"Error formatting Cornix signal: {e}")
             # Fallback to original format if error occurs
-            return f"""🏷️ **Pair:** `{signal['symbol']} (USD-M Futures)`
+            return f"""🏷️ **Pair:** `{signal['symbol']}`
 🎯 **Direction:** `{signal['direction']}`
 💰 **Entry:** `${signal['entry_price']:.6f}`
 🛑 **Stop Loss:** `${signal['stop_loss']:.6f}`
 🎯 **Take Profits:**
 • **TP1:** `${signal['tp1']:.6f}` (1:1)
 • **TP2:** `${signal['tp2']:.6f}` (1:2)  
-• **TP3:** `${signal['tp3']:.6f}` (1:3)
-⚡ **Leverage:** `10x Recommended`"""
+• **TP3:** `${signal['tp3']:.6f}` (1:3)"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""
@@ -1644,15 +1631,15 @@ Please try again or use `/help` for available commands.
         return descriptions.get(timeframe, 'Market analysis')
 
     async def send_to_cornix(self, signal: Dict[str, Any]) -> bool:
-        """Send signal to Cornix bot for USD-M futures trading"""
+        """Send signal to Cornix bot in the correct format"""
         try:
-            # Create Cornix-compatible webhook payload for futures
+            # Create Cornix-compatible webhook payload
             cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
             if not cornix_webhook_url:
                 self.logger.warning("CORNIX_WEBHOOK_URL not configured")
                 return False
 
-            # Format signal for Cornix webhook (USD-M Futures)
+            # Format signal for Cornix webhook
             cornix_payload = {
                 'symbol': signal['symbol'].replace('USDT', '/USDT'),
                 'action': signal['direction'].lower(),
@@ -1662,16 +1649,14 @@ Please try again or use `/help` for available commands.
                 'take_profit_2': signal['tp2'],
                 'take_profit_3': signal['tp3'],
                 'exchange': 'binance',
-                'type': 'futures',  # Changed from 'spot' to 'futures'
-                'margin_type': 'cross',  # Cross margin recommended
-                'leverage': '10',  # Default 10x leverage for scalping
+                'type': 'spot',
                 'timestamp': datetime.now().isoformat()
             }
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(cornix_webhook_url, json=cornix_payload) as response:
                     if response.status == 200:
-                        self.logger.info(f"✅ Futures signal sent to Cornix successfully for {signal['symbol']}")
+                        self.logger.info(f"✅ Signal sent to Cornix successfully for {signal['symbol']}")
                         return True
                     else:
                         error_text = await response.text()
@@ -1679,7 +1664,7 @@ Please try again or use `/help` for available commands.
                         return False
 
         except Exception as e:
-            self.logger.error(f"Error sending futures signal to Cornix: {e}")
+            self.logger.error(f"Error sending to Cornix: {e}")
             return False
 
     async def process_trade_update(self, signal: Dict[str, Any]):

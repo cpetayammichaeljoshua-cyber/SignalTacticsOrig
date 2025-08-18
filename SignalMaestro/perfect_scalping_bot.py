@@ -17,6 +17,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 import traceback
 import time
+import signal
+import sys
+import atexit
+from pathlib import Path
 
 # Technical Analysis and Chart Generation
 try:
@@ -43,6 +47,17 @@ class PerfectScalpingBot:
 
     def __init__(self):
         self.logger = self._setup_logging()
+
+        # Process management
+        self.pid_file = Path("perfect_scalping_bot.pid")
+        self.is_daemon = False
+        self.shutdown_requested = False
+        
+        # Setup signal handlers for graceful shutdown
+        self._setup_signal_handlers()
+        
+        # Register cleanup on exit
+        atexit.register(self._cleanup_on_exit)
 
         # Telegram configuration
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -94,6 +109,88 @@ class PerfectScalpingBot:
         self.last_heartbeat = datetime.now()
 
         self.logger.info("Perfect Scalping Bot initialized")
+        
+        # Write PID file for process management
+        self._write_pid_file()
+
+    def _setup_signal_handlers(self):
+        """Setup signal handlers for graceful shutdown"""
+        def signal_handler(signum, frame):
+            self.logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+            self.shutdown_requested = True
+            self.running = False
+            
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        # Handle SIGUSR1 for status report (Unix only)
+        if hasattr(signal, 'SIGUSR1'):
+            def status_handler(signum, frame):
+                self._log_status_report()
+            signal.signal(signal.SIGUSR1, status_handler)
+
+    def _write_pid_file(self):
+        """Write process ID to file for monitoring"""
+        try:
+            with open(self.pid_file, 'w') as f:
+                f.write(str(os.getpid()))
+            self.logger.info(f"📝 PID file written: {self.pid_file}")
+        except Exception as e:
+            self.logger.warning(f"Could not write PID file: {e}")
+
+    def _cleanup_on_exit(self):
+        """Cleanup resources on exit"""
+        try:
+            if self.pid_file.exists():
+                self.pid_file.unlink()
+                self.logger.info("🧹 PID file cleaned up")
+        except Exception as e:
+            self.logger.warning(f"Cleanup error: {e}")
+
+    def _log_status_report(self):
+        """Log comprehensive status report"""
+        uptime = datetime.now() - self.last_heartbeat
+        status_report = f"""
+📊 **PERFECT SCALPING BOT STATUS REPORT**
+⏰ Uptime: {uptime.days}d {uptime.seconds//3600}h {(uptime.seconds%3600)//60}m
+🎯 Signals Generated: {self.signal_counter}
+📈 Win Rate: {self.performance_stats['win_rate']:.1f}%
+💰 Total Profit: {self.performance_stats['total_profit']:.2f}%
+🔄 Session Active: {bool(self.session_token)}
+📢 Channel Access: {self.channel_accessible}
+🛡️ Running Status: {self.running}
+💾 Memory Usage: {self._get_memory_usage()} MB
+"""
+        self.logger.info(status_report)
+
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage in MB"""
+        try:
+            import psutil
+            process = psutil.Process(os.getpid())
+            return round(process.memory_info().rss / 1024 / 1024, 2)
+        except ImportError:
+            return 0.0
+
+    def is_running(self) -> bool:
+        """Check if bot is running (for external monitoring)"""
+        return self.running and not self.shutdown_requested
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status for monitoring"""
+        uptime = datetime.now() - self.last_heartbeat
+        return {
+            'status': 'healthy' if self.is_running() else 'unhealthy',
+            'uptime_seconds': uptime.total_seconds(),
+            'signals_generated': self.signal_counter,
+            'win_rate': self.performance_stats['win_rate'],
+            'total_profit': self.performance_stats['total_profit'],
+            'session_active': bool(self.session_token),
+            'channel_accessible': self.channel_accessible,
+            'memory_mb': self._get_memory_usage(),
+            'last_heartbeat': self.last_heartbeat.isoformat(),
+            'pid': os.getpid()
+        }
 
     def _setup_logging(self):
         """Setup logging system"""
@@ -1231,12 +1328,17 @@ Please try again or use `/help` for available commands.
             self.logger.error(f"Error processing trade update: {e}")
 
     async def auto_scan_loop(self):
-        """Main auto-scanning loop with improved error handling"""
+        """Main auto-scanning loop with improved error handling and daemon-like stability"""
         consecutive_errors = 0
         max_consecutive_errors = 5
         base_scan_interval = 90  # Base interval in seconds
+        
+        # Enhanced error recovery settings
+        critical_error_count = 0
+        max_critical_errors = 3
+        last_successful_scan = datetime.now()
 
-        while self.running:
+        while self.running and not self.shutdown_requested:
             try:
                 # Renew session if needed
                 await self.renew_session()
@@ -1325,10 +1427,35 @@ Please try again or use `/help` for available commands.
                 consecutive_errors += 1
                 self.logger.error(f"Auto-scan loop error #{consecutive_errors}: {e}")
                 
+                # Check for critical errors that might require restart
+                time_since_success = datetime.now() - last_successful_scan
+                if time_since_success.total_seconds() > 1800:  # 30 minutes without success
+                    critical_error_count += 1
+                    self.logger.critical(f"🚨 Critical error #{critical_error_count}: No successful scan in 30+ minutes")
+                
                 # Exponential backoff for consecutive errors
                 if consecutive_errors >= max_consecutive_errors:
                     self.logger.critical(f"🚨 Too many consecutive errors ({consecutive_errors}). Extended wait.")
                     error_wait = min(300, 30 * consecutive_errors)  # Max 5 minutes
+                    
+                    # Try to recover session and connections
+                    try:
+                        await self.create_session()
+                        await self.verify_channel_access()
+                        self.logger.info("🔄 Session and connections refreshed")
+                    except Exception as recovery_error:
+                        self.logger.error(f"Recovery attempt failed: {recovery_error}")
+                        
+                elif critical_error_count >= max_critical_errors:
+                    self.logger.critical(f"💥 Too many critical errors ({critical_error_count}). Bot requires restart.")
+                    # Send alert to admin before potential restart
+                    if self.admin_chat_id:
+                        try:
+                            alert_msg = f"🚨 **CRITICAL ALERT**\n\nBot experiencing {critical_error_count} critical errors.\nAutomatic recovery in progress...\n\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                            await self.send_message(self.admin_chat_id, alert_msg)
+                        except:
+                            pass
+                    error_wait = 600  # 10 minutes for critical errors
                 else:
                     error_wait = min(120, 15 * consecutive_errors)  # Progressive delay
                 
@@ -1336,65 +1463,103 @@ Please try again or use `/help` for available commands.
                 await asyncio.sleep(error_wait)
 
     async def run_bot(self):
-        """Main bot execution"""
-        self.logger.info("🚀 Starting Perfect Scalping Bot")
+        """Main bot execution with daemon-like process management"""
+        self.logger.info("🚀 Starting Perfect Scalping Bot with enhanced process management")
 
-        # Create indefinite session
-        await self.create_session()
+        # Set daemon mode flag
+        self.is_daemon = True
 
-        # Verify channel access on startup
-        await self.verify_channel_access()
+        try:
+            # Create indefinite session
+            await self.create_session()
 
-        # Send startup notification to admin if available
-        if self.admin_chat_id:
-            startup_msg = f"""
+            # Verify channel access on startup
+            await self.verify_channel_access()
+
+            # Send startup notification to admin if available
+            if self.admin_chat_id:
+                startup_msg = f"""
 🚀 **PERFECT SCALPING BOT STARTED**
 
 ✅ **System Status:** Online & Operational
 🔄 **Session:** Created with auto-renewal
 📢 **Channel:** {self.target_channel} - {"✅ Accessible" if self.channel_accessible else "⚠️ Setup Required"}
 🎯 **Scanning:** {len(self.symbols)} symbols across {len(self.timeframes)} timeframes
+🆔 **Process ID:** {os.getpid()}
+📁 **PID File:** {self.pid_file}
 
-**🛡️ Auto-Features Active:**
+**🛡️ Enhanced Features Active:**
+• Daemon-like process management
+• Signal handlers for graceful shutdown
+• Automatic error recovery & restart
+• Process monitoring capabilities
+• Enhanced logging and diagnostics
 • Indefinite session management
 • Advanced signal generation
 • Real-time market scanning
-• Automatic error recovery
 
 *Bot initialized successfully and ready for trading*
-            """
-            await self.send_message(self.admin_chat_id, startup_msg)
+                """
+                await self.send_message(self.admin_chat_id, startup_msg)
 
-        # Start auto-scan task
-        auto_scan_task = asyncio.create_task(self.auto_scan_loop())
+            # Start auto-scan task
+            auto_scan_task = asyncio.create_task(self.auto_scan_loop())
 
-        # Main bot loop for handling commands
-        offset = None
-        last_channel_check = datetime.now()
+            # Main bot loop for handling commands with enhanced monitoring
+            offset = None
+            last_channel_check = datetime.now()
+            last_health_check = datetime.now()
 
-        while self.running:
-            try:
-                # Verify channel access every 30 minutes
-                now = datetime.now()
-                if (now - last_channel_check).total_seconds() > 1800:  # 30 minutes
-                    await self.verify_channel_access()
-                    last_channel_check = now
+            while self.running and not self.shutdown_requested:
+                try:
+                    # Health check every 5 minutes
+                    now = datetime.now()
+                    if (now - last_health_check).total_seconds() > 300:
+                        health_status = self.get_health_status()
+                        self.logger.debug(f"Health check: {health_status['status']}")
+                        last_health_check = now
 
-                updates = await self.get_updates(offset, timeout=10)
+                    # Verify channel access every 30 minutes
+                    if (now - last_channel_check).total_seconds() > 1800:  # 30 minutes
+                        await self.verify_channel_access()
+                        last_channel_check = now
 
-                for update in updates:
-                    offset = update['update_id'] + 1
+                    # Get updates with shorter timeout for responsiveness
+                    updates = await self.get_updates(offset, timeout=5)
 
-                    if 'message' in update:
-                        message = update['message']
-                        chat_id = str(message['chat']['id'])
+                    for update in updates:
+                        if self.shutdown_requested:
+                            break
+                            
+                        offset = update['update_id'] + 1
 
-                        if 'text' in message:
-                            await self.handle_commands(message, chat_id)
+                        if 'message' in update:
+                            message = update['message']
+                            chat_id = str(message['chat']['id'])
 
-            except Exception as e:
-                self.logger.error(f"Bot loop error: {e}")
-                await asyncio.sleep(5)
+                            if 'text' in message:
+                                await self.handle_commands(message, chat_id)
+
+                except asyncio.TimeoutError:
+                    # Normal timeout, continue loop
+                    continue
+                except Exception as e:
+                    self.logger.error(f"Bot loop error: {e}")
+                    if not self.shutdown_requested:
+                        await asyncio.sleep(5)
+
+        except Exception as e:
+            self.logger.critical(f"Critical bot error: {e}")
+            raise
+        finally:
+            # Ensure cleanup
+            self.is_daemon = False
+            if self.admin_chat_id and not self.shutdown_requested:
+                try:
+                    shutdown_msg = "🛑 **Perfect Scalping Bot Shutdown**\n\nBot has stopped. Auto-restart may be initiated by process manager."
+                    await self.send_message(self.admin_chat_id, shutdown_msg)
+                except:
+                    pass
 
 async def main():
     """Run the perfect scalping bot with auto-recovery"""
@@ -1422,27 +1587,77 @@ async def main():
         return True  # Restart on error
 
 async def run_with_auto_restart():
-    """Run bot with automatic restart capability"""
+    """Run bot with automatic restart capability and process management"""
     restart_count = 0
     max_restarts = 100  # Prevent infinite restart loops
+    start_time = datetime.now()
+    
+    # Create status file for external monitoring
+    status_file = Path("bot_status.json")
+    
+    def update_status(status: str, restart_count: int = 0):
+        """Update status file for external monitoring"""
+        try:
+            status_data = {
+                'status': status,
+                'restart_count': restart_count,
+                'start_time': start_time.isoformat(),
+                'last_update': datetime.now().isoformat(),
+                'pid': os.getpid(),
+                'max_restarts': max_restarts
+            }
+            with open(status_file, 'w') as f:
+                json.dump(status_data, f, indent=2)
+        except Exception as e:
+            print(f"Could not update status file: {e}")
     
     while restart_count < max_restarts:
         try:
+            update_status('running', restart_count)
             should_restart = await main()
+            
             if not should_restart:
+                update_status('stopped_manual', restart_count)
                 break  # Manual stop
                 
             restart_count += 1
-            print(f"🔄 Auto-restart #{restart_count} in 15 seconds...")
-            await asyncio.sleep(15)
+            print(f"🔄 Auto-restart #{restart_count}/{max_restarts} in 15 seconds...")
+            update_status('restarting', restart_count)
             
+            # Progressive restart delay - longer delays for frequent restarts
+            if restart_count <= 5:
+                delay = 15
+            elif restart_count <= 10:
+                delay = 30
+            elif restart_count <= 20:
+                delay = 60
+            else:
+                delay = 120
+                
+            print(f"⏳ Waiting {delay} seconds before restart...")
+            await asyncio.sleep(delay)
+            
+        except KeyboardInterrupt:
+            print("\n🛑 Manual shutdown requested")
+            update_status('stopped_manual', restart_count)
+            break
         except Exception as e:
             restart_count += 1
             print(f"💥 Critical error #{restart_count}: {e}")
             print(f"🔄 Restarting in 30 seconds...")
+            update_status('error', restart_count)
             await asyncio.sleep(30)
     
-    print(f"⚠️ Maximum restart limit reached ({max_restarts})")
+    if restart_count >= max_restarts:
+        print(f"⚠️ Maximum restart limit reached ({max_restarts})")
+        update_status('max_restarts_reached', restart_count)
+    
+    # Cleanup status file
+    try:
+        if status_file.exists():
+            status_file.unlink()
+    except:
+        pass
 
 if __name__ == "__main__":
     print("🚀 Perfect Scalping Bot - Auto-Restart Mode")

@@ -1,9 +1,7 @@
-
 #!/usr/bin/env python3
 """
 Perfect Scalping Bot - Most Profitable Strategy
 Uses advanced indicators for 3m to 1d timeframes with 1:3 RR ratio
-Fixed duplicate responses, added leverage/percentage, chart generation
 """
 
 import asyncio
@@ -65,12 +63,7 @@ class PerfectScalpingBot:
         # Bot settings
         self.admin_chat_id = None
         self.target_channel = "@SignalTactics"
-        self.channel_accessible = False
-
-        # Message deduplication
-        self.last_update_id = 0
-        self.processed_commands = set()
-        self.command_cooldown = {}
+        self.channel_accessible = False  # Track channel accessibility
 
         # Scalping parameters - optimized for scalping only
         self.timeframes = ['3m', '5m', '15m', '1h', '4h']
@@ -83,10 +76,8 @@ class PerfectScalpingBot:
 
         # Risk management - optimized for scalping
         self.risk_reward_ratio = 3.0  # 1:3 RR
-        self.min_signal_strength = 85
-        self.max_signals_per_hour = 12
-        self.capital_percentage = 5.0  # 5% of capital per trade
-        self.default_leverage = 10  # 10x leverage
+        self.min_signal_strength = 85  # Lowered for more signals
+        self.max_signals_per_hour = 12  # More signals for scalping
 
         # Signal tracking
         self.signal_counter = 0
@@ -109,15 +100,7 @@ class PerfectScalpingBot:
         self.hot_pairs_cache = []
         self.market_news_cache = []
 
-        # Virtual server for indefinite running
-        self.server_status = {
-            'start_time': datetime.now(),
-            'restart_count': 0,
-            'total_uptime': timedelta(0),
-            'last_restart': None
-        }
-
-        self.logger.info("✅ Perfect Scalping Bot initialized with robust server")
+        self.logger.info("✅ Perfect Scalping Bot initialized")
 
     def _setup_logging(self):
         """Setup logging system"""
@@ -137,8 +120,7 @@ class PerfectScalpingBot:
             session_data = {
                 'created_at': datetime.now().isoformat(),
                 'bot_id': 'perfect_scalping_bot',
-                'expires_at': (datetime.now() + timedelta(hours=24)).isoformat(),
-                'server_id': f"virtual_server_{int(time.time())}"
+                'expires_at': (datetime.now() + timedelta(hours=24)).isoformat()
             }
 
             session_string = json.dumps(session_data, sort_keys=True)
@@ -151,7 +133,7 @@ class PerfectScalpingBot:
             self.session_token = session_token
             self.session_expiry = datetime.now() + timedelta(hours=24)
 
-            self.logger.info("✅ Virtual server session created with auto-renewal")
+            self.logger.info("✅ Indefinite session created with auto-renewal")
             return session_token
 
         except Exception as e:
@@ -165,33 +147,10 @@ class PerfectScalpingBot:
                 datetime.now() >= self.session_expiry - timedelta(hours=1)):
 
                 await self.create_session()
-                self.logger.info("🔄 Virtual server session auto-renewed")
+                self.logger.info("🔄 Session auto-renewed")
 
         except Exception as e:
             self.logger.error(f"Session renewal error: {e}")
-
-    def is_command_duplicate(self, command: str, chat_id: str) -> bool:
-        """Check if command is duplicate within cooldown period"""
-        now = datetime.now()
-        command_key = f"{chat_id}:{command}"
-        
-        # Check if command was recently processed
-        if command_key in self.command_cooldown:
-            last_time = self.command_cooldown[command_key]
-            if (now - last_time).total_seconds() < 3:  # 3 second cooldown
-                return True
-        
-        # Update cooldown
-        self.command_cooldown[command_key] = now
-        
-        # Clean old entries
-        cutoff = now - timedelta(seconds=10)
-        self.command_cooldown = {
-            k: v for k, v in self.command_cooldown.items() 
-            if v > cutoff
-        }
-        
-        return False
 
     async def get_binance_data(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
         """Get market data from Binance API with retry logic"""
@@ -325,119 +284,6 @@ class PerfectScalpingBot:
         except Exception as e:
             self.logger.error(f"Error fetching crypto news: {e}")
             return []
-
-    def generate_market_chart(self, hot_pairs: List[Dict], news: List[Dict]) -> Optional[str]:
-        """Generate market analysis chart with hot pairs and news"""
-        try:
-            if not CHART_AVAILABLE:
-                return None
-
-            # Create figure with subplots
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-            fig.patch.set_facecolor('#1e1e1e')
-
-            # Top subplot - Hot Pairs Performance
-            pairs = [pair['symbol'].replace('USDT', '') for pair in hot_pairs[:8]]
-            changes = [float(pair['priceChangePercent']) for pair in hot_pairs[:8]]
-            volumes = [float(pair['quoteVolume'])/1000000 for pair in hot_pairs[:8]]  # Convert to millions
-
-            # Color coding for gains/losses
-            colors = ['#00ff00' if change > 0 else '#ff0000' for change in changes]
-
-            bars = ax1.bar(pairs, changes, color=colors, alpha=0.7)
-            ax1.set_title('🔥 TOP PERFORMING PAIRS (24H)', color='white', fontsize=14, fontweight='bold')
-            ax1.set_ylabel('Price Change (%)', color='white')
-            ax1.set_facecolor('#2d2d2d')
-            ax1.tick_params(colors='white')
-            ax1.grid(True, alpha=0.3)
-
-            # Add volume labels on bars
-            for bar, volume in zip(bars, volumes):
-                height = bar.get_height()
-                ax1.text(bar.get_x() + bar.get_width()/2., height + (0.1 if height > 0 else -0.3),
-                        f'${volume:.1f}M', ha='center', va='bottom' if height > 0 else 'top',
-                        color='white', fontsize=8)
-
-            # Bottom subplot - News Sentiment Analysis
-            news_titles = [news_item['title'][:30] + '...' if len(news_item['title']) > 30 
-                          else news_item['title'] for news_item in news[:5]]
-            
-            # Simple sentiment scoring based on keywords
-            positive_keywords = ['surge', 'rally', 'gain', 'break', 'momentum', 'adoption', 'growth']
-            negative_keywords = ['fall', 'drop', 'crash', 'decline', 'bear', 'loss', 'concern']
-            
-            sentiments = []
-            for news_item in news[:5]:
-                title_lower = news_item['title'].lower()
-                positive_score = sum(1 for word in positive_keywords if word in title_lower)
-                negative_score = sum(1 for word in negative_keywords if word in title_lower)
-                sentiment = positive_score - negative_score
-                sentiments.append(sentiment)
-
-            sentiment_colors = ['#00ff00' if s > 0 else '#ff0000' if s < 0 else '#ffff00' for s in sentiments]
-            
-            y_pos = range(len(news_titles))
-            bars2 = ax2.barh(y_pos, [abs(s) if s != 0 else 0.5 for s in sentiments], 
-                           color=sentiment_colors, alpha=0.7)
-            
-            ax2.set_title('📰 NEWS SENTIMENT ANALYSIS', color='white', fontsize=14, fontweight='bold')
-            ax2.set_xlabel('Sentiment Score', color='white')
-            ax2.set_yticks(y_pos)
-            ax2.set_yticklabels(news_titles, color='white', fontsize=8)
-            ax2.set_facecolor('#2d2d2d')
-            ax2.tick_params(colors='white')
-            ax2.grid(True, alpha=0.3)
-
-            plt.tight_layout()
-
-            # Save to BytesIO
-            img_buffer = BytesIO()
-            plt.savefig(img_buffer, format='png', facecolor='#1e1e1e', dpi=150, bbox_inches='tight')
-            img_buffer.seek(0)
-            plt.close()
-
-            # Encode to base64
-            img_base64 = base64.b64encode(img_buffer.read()).decode()
-            return img_base64
-
-        except Exception as e:
-            self.logger.error(f"Error generating market chart: {e}")
-            return None
-
-    def calculate_position_size(self, entry_price: float, stop_loss: float, capital: float = 10000) -> Dict[str, float]:
-        """Calculate position size with leverage and percentage"""
-        try:
-            # Risk amount (5% of capital)
-            risk_amount = capital * (self.capital_percentage / 100)
-            
-            # Risk per unit
-            risk_per_unit = abs(entry_price - stop_loss)
-            
-            # Position size without leverage
-            base_position_size = risk_amount / risk_per_unit if risk_per_unit > 0 else 0
-            
-            # Position size with leverage
-            leveraged_position_size = base_position_size * self.default_leverage
-            
-            # Position value
-            position_value = leveraged_position_size * entry_price
-            
-            # Margin required
-            margin_required = position_value / self.default_leverage
-            
-            return {
-                'base_position_size': base_position_size,
-                'leveraged_position_size': leveraged_position_size,
-                'position_value': position_value,
-                'margin_required': margin_required,
-                'risk_amount': risk_amount,
-                'leverage': self.default_leverage,
-                'capital_percentage': self.capital_percentage
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}")
-            return {}
 
     def calculate_advanced_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate the most profitable scalping indicators"""
@@ -698,9 +544,6 @@ class PerfectScalpingBot:
             if risk_percentage > 3.0:  # Max 3% risk
                 return None
 
-            # Calculate position size with leverage
-            position_data = self.calculate_position_size(entry_price, stop_loss)
-
             return {
                 'symbol': symbol,
                 'direction': direction,
@@ -714,8 +557,7 @@ class PerfectScalpingBot:
                 'risk_reward_ratio': self.risk_reward_ratio,
                 'indicators_used': ['SuperTrend', 'EMA Cross', 'RSI', 'MACD', 'Volume'],
                 'timeframe': 'Multi-TF',
-                'strategy': 'Perfect Scalping',
-                'position_data': position_data
+                'strategy': 'Perfect Scalping'
             }
 
         except Exception as e:
@@ -827,7 +669,7 @@ class PerfectScalpingBot:
             return False
 
     async def get_updates(self, offset=None, timeout=5) -> list:
-        """Get Telegram updates with duplicate filtering"""
+        """Get Telegram updates"""
         try:
             url = f"{self.base_url}/getUpdates"
             params = {'timeout': timeout}
@@ -839,17 +681,7 @@ class PerfectScalpingBot:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        updates = data.get('result', [])
-                        
-                        # Filter out old/duplicate updates
-                        filtered_updates = []
-                        for update in updates:
-                            update_id = update.get('update_id', 0)
-                            if update_id > self.last_update_id:
-                                filtered_updates.append(update)
-                                self.last_update_id = update_id
-                        
-                        return filtered_updates
+                        return data.get('result', [])
                     return []
 
         except Exception as e:
@@ -857,18 +689,11 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format signal for Telegram with leverage and percentage info"""
+        """Format signal for Telegram"""
         direction = signal['direction']
         emoji = "🟢" if direction == 'BUY' else "🔴"
         action_emoji = "📈" if direction == 'BUY' else "📉"
         timestamp = datetime.now().strftime('%H:%M:%S UTC')
-        
-        # Get position data
-        position_data = signal.get('position_data', {})
-        leverage = position_data.get('leverage', self.default_leverage)
-        capital_pct = position_data.get('capital_percentage', self.capital_percentage)
-        margin_required = position_data.get('margin_required', 0)
-        position_value = position_data.get('position_value', 0)
 
         message = f"""
 {emoji} **PERFECT SCALPING SIGNAL** {action_emoji}
@@ -884,12 +709,6 @@ class PerfectScalpingBot:
 • **TP2:** `${signal['tp2']:.6f}` (1:2)
 • **TP3:** `${signal['tp3']:.6f}` (1:3)
 
-💎 **Position Details:**
-• **Leverage:** `{leverage}x`
-• **Capital %:** `{capital_pct}%`
-• **Margin Required:** `${margin_required:.2f}`
-• **Position Value:** `${position_value:.2f}`
-
 📊 **Signal Strength:** `{signal['signal_strength']:.0f}%`
 ⚖️ **Risk/Reward:** `1:{signal['risk_reward_ratio']:.1f}`
 🛡️ **Risk:** `{signal['risk_percentage']:.2f}%`
@@ -899,41 +718,34 @@ class PerfectScalpingBot:
 
 ⚠️ **Trade Management:**
 • Move SL to entry after TP1 hit
-• Use {leverage}x leverage for optimal returns
-• Scale out at each TP level (33% each)
-• Risk only {capital_pct}% of total capital
+• Risk only 1-2% of capital
+• Scale out at each TP level
 
 ⏰ **Generated:** `{timestamp}`
 🔢 **Signal #:** `{self.signal_counter}`
 
 ---
 *🤖 Perfect Scalping Bot - Most Profitable Strategy*
-*💎 1:3 RR Guaranteed - Virtual Server Active*
+*💎 1:3 RR Guaranteed - No Losses at Entry*
         """
         return message.strip()
 
     async def handle_commands(self, message: Dict, chat_id: str):
-        """Handle bot commands with duplicate prevention"""
+        """Handle bot commands"""
         try:
             text = message.get('text', '').strip()
-            
-            if not text:
-                return
 
-            # Check for duplicates
-            if self.is_command_duplicate(text, chat_id):
+            if not text:
                 return
 
             if text.startswith('/start'):
                 self.admin_chat_id = chat_id
                 self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
 
-                uptime = datetime.now() - self.server_status['start_time']
                 welcome = f"""🚀 **PERFECT SCALPING BOT**
-*Virtual Server - Most Profitable Strategy*
+*Most Profitable Strategy Active*
 
 ✅ **Status:** Online & Scanning Every 5 Minutes
-🖥️ **Virtual Server:** Active (Uptime: {uptime.days}d {uptime.seconds//3600}h)
 🎯 **Strategy:** Advanced Multi-Indicator Scalping
 ⚖️ **Risk/Reward:** 1:3 Ratio Guaranteed
 📊 **Timeframes:** 3m to 4h Multi-TF Analysis
@@ -941,18 +753,16 @@ class PerfectScalpingBot:
 
 **🛡️ Risk Management:**
 • Stop Loss to Entry after TP1
-• {self.default_leverage}x Leverage Optimization
-• {self.capital_percentage}% Capital per Trade
 • Maximum 3% risk per trade
 • 3 Take Profit levels
+• Advanced signal filtering
 
 **📈 Performance:**
 • Signals Generated: `{self.performance_stats['total_signals']}`
 • Win Rate: `{self.performance_stats['win_rate']:.1f}%`
 • Total Profit: `{self.performance_stats['total_profit']:.2f}%`
-• Server Restarts: `{self.server_status['restart_count']}`
 
-*Virtual server running indefinitely with auto-restart*
+*Bot running indefinitely with auto-session renewal*
 Use `/help` for all commands"""
                 await self.send_message(chat_id, welcome)
 
@@ -961,51 +771,43 @@ Use `/help` for all commands"""
 
 **🤖 Bot Controls:**
 • `/start` - Initialize bot
-• `/status` - Virtual server status
+• `/status` - System status
 • `/stats` - Performance statistics
 • `/scan` - Manual signal scan
 
 **📊 Market Analysis:**
-• `/market` - Market update with charts
-• `/news` - Latest crypto news
-• `/chart` - Generate market analysis chart
+• `/market` - Market update & hot pairs
+• `/news` - Latest crypto news & insights
 
 **⚙️ Settings:**
 • `/settings` - View current settings
-• `/leverage` - Show leverage info
-• `/risk` - Risk management details
+• `/symbols` - List monitored symbols
+• `/timeframes` - Show timeframes
 
 **📈 Trading:**
 • `/signal` - Force signal generation
 • `/test` - Test signal generation
 
 **🔧 Advanced:**
-• `/server` - Virtual server information
-• `/session` - Session details
-• `/restart` - Restart virtual server
+• `/session` - Session information
+• `/restart` - Restart scanning
 
 **📈 Auto Features:**
-• Virtual server running 24/7
 • Continuous market scanning every 5 minutes
-• Real-time signal generation with leverage
+• Real-time signal generation
 • Auto-session renewal
 • Advanced risk management
-• Chart generation for market updates
 
-*Bot operates indefinitely on virtual server*"""
+*Bot operates 24/7 with perfect error recovery*"""
                 await self.send_message(chat_id, help_text)
 
             elif text.startswith('/status'):
-                uptime = datetime.now() - self.server_status['start_time']
-                total_uptime = self.server_status['total_uptime'] + uptime
-                
-                status = f"""📊 **VIRTUAL SERVER STATUS**
+                uptime = datetime.now() - self.last_heartbeat
+                status = f"""📊 **PERFECT SCALPING BOT STATUS**
 
-🖥️ **Virtual Server:** Online & Operational
+✅ **System:** Online & Operational
 🔄 **Session:** Active (Auto-Renewal)
-⏰ **Current Uptime:** {uptime.days}d {uptime.seconds//3600}h {(uptime.seconds//60)%60}m
-📈 **Total Uptime:** {total_uptime.days}d {total_uptime.seconds//3600}h
-🔁 **Restart Count:** {self.server_status['restart_count']}
+⏰ **Uptime:** {uptime.days}d {uptime.seconds//3600}h
 🎯 **Scanning:** {len(self.symbols)} symbols every 5 minutes
 
 **📈 Current Stats:**
@@ -1016,11 +818,9 @@ Use `/help` for all commands"""
 **🔧 Strategy Status:**
 • **Min Signal Strength:** `{self.min_signal_strength}%`
 • **Risk/Reward Ratio:** `1:{self.risk_reward_ratio}`
-• **Leverage:** `{self.default_leverage}x`
-• **Capital per Trade:** `{self.capital_percentage}%`
 • **Max Signals/Hour:** `{self.max_signals_per_hour}`
 
-*Virtual server operational - Perfect scalping active*"""
+*All systems operational - Perfect scalping active*"""
                 await self.send_message(chat_id, status)
 
             elif text.startswith('/scan'):
@@ -1035,120 +835,9 @@ Use `/help` for all commands"""
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
 
-                    await self.send_message(chat_id, f"✅ **{len(signals)} PERFECT SIGNALS FOUND**\n\nTop signals delivered! Virtual server continues auto-scanning...")
+                    await self.send_message(chat_id, f"✅ **{len(signals)} PERFECT SIGNALS FOUND**\n\nTop signals delivered! Bot continues auto-scanning...")
                 else:
-                    await self.send_message(chat_id, "📊 **NO HIGH-STRENGTH SIGNALS**\n\nMarket conditions don't meet our strict criteria. Virtual server continues monitoring...")
-
-            elif text.startswith('/market') or text.startswith('/chart'):
-                await self.send_message(chat_id, "🔍 **GENERATING MARKET ANALYSIS**\n\nAnalyzing hot pairs and generating chart...")
-
-                hot_pairs = await self.get_hot_pairs()
-                news = await self.get_crypto_news()
-
-                if hot_pairs or news:
-                    timestamp = datetime.now().strftime('%H:%M:%S UTC')
-
-                    # Generate chart
-                    chart_base64 = self.generate_market_chart(hot_pairs, news)
-
-                    message = f"""
-🔥 **MARKET ANALYSIS REPORT** 📊
-
-⏰ **Update Time:** `{timestamp}`
-
-**🏆 HOT PAIRS (Top Movers):**
-"""
-
-                    for i, pair in enumerate(hot_pairs[:5], 1):
-                        emoji = "🚀" if float(pair['priceChangePercent']) > 0 else "📉"
-                        symbol = pair['symbol']
-                        change = float(pair['priceChangePercent'])
-                        price = float(pair['lastPrice'])
-
-                        message += f"""
-{emoji} **{i}. {symbol}**
-• Price: `${price:.6f}`
-• Change: `{change:+.2f}%`
-• Volume: `${float(pair['quoteVolume'])/1000000:.1f}M`
-"""
-
-                    message += f"""
-
-📰 **LATEST NEWS:**
-"""
-
-                    for i, news_item in enumerate(news[:3], 1):
-                        title = news_item['title'][:60] + "..." if len(news_item['title']) > 60 else news_item['title']
-                        message += f"📍 **{i}.** {title}\n\n"
-
-                    if chart_base64:
-                        message += "📊 **Market chart generated successfully!**\n\n"
-
-                    message += "---\n*🤖 Perfect Scalping Bot - Virtual Server Market Intelligence*"
-
-                    await self.send_message(chat_id, message.strip())
-                else:
-                    await self.send_message(chat_id, "❌ **MARKET UPDATE FAILED**\n\nUnable to fetch market data.")
-
-            elif text.startswith('/leverage'):
-                leverage_info = f"""⚡ **LEVERAGE SETTINGS**
-
-**🎯 Current Configuration:**
-• **Leverage:** `{self.default_leverage}x`
-• **Capital per Trade:** `{self.capital_percentage}%`
-• **Risk per Trade:** `Max 3%`
-
-**💎 Position Calculation Example:**
-• **Capital:** `$10,000`
-• **Risk Amount:** `$500 ({self.capital_percentage}%)`
-• **Entry:** `$50,000 (BTC)`
-• **Stop Loss:** `$49,000`
-• **Risk per Unit:** `$1,000`
-• **Base Position:** `0.5 BTC`
-• **Leveraged Position:** `{0.5 * self.default_leverage} BTC`
-• **Position Value:** `${0.5 * self.default_leverage * 50000:,.0f}`
-• **Margin Required:** `${0.5 * self.default_leverage * 50000 / self.default_leverage:,.0f}`
-
-**⚠️ Risk Management:**
-• Leverage amplifies both profits and losses
-• Stop loss always moves to entry after TP1
-• Maximum 3% total account risk per trade
-• Scale out at each TP level (33% each)
-
-*Leverage optimized for maximum profitability*"""
-                await self.send_message(chat_id, leverage_info)
-
-            elif text.startswith('/server'):
-                uptime = datetime.now() - self.server_status['start_time']
-                total_uptime = self.server_status['total_uptime'] + uptime
-                
-                server_info = f"""🖥️ **VIRTUAL SERVER INFORMATION**
-
-**📊 Server Statistics:**
-• **Status:** `Online & Operational`
-• **Type:** `Virtual Server (Replit)`
-• **Start Time:** `{self.server_status['start_time'].strftime('%Y-%m-%d %H:%M:%S UTC')}`
-• **Current Uptime:** `{uptime.days}d {uptime.seconds//3600}h {(uptime.seconds//60)%60}m`
-• **Total Uptime:** `{total_uptime.days}d {total_uptime.seconds//3600}h`
-• **Restart Count:** `{self.server_status['restart_count']}`
-• **Last Restart:** `{self.server_status['last_restart'] or 'None'}`
-
-**🔧 Server Configuration:**
-• **Auto-Restart:** `Enabled`
-• **Session Management:** `Auto-Renewal`
-• **Error Recovery:** `Advanced`
-• **Resource Optimization:** `Active`
-• **Memory Management:** `Optimized`
-
-**⚡ Performance Metrics:**
-• **CPU Usage:** `Optimized`
-• **Memory Usage:** `Efficient`
-• **Network Latency:** `Low`
-• **API Response Time:** `Fast`
-• **Signal Generation:** `Real-time`
-
-*Virtual server engineered for 24/7 operation*"""
-                await self.send_message(chat_id, server_info)
+                    await self.send_message(chat_id, "📊 **NO HIGH-STRENGTH SIGNALS**\n\nMarket conditions don't meet our strict criteria. Bot continues monitoring...")
 
             elif text.startswith('/signal') or text.startswith('/test'):
                 await self.send_message(chat_id, "🧪 **TEST SIGNAL GENERATION**\n\nGenerating test signal with current market data...")
@@ -1172,12 +861,88 @@ Use `/help` for all commands"""
                 except Exception as e:
                     await self.send_message(chat_id, f"🚨 **TEST ERROR**\n\nError: {str(e)[:100]}")
 
+            elif text.startswith('/market'):
+                await self.send_message(chat_id, "🔍 **GENERATING MARKET UPDATE**\n\nAnalyzing hot pairs and fetching market news...")
+
+                hot_pairs = await self.get_hot_pairs()
+                news = await self.get_crypto_news()
+
+                if hot_pairs or news:
+                    timestamp = datetime.now().strftime('%H:%M:%S UTC')
+
+                    message = f"""
+🔥 **MARKET UPDATE** 📊
+
+⏰ **Update Time:** `{timestamp}`
+
+**🏆 HOT PAIRS (Top Movers):**
+"""
+
+                    for i, pair in enumerate(hot_pairs[:5], 1):
+                        emoji = "🚀" if float(pair['priceChangePercent']) > 0 else "📉"
+                        symbol = pair['symbol']
+                        change = float(pair['priceChangePercent'])
+                        price = float(pair['lastPrice'])
+
+                        message += f"""
+{emoji} **{i}. {symbol}**
+• Price: `${price:.6f}`
+• Change: `{change:+.2f}%`
+"""
+
+                    message += f"""
+
+📰 **LATEST NEWS:**
+"""
+
+                    for i, news_item in enumerate(news[:3], 1):
+                        title = news_item['title'][:60] + "..." if len(news_item['title']) > 60 else news_item['title']
+                        message += f"📍 **{i}.** {title}\n\n"
+
+                    message += "---\n*🤖 Perfect Scalping Bot - Market Intelligence*"
+
+                    await self.send_message(chat_id, message.strip())
+                else:
+                    await self.send_message(chat_id, "❌ **MARKET UPDATE FAILED**\n\nUnable to fetch market data.")
+
+            elif text.startswith('/news'):
+                await self.send_message(chat_id, "📰 **FETCHING CRYPTO NEWS**\n\nGetting latest market updates...")
+
+                news = await self.get_crypto_news()
+                if news:
+                    news_msg = "📰 **LATEST CRYPTO NEWS**\n\n"
+                    for i, item in enumerate(news, 1):
+                        title = item['title'][:80] + "..." if len(item['title']) > 80 else item['title']
+                        source = item.get('source', 'Unknown')
+                        news_msg += f"**{i}. {title}**\n*Source: {source}*\n\n"
+
+                    news_msg += f"⏰ **Updated:** `{datetime.now().strftime('%H:%M:%S UTC')}`"
+                    await self.send_message(chat_id, news_msg)
+                else:
+                    await self.send_message(chat_id, "❌ **NEWS FETCH FAILED**\n\nUnable to fetch news.")
+
             else:
-                # Unknown command - don't respond to avoid duplicates
-                pass
+                # Unknown command
+                unknown_msg = f"""❓ **Unknown Command:** `{text}`
+
+Use `/help` to see all available commands.
+
+**Quick Commands:**
+• `/start` - Initialize bot
+• `/status` - Check system status
+• `/scan` - Manual signal scan
+• `/help` - Full command list"""
+                await self.send_message(chat_id, unknown_msg)
 
         except Exception as e:
             self.logger.error(f"Error handling command {text}: {e}")
+            error_msg = f"""🚨 **COMMAND ERROR**
+
+**Command:** `{text}`
+**Error:** System error occurred
+
+Please try again or use `/help` for available commands."""
+            await self.send_message(chat_id, error_msg)
 
     async def auto_scan_loop(self):
         """Main auto-scanning loop that runs every 5 minutes"""
@@ -1256,22 +1021,18 @@ Use `/help` for all commands"""
                 consecutive_errors += 1
                 self.logger.error(f"Auto-scan loop error #{consecutive_errors}: {e}")
 
-                # Update restart count
-                self.server_status['restart_count'] += 1
-                self.server_status['last_restart'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
-
                 # Exponential backoff for consecutive errors
                 if consecutive_errors >= max_consecutive_errors:
                     error_wait = 300  # 5 minutes
                 else:
                     error_wait = min(120, 30 * consecutive_errors)
 
-                self.logger.info(f"⏳ Virtual server waiting {error_wait} seconds before retry...")
+                self.logger.info(f"⏳ Waiting {error_wait} seconds before retry...")
                 await asyncio.sleep(error_wait)
 
     async def run_bot(self):
-        """Main bot execution with virtual server capability"""
-        self.logger.info("🚀 Starting Perfect Scalping Bot on Virtual Server")
+        """Main bot execution with auto-restart capability"""
+        self.logger.info("🚀 Starting Perfect Scalping Bot")
 
         # Create indefinite session
         await self.create_session()
@@ -1301,22 +1062,18 @@ Use `/help` for all commands"""
                 await asyncio.sleep(5)
 
 async def main():
-    """Run the perfect scalping bot with virtual server auto-recovery"""
+    """Run the perfect scalping bot with auto-recovery"""
     bot = PerfectScalpingBot()
 
     try:
-        print("🚀 Perfect Scalping Bot Starting on Virtual Server...")
-        print("🖥️ Virtual Server Configuration Active")
+        print("🚀 Perfect Scalping Bot Starting...")
         print("📊 Most Profitable Strategy Active")
         print("⚖️ 1:3 Risk/Reward Ratio")
         print("🎯 3 Take Profits + SL to Entry")
-        print("⚡ 10x Leverage Optimization")
-        print("💎 5% Capital per Trade")
         print("🔄 Scanning Every 5 Minutes")
         print("📈 Advanced Multi-Indicator Analysis")
-        print("📊 Chart Generation for Market Updates")
         print("🛡️ Auto-Restart Protection Active")
-        print("\nVirtual server will run continuously with error recovery")
+        print("\nBot will run continuously with error recovery")
 
         await bot.run_bot()
 
@@ -1325,14 +1082,14 @@ async def main():
         bot.running = False
         return False
     except Exception as e:
-        print(f"❌ Virtual Server Error: {e}")
-        bot.logger.error(f"Virtual server crashed: {e}")
+        print(f"❌ Bot Error: {e}")
+        bot.logger.error(f"Bot crashed: {e}")
         return True
 
 async def run_with_auto_restart():
-    """Run bot with automatic restart capability on virtual server"""
+    """Run bot with automatic restart capability"""
     restart_count = 0
-    max_restarts = 100
+    max_restarts = 50
 
     while restart_count < max_restarts:
         try:
@@ -1341,26 +1098,26 @@ async def run_with_auto_restart():
                 break
 
             restart_count += 1
-            print(f"🔄 Virtual Server Auto-restart #{restart_count} in 15 seconds...")
+            print(f"🔄 Auto-restart #{restart_count} in 15 seconds...")
             await asyncio.sleep(15)
 
         except Exception as e:
             restart_count += 1
-            print(f"💥 Virtual Server Critical error #{restart_count}: {e}")
-            print(f"🔄 Restarting virtual server in 30 seconds...")
+            print(f"💥 Critical error #{restart_count}: {e}")
+            print(f"🔄 Restarting in 30 seconds...")
             await asyncio.sleep(30)
 
     print(f"⚠️ Maximum restart limit reached ({max_restarts})")
 
 if __name__ == "__main__":
-    print("🚀 Perfect Scalping Bot - Virtual Server Mode")
-    print("🖥️ Virtual server will automatically restart if it stops")
+    print("🚀 Perfect Scalping Bot - Auto-Restart Mode")
+    print("🛡️ The bot will automatically restart if it stops")
     print("⚡ Press Ctrl+C to stop permanently")
 
     try:
         asyncio.run(run_with_auto_restart())
     except KeyboardInterrupt:
-        print("\n🛑 Perfect Scalping Bot virtual server shutdown complete")
+        print("\n🛑 Perfect Scalping Bot shutdown complete")
     except Exception as e:
-        print(f"💥 Fatal virtual server error: {e}")
+        print(f"💥 Fatal error: {e}")
         print("🔄 Please restart manually")

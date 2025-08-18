@@ -65,15 +65,6 @@ mode = "sequential"
 task = "shell.exec"
 args = "python SignalMaestro/perfect_scalping_bot.py"
 
-[[workflows.workflow]]
-name = "Virtual Server Bot"
-author = 46555627
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python SignalMaestro/perfect_scalping_bot.py"
-
 [[ports]]
 localPort = 5000
 externalPort = 80

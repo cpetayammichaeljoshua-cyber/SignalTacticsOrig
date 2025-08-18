@@ -76,19 +76,85 @@ class PerfectScalpingBot:
         self.channel_accessible = False  # Track channel accessibility
 
         # Scalping parameters - optimized for scalping only
-        self.timeframes = ['3m', '5m', '15m', '1h', '4h']  # Limited to 3m-4h as requested
+        self.timeframes = ['1m', '3m', '5m', '15m', '1h', '4h']  # Enhanced with 1m for ultra-scalping
+        
+        # All major Binance pairs for maximum opportunities
         self.symbols = [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT',
-            'DOGEUSDT', 'MATICUSDT', 'DOTUSDT', 'AVAXUSDT', 'LINKUSDT', 'LTCUSDT',
-            'UNIUSDT', 'ATOMUSDT', 'FILUSDT', 'VETUSDT', 'ICPUSDT', 'SANDUSDT',
-            'MANAUSDT', 'ALGOUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT'
+            # Top Market Cap
+            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT', 'DOGEUSDT',
+            
+            # Layer 1 & Major Altcoins
+            'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'ETCUSDT',
+            'ATOMUSDT', 'ALGOUSDT', 'XLMUSDT', 'VETUSDT', 'TRXUSDT', 'EOSUSDT', 'THETAUSDT',
+            
+            # DeFi Tokens
+            'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
+            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT', 'RAMPUSDT',
+            
+            # Layer 2 & Scaling
+            'MATICUSDT', 'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
+            
+            # Gaming & Metaverse
+            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
+            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT', 'STEPNUSDT',
+            
+            # Infrastructure & Storage
+            'FILUSDT', 'ARUSDT', 'ICPUSDT', 'STORJUSDT', 'SCUSDT',
+            
+            # Privacy & Security
+            'XMRUSDT', 'ZECUSDT', 'DASHUSDT', 'SCRTUSDT',
+            
+            # Meme & Social
+            'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT',
+            
+            # AI & Data
+            'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'RNDRУСDT', 'GRTUSDT',
+            
+            # Oracles & Middleware
+            'LINKUSDT', 'BANDUSDT', 'APIUSDT', 'CHAIUSDT',
+            
+            # Enterprise & Real World Assets
+            'HBARUSDT', 'XDCUSDT', 'QNTUSDT', 'NXMUSDT',
+            
+            # High Volume Trading Pairs
+            'BTCDOMUSDT', 'DEFIUSDT', 'NFTUSDT',
+            
+            # Additional High-Volume Pairs
+            'NEARUSDT', 'FTMUSDT', 'ONEUSDT', 'ZILUSDT', 'RVNUSDT', 'WAVESUSDT',
+            'ONTUSDT', 'QTUMУСDT', 'BATUSDT', 'IOTAUSDT', 'NEOУСDT', 'GASUSDT',
+            'OMGUSDT', 'ZRXUSDT', 'KNCUSDT', 'LRCUSDT', 'REPUSDT', 'BZRXUSDT',
+            
+            # Emerging & High Volatility
+            'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'PYTHUSDT',
+            'WLDUSDT', 'PENDLEUSDT', 'ARKUSDT', 'JUPUSDT', 'WIFUSDT', 'BOMEUSDT',
+            
+            # Cross-Chain & Bridges
+            'DOTUSDT', 'ATOMUSDT', 'OSMOUSDT', 'INJUSDT', 'KAVAUSDT', 'HARDUSDT',
+            
+            # New Listings & Trending
+            'REZUSDT', 'BBUSDT', 'NOTUSDT', 'IOUSDT', 'TAPUSDT', 'ZROUSDT',
+            'LISAUSDT', 'OMNIUSDT', 'SAGAUSDT', 'TOKENUSDT', 'ETHFIUSDT',
+            
+            # Additional Major Pairs
+            'KAVAUSDT', 'BANDUSDT', 'RLCUSDT', 'FETUSDT', 'CTSIUSDT', 'AKROUSDT',
+            'AXSUSDT', 'HARDUSDT', 'DUSKUSDT', 'UNFIUSDT', 'ROSEUSDT', 'AVAUSDT',
+            'XEMUSDT', 'SKLУСDT', 'GLMRУСDT', 'GMXУСDT', 'BLURUSDT', 'MAGICUSDT'
         ]
+        
+        # CVD (Cumulative Volume Delta) tracking for BTC PERP
+        self.cvd_data = {
+            'btc_perp_cvd': 0,
+            'cvd_trend': 'neutral',
+            'cvd_divergence': False,
+            'cvd_strength': 0
+        }
 
-        # Risk management - optimized for scalping with 5% capital allocation
+        # Risk management - optimized for scalping with enhanced symbol coverage
         self.risk_reward_ratio = 3.0  # 1:3 RR
-        self.min_signal_strength = 90  # Higher threshold for scalping
-        self.max_signals_per_hour = 3  # Reduced to prevent multiple responses
-        self.capital_allocation = 0.05  # 5% of capital as requested
+        self.min_signal_strength = 85  # Slightly lower for more opportunities with CVD
+        self.max_signals_per_hour = 5  # Increased for larger symbol pool
+        self.capital_allocation = 0.03  # 3% per trade for better diversification
+        self.max_concurrent_trades = 8  # Maximum concurrent positions
 
         # Signal tracking
         self.signal_counter = 0
@@ -242,6 +308,80 @@ class PerfectScalpingBot:
         except Exception as e:
             self.logger.error(f"Session renewal error: {e}")
 
+    async def calculate_cvd_btc_perp(self) -> Dict[str, Any]:
+        """Calculate Cumulative Volume Delta for BTC PERP for convergence/divergence analysis"""
+        try:
+            # Get BTC PERP futures data
+            url = "https://fapi.binance.com/fapi/v1/klines"
+            params = {
+                'symbol': 'BTCUSDT',
+                'interval': '1m',
+                'limit': 100
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        klines = await response.json()
+                        
+                        # Get trades for volume delta calculation
+                        trades_url = "https://fapi.binance.com/fapi/v1/aggTrades"
+                        trades_params = {
+                            'symbol': 'BTCUSDT',
+                            'limit': 1000
+                        }
+                        
+                        async with session.get(trades_url, params=trades_params) as trades_response:
+                            if trades_response.status == 200:
+                                trades = await trades_response.json()
+                                
+                                # Calculate CVD
+                                buy_volume = 0
+                                sell_volume = 0
+                                
+                                for trade in trades:
+                                    volume = float(trade['q'])
+                                    if trade['m']:  # Maker side (sell)
+                                        sell_volume += volume
+                                    else:  # Taker side (buy)
+                                        buy_volume += volume
+                                
+                                # Update CVD
+                                volume_delta = buy_volume - sell_volume
+                                self.cvd_data['btc_perp_cvd'] += volume_delta
+                                
+                                # Determine trend
+                                if volume_delta > 0:
+                                    self.cvd_data['cvd_trend'] = 'bullish'
+                                elif volume_delta < 0:
+                                    self.cvd_data['cvd_trend'] = 'bearish'
+                                else:
+                                    self.cvd_data['cvd_trend'] = 'neutral'
+                                
+                                # Calculate strength (0-100)
+                                total_volume = buy_volume + sell_volume
+                                if total_volume > 0:
+                                    self.cvd_data['cvd_strength'] = min(100, abs(volume_delta) / total_volume * 100)
+                                
+                                # Detect divergence with price
+                                if len(klines) >= 20:
+                                    recent_prices = [float(k[4]) for k in klines[-20:]]  # Close prices
+                                    price_trend = 'bullish' if recent_prices[-1] > recent_prices[-10] else 'bearish'
+                                    
+                                    # Divergence occurs when price and CVD move in opposite directions
+                                    self.cvd_data['cvd_divergence'] = (
+                                        (price_trend == 'bullish' and self.cvd_data['cvd_trend'] == 'bearish') or
+                                        (price_trend == 'bearish' and self.cvd_data['cvd_trend'] == 'bullish')
+                                    )
+                                
+                                return self.cvd_data
+                                
+            return self.cvd_data
+                                
+        except Exception as e:
+            self.logger.error(f"Error calculating CVD for BTC PERP: {e}")
+            return self.cvd_data
+
     async def get_binance_data(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
         """Get market data from Binance API"""
         try:
@@ -279,7 +419,7 @@ class PerfectScalpingBot:
             return None
 
     def calculate_advanced_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate the most profitable scalping indicators"""
+        """Calculate the most profitable scalping indicators with CVD integration"""
         try:
             indicators = {}
 
@@ -297,11 +437,16 @@ class PerfectScalpingBot:
             if len(high) == 0 or len(low) == 0 or len(close) == 0:
                 return {}
 
-            # 1. SUPERTREND (Most profitable for scalping)
+            # 1. ENHANCED SUPERTREND (Most profitable for scalping)
             hl2 = (high + low) / 2
-            atr = self._calculate_atr(high, low, close, 10)
-            upper_band = hl2 + (3 * atr)
-            lower_band = hl2 - (3 * atr)
+            atr = self._calculate_atr(high, low, close, 7)  # Faster for scalping
+            
+            # Dynamic multiplier based on volatility
+            volatility = np.std(close[-20:]) / np.mean(close[-20:])
+            multiplier = 2.5 + (volatility * 10)  # Adaptive multiplier
+            
+            upper_band = hl2 + (multiplier * atr)
+            lower_band = hl2 - (multiplier * atr)
 
             supertrend = np.zeros(len(close))
             supertrend_direction = np.zeros(len(close))
@@ -319,6 +464,48 @@ class PerfectScalpingBot:
 
             indicators['supertrend'] = supertrend[-1]
             indicators['supertrend_direction'] = supertrend_direction[-1]
+            
+            # 1.1 SCALPING VWAP (Volume Weighted Average Price)
+            typical_price = (high + low + close) / 3
+            vwap = np.zeros(len(close))
+            cumulative_volume = np.zeros(len(close))
+            cumulative_pv = np.zeros(len(close))
+            
+            for i in range(len(close)):
+                if i == 0:
+                    cumulative_volume[i] = volume[i]
+                    cumulative_pv[i] = typical_price[i] * volume[i]
+                else:
+                    cumulative_volume[i] = cumulative_volume[i-1] + volume[i]
+                    cumulative_pv[i] = cumulative_pv[i-1] + (typical_price[i] * volume[i])
+                
+                if cumulative_volume[i] > 0:
+                    vwap[i] = cumulative_pv[i] / cumulative_volume[i]
+            
+            indicators['vwap'] = vwap[-1]
+            indicators['price_vs_vwap'] = (close[-1] - vwap[-1]) / vwap[-1] * 100
+            
+            # 1.2 MICRO TREND DETECTION (1-5 minute scalping)
+            if len(close) >= 10:
+                micro_trend_periods = [3, 5, 8]
+                micro_trends = []
+                
+                for period in micro_trend_periods:
+                    if len(close) >= period:
+                        recent_slope = np.polyfit(range(period), close[-period:], 1)[0]
+                        trend_strength = abs(recent_slope) / close[-1] * 100
+                        micro_trends.append({
+                            'period': period,
+                            'slope': recent_slope,
+                            'strength': trend_strength,
+                            'direction': 'up' if recent_slope > 0 else 'down'
+                        })
+                
+                indicators['micro_trends'] = micro_trends
+                
+                # Consensus micro trend
+                up_trends = sum(1 for t in micro_trends if t['direction'] == 'up')
+                indicators['micro_trend_consensus'] = 'bullish' if up_trends >= 2 else 'bearish'
 
             # 2. EMA Cross Strategy (8, 21, 55)
             ema_8 = self._calculate_ema(close, 8)
@@ -378,9 +565,72 @@ class PerfectScalpingBot:
             indicators['momentum'] = (close[-1] - close[-10]) / close[-10] * 100
             indicators['price_velocity'] = (close[-1] - close[-3]) / close[-3] * 100
 
-            # 10. Current price info
+            # 10. ENHANCED VOLUME ANALYSIS WITH CVD INTEGRATION
+            if len(volume) >= 20:
+                # Volume Rate of Change
+                volume_roc = (volume[-1] - volume[-10]) / volume[-10] * 100
+                indicators['volume_roc'] = volume_roc
+                
+                # Volume Trend
+                volume_ma = np.mean(volume[-10:])
+                indicators['volume_trend'] = 'increasing' if volume[-1] > volume_ma * 1.2 else 'decreasing' if volume[-1] < volume_ma * 0.8 else 'stable'
+                
+                # Accumulation/Distribution Line
+                money_flow = ((close - low) - (high - close)) / (high - low) * volume
+                indicators['money_flow'] = np.mean(money_flow[-5:])
+            
+            # 11. SCALPING MOMENTUM OSCILLATORS
+            # Williams %R (Fast momentum)
+            if len(high) >= 14:
+                highest_high = np.max(high[-14:])
+                lowest_low = np.min(low[-14:])
+                if highest_high != lowest_low:
+                    williams_r = (highest_high - close[-1]) / (highest_high - lowest_low) * -100
+                    indicators['williams_r'] = williams_r
+                    indicators['williams_r_signal'] = 'oversold' if williams_r < -80 else 'overbought' if williams_r > -20 else 'neutral'
+            
+            # 12. CVD CONFLUENCE SIGNALS
+            cvd_data = self.cvd_data
+            indicators['cvd_trend'] = cvd_data['cvd_trend']
+            indicators['cvd_strength'] = cvd_data['cvd_strength']
+            indicators['cvd_divergence'] = cvd_data['cvd_divergence']
+            
+            # CVD Confluence Score
+            cvd_score = 0
+            if cvd_data['cvd_trend'] == 'bullish':
+                cvd_score += cvd_data['cvd_strength'] * 0.3
+            elif cvd_data['cvd_trend'] == 'bearish':
+                cvd_score -= cvd_data['cvd_strength'] * 0.3
+            
+            if cvd_data['cvd_divergence']:
+                cvd_score += 20  # Divergence adds significant signal strength
+            
+            indicators['cvd_confluence_score'] = cvd_score
+            
+            # 13. MARKET MICROSTRUCTURE
+            # Order Flow Imbalance Approximation
+            if len(close) >= 5:
+                price_moves = np.diff(close[-5:])
+                volume_moves = volume[-4:]  # One less than price moves
+                
+                buying_pressure = 0
+                selling_pressure = 0
+                
+                for i, move in enumerate(price_moves):
+                    if move > 0:
+                        buying_pressure += volume_moves[i]
+                    else:
+                        selling_pressure += volume_moves[i]
+                
+                if buying_pressure + selling_pressure > 0:
+                    order_flow_ratio = buying_pressure / (buying_pressure + selling_pressure)
+                    indicators['order_flow_ratio'] = order_flow_ratio
+                    indicators['order_flow_bias'] = 'bullish' if order_flow_ratio > 0.6 else 'bearish' if order_flow_ratio < 0.4 else 'neutral'
+
+            # 14. Current price info
             indicators['current_price'] = close[-1]
             indicators['price_change'] = (close[-1] - close[-2]) / close[-2] * 100
+            indicators['price_velocity'] = (close[-1] - close[-3]) / close[-3] * 100  # 3-period velocity
 
             return indicators
 
@@ -530,7 +780,7 @@ class PerfectScalpingBot:
             return False
 
     def generate_scalping_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Generate scalping signal based on indicators"""
+        """Generate enhanced scalping signal with CVD confluence and optimized logic"""
         try:
             # Check if we recently sent a signal for this symbol
             current_time = datetime.now()
@@ -545,36 +795,50 @@ class PerfectScalpingBot:
 
             current_price = indicators['current_price']
 
-            # SUPERTREND signal (30% weight)
+            # 1. ENHANCED SUPERTREND (25% weight)
             if indicators['supertrend_direction'] == 1:
-                bullish_signals += 30
-            elif indicators['supertrend_direction'] == -1:
-                bearish_signals += 30
-
-            # EMA alignment (25% weight)
-            if indicators['ema_bullish']:
                 bullish_signals += 25
-            elif indicators['ema_bearish']:
+            elif indicators['supertrend_direction'] == -1:
                 bearish_signals += 25
 
-            # RSI with divergence (20% weight)
-            if indicators['rsi_oversold'] or indicators['rsi_bullish_div']:
+            # 2. EMA CONFLUENCE (20% weight)
+            if indicators['ema_bullish']:
                 bullish_signals += 20
-            elif indicators['rsi_overbought'] or indicators['rsi_bearish_div']:
+            elif indicators['ema_bearish']:
                 bearish_signals += 20
 
-            # MACD confirmation (15% weight)
-            if indicators['macd_bullish']:
+            # 3. MICRO TREND CONSENSUS (15% weight) - Critical for scalping
+            if indicators.get('micro_trend_consensus') == 'bullish':
                 bullish_signals += 15
-            elif indicators['macd_bearish']:
+            elif indicators.get('micro_trend_consensus') == 'bearish':
                 bearish_signals += 15
 
-            # Volume confirmation (10% weight)
-            if indicators['volume_surge']:
-                if bullish_signals > bearish_signals:
-                    bullish_signals += 10
-                else:
-                    bearish_signals += 10
+            # 4. CVD CONFLUENCE (15% weight) - BTC PERP correlation
+            cvd_score = indicators.get('cvd_confluence_score', 0)
+            if cvd_score > 10:
+                bullish_signals += 15
+            elif cvd_score < -10:
+                bearish_signals += 15
+
+            # 5. VWAP POSITION (10% weight) - Institutional reference
+            price_vs_vwap = indicators.get('price_vs_vwap', 0)
+            if price_vs_vwap > 0.1:  # Above VWAP
+                bullish_signals += 10
+            elif price_vs_vwap < -0.1:  # Below VWAP
+                bearish_signals += 10
+
+            # 6. RSI WITH DIVERGENCE (10% weight)
+            if indicators.get('rsi_oversold') or indicators.get('rsi_bullish_div'):
+                bullish_signals += 10
+            elif indicators.get('rsi_overbought') or indicators.get('rsi_bearish_div'):
+                bearish_signals += 10
+
+            # 7. ORDER FLOW BIAS (5% weight) - Market microstructure
+            order_flow_bias = indicators.get('order_flow_bias', 'neutral')
+            if order_flow_bias == 'bullish':
+                bullish_signals += 5
+            elif order_flow_bias == 'bearish':
+                bearish_signals += 5
 
             # Determine signal direction and strength
             if bullish_signals >= self.min_signal_strength:
@@ -639,8 +903,8 @@ class PerfectScalpingBot:
                 'position_size': position_size,
                 'capital_allocation': self.capital_allocation * 100,  # Show as percentage
                 'indicators_used': [
-                    'SuperTrend', 'EMA Cross', 'RSI + Divergence', 
-                    'MACD', 'Volume Analysis', 'Support/Resistance'
+                    'Enhanced SuperTrend', 'Micro Trends', 'CVD Confluence', 
+                    'VWAP Position', 'Order Flow', 'Volume Delta', 'RSI Divergence'
                 ],
                 'timeframe': 'Multi-TF (3m-4h)',
                 'strategy': 'Perfect Scalping'
@@ -719,8 +983,15 @@ class PerfectScalpingBot:
             return None
 
     async def scan_for_signals(self) -> List[Dict[str, Any]]:
-        """Scan all symbols and timeframes for signals"""
+        """Scan all symbols and timeframes for signals with CVD integration"""
         signals = []
+        
+        # Update CVD data for BTC PERP before scanning
+        try:
+            await self.calculate_cvd_btc_perp()
+            self.logger.info(f"📊 CVD Updated - Trend: {self.cvd_data['cvd_trend']}, Strength: {self.cvd_data['cvd_strength']:.1f}%")
+        except Exception as e:
+            self.logger.warning(f"CVD calculation error: {e}")
 
         for symbol in self.symbols:
             try:
@@ -906,6 +1177,11 @@ class PerfectScalpingBot:
 🧠 **Strategy:** `{signal['strategy']}`
 📈 **Timeframe:** `{signal['timeframe']}`
 🔧 **Indicators:** `{', '.join(signal['indicators_used'][:3])}`
+
+📊 **CVD Analysis:**
+• **BTC PERP CVD:** `{self.cvd_data['cvd_trend'].title()}`
+• **CVD Strength:** `{self.cvd_data['cvd_strength']:.1f}%`
+• **Divergence:** `{'⚠️ Yes' if self.cvd_data['cvd_divergence'] else '✅ No'}`
 
 ⚠️ **Trade Management:**
 • Use only 5% of total capital

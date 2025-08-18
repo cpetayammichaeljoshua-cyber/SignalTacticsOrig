@@ -42,6 +42,13 @@ except ImportError:
 from io import BytesIO
 import base64
 
+# Import Cornix validator
+try:
+    from cornix_signal_validator import CornixSignalValidator
+    CORNIX_VALIDATOR_AVAILABLE = True
+except ImportError:
+    CORNIX_VALIDATOR_AVAILABLE = False
+
 class PerfectScalpingBot:
     """Perfect scalping bot with most profitable indicators"""
 
@@ -173,6 +180,14 @@ class PerfectScalpingBot:
         # Bot status
         self.running = True
         self.last_heartbeat = datetime.now()
+
+        # Initialize Cornix validator
+        if CORNIX_VALIDATOR_AVAILABLE:
+            self.cornix_validator = CornixSignalValidator()
+            self.logger.info("✅ Cornix validator initialized")
+        else:
+            self.cornix_validator = None
+            self.logger.warning("⚠️ Cornix validator not available")
 
         self.logger.info("Perfect Scalping Bot initialized")
         
@@ -568,7 +583,10 @@ class PerfectScalpingBot:
             # 10. ENHANCED VOLUME ANALYSIS WITH CVD INTEGRATION
             if len(volume) >= 20:
                 # Volume Rate of Change
-                volume_roc = (volume[-1] - volume[-10]) / volume[-10] * 100
+                if volume[-10] != 0:
+                    volume_roc = (volume[-1] - volume[-10]) / volume[-10] * 100
+                else:
+                    volume_roc = 0
                 indicators['volume_roc'] = volume_roc
                 
                 # Volume Trend
@@ -576,7 +594,13 @@ class PerfectScalpingBot:
                 indicators['volume_trend'] = 'increasing' if volume[-1] > volume_ma * 1.2 else 'decreasing' if volume[-1] < volume_ma * 0.8 else 'stable'
                 
                 # Accumulation/Distribution Line
-                money_flow = ((close - low) - (high - close)) / (high - low) * volume
+                # Handle division by zero when high == low
+                price_range = high - low
+                money_flow = np.where(
+                    price_range != 0,
+                    ((close - low) - (high - close)) / price_range * volume,
+                    0
+                )
                 indicators['money_flow'] = np.mean(money_flow[-5:])
             
             # 11. SCALPING MOMENTUM OSCILLATORS
@@ -1147,26 +1171,20 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format signal for Telegram"""
+        """Format signal for Telegram with Cornix compatibility"""
         direction = signal['direction']
         emoji = "🟢" if direction == 'BUY' else "🔴"
         action_emoji = "📈" if direction == 'BUY' else "📉"
 
         timestamp = datetime.now().strftime('%H:%M:%S UTC')
 
+        # Cornix-compatible format
+        cornix_signal = self._format_cornix_signal(signal)
+
         message = f"""
 {emoji} **PERFECT SCALPING SIGNAL** {action_emoji}
 
-🏷️ **Pair:** `{signal['symbol']}`
-🎯 **Direction:** `{direction}`
-💰 **Entry:** `${signal['entry_price']:.6f}`
-
-🛑 **Stop Loss:** `${signal['stop_loss']:.6f}`
-
-🎯 **Take Profits:**
-• **TP1:** `${signal['tp1']:.6f}` (1:1)
-• **TP2:** `${signal['tp2']:.6f}` (1:2)  
-• **TP3:** `${signal['tp3']:.6f}` (1:3)
+{cornix_signal}
 
 📊 **Signal Strength:** `{signal['signal_strength']:.0f}%`
 ⚖️ **Risk/Reward:** `1:{signal['risk_reward_ratio']:.1f}`
@@ -1198,6 +1216,62 @@ class PerfectScalpingBot:
         """
 
         return message.strip()
+
+    def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
+        """Format signal in Cornix-compatible format"""
+        try:
+            # Use Cornix validator if available
+            if self.cornix_validator:
+                # Validate and fix signal if needed
+                if not self.cornix_validator.validate_signal(signal):
+                    self.logger.info("🔧 Fixing signal for Cornix compatibility...")
+                    signal = self.cornix_validator.fix_signal_prices(signal)
+                
+                # Use validator's formatting
+                return self.cornix_validator.format_for_cornix(signal)
+            
+            # Fallback formatting if validator not available
+            symbol = signal['symbol']
+            direction = signal['direction'].upper()
+            entry = signal['entry_price']
+            stop_loss = signal['stop_loss']
+            tp1 = signal['tp1']
+            tp2 = signal['tp2']
+            tp3 = signal['tp3']
+
+            # Format symbol for Cornix (remove USDT suffix if present)
+            if symbol.endswith('USDT'):
+                cornix_symbol = symbol[:-4] + '/USDT'
+            else:
+                cornix_symbol = symbol
+
+            formatted_message = f"""**Channel:** SignalTactics
+**Symbol:** {cornix_symbol}
+**Exchanges:** Binance, BingX Spot, Bitget Spot, ByBit Spot, Coinbase Advanced Spot, Huobi.pro, KuCoin, OKX
+
+**{direction}** {'📈' if direction == 'BUY' else '📉'}
+**Entry:** {entry:.6f}
+**Stop Loss:** {stop_loss:.6f}
+**Take Profit 1:** {tp1:.6f}
+**Take Profit 2:** {tp2:.6f}
+**Take Profit 3:** {tp3:.6f}
+
+**Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
+**Signal Strength:** {signal['signal_strength']:.0f}%"""
+
+            return formatted_message
+
+        except Exception as e:
+            self.logger.error(f"Error formatting Cornix signal: {e}")
+            # Fallback to original format if error occurs
+            return f"""🏷️ **Pair:** `{signal['symbol']}`
+🎯 **Direction:** `{signal['direction']}`
+💰 **Entry:** `${signal['entry_price']:.6f}`
+🛑 **Stop Loss:** `${signal['stop_loss']:.6f}`
+🎯 **Take Profits:**
+• **TP1:** `${signal['tp1']:.6f}` (1:1)
+• **TP2:** `${signal['tp2']:.6f}` (1:2)  
+• **TP3:** `${signal['tp3']:.6f}` (1:3)"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""
@@ -1556,6 +1630,43 @@ Please try again or use `/help` for available commands.
         }
         return descriptions.get(timeframe, 'Market analysis')
 
+    async def send_to_cornix(self, signal: Dict[str, Any]) -> bool:
+        """Send signal to Cornix bot in the correct format"""
+        try:
+            # Create Cornix-compatible webhook payload
+            cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
+            if not cornix_webhook_url:
+                self.logger.warning("CORNIX_WEBHOOK_URL not configured")
+                return False
+
+            # Format signal for Cornix webhook
+            cornix_payload = {
+                'symbol': signal['symbol'].replace('USDT', '/USDT'),
+                'action': signal['direction'].lower(),
+                'price': signal['entry_price'],
+                'stop_loss': signal['stop_loss'],
+                'take_profit_1': signal['tp1'],
+                'take_profit_2': signal['tp2'],
+                'take_profit_3': signal['tp3'],
+                'exchange': 'binance',
+                'type': 'spot',
+                'timestamp': datetime.now().isoformat()
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(cornix_webhook_url, json=cornix_payload) as response:
+                    if response.status == 200:
+                        self.logger.info(f"✅ Signal sent to Cornix successfully for {signal['symbol']}")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        self.logger.warning(f"⚠️ Cornix webhook failed: {response.status} - {error_text}")
+                        return False
+
+        except Exception as e:
+            self.logger.error(f"Error sending to Cornix: {e}")
+            return False
+
     async def process_trade_update(self, signal: Dict[str, Any]):
         """Process trade updates and move SL to entry after TP1"""
         try:
@@ -1567,6 +1678,9 @@ Please try again or use `/help` for available commands.
                     'sl_moved': False,
                     'start_time': datetime.now()
                 }
+
+            # Send signal to Cornix for automated trading
+            await self.send_to_cornix(signal)
 
             # In a real implementation, you would check current price against TPs
             # For simulation, we'll use random logic

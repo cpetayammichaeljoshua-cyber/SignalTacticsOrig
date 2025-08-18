@@ -286,12 +286,12 @@ class PerfectScalpingBot:
         return logging.getLogger(__name__)
 
     async def create_session(self) -> str:
-        """Create indefinite session with auto-renewal"""
+        """Create truly indefinite session without expiry"""
         try:
             session_data = {
                 'created_at': datetime.now().isoformat(),
                 'bot_id': 'perfect_scalping_bot',
-                'expires_at': (datetime.now() + timedelta(hours=24)).isoformat()
+                'expires_at': 'never'  # Never expires
             }
 
             session_string = json.dumps(session_data, sort_keys=True)
@@ -302,9 +302,9 @@ class PerfectScalpingBot:
             ).hexdigest()
 
             self.session_token = session_token
-            self.session_expiry = datetime.now() + timedelta(hours=24)
+            self.session_expiry = None  # No expiry
 
-            self.logger.info("✅ Indefinite session created with auto-renewal")
+            self.logger.info("✅ Indefinite session created (never expires)")
             return session_token
 
         except Exception as e:
@@ -312,16 +312,15 @@ class PerfectScalpingBot:
             return None
 
     async def renew_session(self):
-        """Auto-renew session before expiry"""
-        try:
-            if (not self.session_expiry or 
-                datetime.now() >= self.session_expiry - timedelta(hours=1)):
-
-                await self.create_session()
-                self.logger.info("🔄 Session auto-renewed")
-
-        except Exception as e:
-            self.logger.error(f"Session renewal error: {e}")
+        """Session renewal not needed for indefinite sessions"""
+        # Skip renewal for indefinite sessions
+        if self.session_token and self.session_expiry is None:
+            return
+        
+        # Only create session if none exists
+        if not self.session_token:
+            await self.create_session()
+            self.logger.info("🔄 Session created (was missing)")
 
     async def calculate_cvd_btc_perp(self) -> Dict[str, Any]:
         """Calculate Cumulative Volume Delta for BTC PERP for convergence/divergence analysis"""
@@ -1328,7 +1327,7 @@ class PerfectScalpingBot:
 • Access: `{channel_status}`
 • Fallback: Admin messaging enabled
 
-*Bot running indefinitely with auto-session renewal*
+*Bot runs indefinitely without session restarts*
 Use `/help` for all commands
 
 {f"⚠️ **Note:** Signals will be sent to you directly since channel access is limited." if not self.channel_accessible else "✅ **Note:** Signals will be posted to the channel and sent to you."}"""
@@ -1374,7 +1373,7 @@ Use `/help` for all commands
                 status = f"""📊 **PERFECT SCALPING BOT STATUS**
 
 ✅ **System:** Online & Operational
-🔄 **Session:** Active (Auto-Renewal)
+🔄 **Session:** Active (Indefinite)
 ⏰ **Uptime:** {uptime.days}d {uptime.seconds//3600}h
 🎯 **Scanning:** {len(self.symbols)} symbols
 
@@ -1389,7 +1388,7 @@ Use `/help` for all commands
 • **Risk/Reward Ratio:** `1:{self.risk_reward_ratio}`
 • **Max Signals/Hour:** `{self.max_signals_per_hour}`
 
-*All systems operational - Perfect scalping active*"""
+*All systems operational - Running indefinitely*"""
                 await self.send_message(chat_id, status)
 
             elif text.startswith('/stats') or text.startswith('/performance'):
@@ -1403,7 +1402,7 @@ Use `/help` for all commands
 
 **⏰ Session Info:**
 • **Session Active:** `{bool(self.session_token)}`
-• **Auto-Renewal:** `✅ Enabled`
+• **Auto-Renewal:** `❌ Not Needed (Indefinite)`
 • **Uptime:** `{(datetime.now() - self.last_heartbeat).days}d {(datetime.now() - self.last_heartbeat).seconds//3600}h`
 
 **🔧 System Health:**
@@ -1570,42 +1569,41 @@ Signals will be generated when market conditions meet our strict criteria."""
 
 **🔐 Session Status:** `{'Active' if self.session_token else 'Inactive'}`
 **⏰ Created:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}`
-**🔄 Auto-Renewal:** `✅ Enabled`
-**⏳ Expires:** `{self.session_expiry.strftime('%Y-%m-%d %H:%M:%S UTC') if self.session_expiry else 'Never'}`
+**🔄 Auto-Renewal:** `❌ Disabled (Indefinite)`
+**⏳ Expires:** `Never`
 **🛡️ Security:** `HMAC-SHA256 Protected`
 
 **🔧 Session Features:**
-• Indefinite runtime capability
-• Automatic renewal before expiry
+• True indefinite runtime
+• No automatic renewals needed
 • Secure token-based authentication
-• Error recovery and restart protection
+• Continuous operation until manual stop
 
 **📊 Session Stats:**
 • Uptime: `{(datetime.now() - self.last_heartbeat).days}d {(datetime.now() - self.last_heartbeat).seconds//3600}h`
 • Heartbeat: `{self.last_heartbeat.strftime('%H:%M:%S UTC')}`
 • Status: `Healthy`
 
-*Session designed for 24/7 operation*"""
+*Session runs indefinitely without restarts*"""
                 await self.send_message(chat_id, session_info)
 
             elif text.startswith('/restart'):
                 await self.send_message(chat_id, """🔄 **RESTART INITIATED**
 
 **System Status:** Restarting all components...
-• Renewing session tokens
 • Refreshing market connections
 • Clearing temporary data
 • Reinitializing scanners
+• Verifying channel access
 
 *Bot will resume normal operation in 5 seconds*""")
                 
-                # Restart components
-                await self.create_session()
+                # Restart components (session remains the same)
                 await self.verify_channel_access()
                 self.last_heartbeat = datetime.now()
                 
                 await asyncio.sleep(5)
-                await self.send_message(chat_id, "✅ **RESTART COMPLETE**\n\nAll systems operational. Resuming signal generation...")
+                await self.send_message(chat_id, "✅ **RESTART COMPLETE**\n\nAll systems operational. Session continues indefinitely.")
 
             else:
                 # Unknown command
@@ -1745,9 +1743,6 @@ Please try again or use `/help` for available commands.
 
         while self.running and not self.shutdown_requested:
             try:
-                # Renew session if needed
-                await self.renew_session()
-
                 # Scan for signals
                 self.logger.info("🔍 Scanning markets for signals...")
                 signals = await self.scan_for_signals()

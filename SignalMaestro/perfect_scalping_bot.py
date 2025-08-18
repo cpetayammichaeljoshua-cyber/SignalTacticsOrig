@@ -18,12 +18,25 @@ from typing import Dict, Any, Optional, List
 import traceback
 import time
 
-# Technical Analysis
+# Technical Analysis and Chart Generation
 try:
     import talib
     TALIB_AVAILABLE = True
 except ImportError:
     TALIB_AVAILABLE = False
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.patches import Rectangle
+    CHART_AVAILABLE = True
+except ImportError:
+    CHART_AVAILABLE = False
+
+from io import BytesIO
+import base64
 
 class PerfectScalpingBot:
     """Perfect scalping bot with most profitable indicators"""
@@ -32,7 +45,9 @@ class PerfectScalpingBot:
         self.logger = self._setup_logging()
 
         # Telegram configuration
-        self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '8463612278:AAGw8K3HDbbwSVsNxnVaYl3e4P8wN5i0PuE')
+        self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        if not self.bot_token:
+            raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
         # Session management
@@ -46,7 +61,7 @@ class PerfectScalpingBot:
         self.channel_accessible = False  # Track channel accessibility
 
         # Scalping parameters - optimized for scalping only
-        self.timeframes = ['3m', '5m', '15m', '1h', '4h']
+        self.timeframes = ['3m', '5m', '15m', '1h', '4h']  # Limited to 3m-4h as requested
         self.symbols = [
             'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT',
             'DOGEUSDT', 'MATICUSDT', 'DOTUSDT', 'AVAXUSDT', 'LINKUSDT', 'LTCUSDT',
@@ -54,10 +69,11 @@ class PerfectScalpingBot:
             'MANAUSDT', 'ALGOUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT'
         ]
 
-        # Risk management - optimized for scalping
+        # Risk management - optimized for scalping with 5% capital allocation
         self.risk_reward_ratio = 3.0  # 1:3 RR
         self.min_signal_strength = 90  # Higher threshold for scalping
-        self.max_signals_per_hour = 8  # More signals for scalping
+        self.max_signals_per_hour = 3  # Reduced to prevent multiple responses
+        self.capital_allocation = 0.05  # 5% of capital as requested
 
         # Signal tracking
         self.signal_counter = 0
@@ -68,6 +84,10 @@ class PerfectScalpingBot:
             'win_rate': 0.0,
             'total_profit': 0.0
         }
+        
+        # Prevent multiple responses
+        self.last_signal_time = {}
+        self.min_signal_interval = 300  # 5 minutes between signals for same symbol
 
         # Bot status
         self.running = True
@@ -415,6 +435,13 @@ class PerfectScalpingBot:
     def generate_scalping_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Generate scalping signal based on indicators"""
         try:
+            # Check if we recently sent a signal for this symbol
+            current_time = datetime.now()
+            if symbol in self.last_signal_time:
+                time_diff = (current_time - self.last_signal_time[symbol]).total_seconds()
+                if time_diff < self.min_signal_interval:
+                    return None  # Skip to prevent duplicate signals
+            
             signal_strength = 0
             bullish_signals = 0
             bearish_signals = 0
@@ -494,6 +521,13 @@ class PerfectScalpingBot:
             if risk_percentage > 3.0:  # Max 3% risk
                 return None
 
+            # Calculate position size based on 5% capital allocation
+            risk_per_trade = self.capital_allocation  # 5% of total capital
+            position_size = risk_per_trade / (risk_percentage / 100)
+            
+            # Update last signal time to prevent duplicates
+            self.last_signal_time[symbol] = current_time
+
             return {
                 'symbol': symbol,
                 'direction': direction,
@@ -505,16 +539,86 @@ class PerfectScalpingBot:
                 'signal_strength': signal_strength,
                 'risk_percentage': risk_percentage,
                 'risk_reward_ratio': self.risk_reward_ratio,
+                'position_size': position_size,
+                'capital_allocation': self.capital_allocation * 100,  # Show as percentage
                 'indicators_used': [
                     'SuperTrend', 'EMA Cross', 'RSI + Divergence', 
                     'MACD', 'Volume Analysis', 'Support/Resistance'
                 ],
-                'timeframe': 'Multi-TF',
+                'timeframe': 'Multi-TF (3m-4h)',
                 'strategy': 'Perfect Scalping'
             }
 
         except Exception as e:
             self.logger.error(f"Error generating signal: {e}")
+            return None
+
+    def generate_signal_chart(self, symbol: str, df: pd.DataFrame, signal: Dict[str, Any]) -> Optional[str]:
+        """Generate chart for the trading signal"""
+        try:
+            if not CHART_AVAILABLE or df is None or len(df) < 20:
+                return None
+
+            plt.style.use('dark_background')
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={'height_ratios': [3, 1]})
+            
+            # Price chart
+            ax1.plot(df.index, df['close'], color='white', linewidth=1.5, label='Price')
+            
+            # EMAs
+            ema_8 = df['close'].ewm(span=8).mean()
+            ema_21 = df['close'].ewm(span=21).mean()
+            ema_55 = df['close'].ewm(span=55).mean()
+            
+            ax1.plot(df.index, ema_8, color='cyan', linewidth=1, alpha=0.7, label='EMA 8')
+            ax1.plot(df.index, ema_21, color='orange', linewidth=1, alpha=0.7, label='EMA 21')
+            ax1.plot(df.index, ema_55, color='magenta', linewidth=1, alpha=0.7, label='EMA 55')
+            
+            # Entry point
+            entry_price = signal['entry_price']
+            ax1.axhline(y=entry_price, color='yellow', linestyle='-', linewidth=2, label=f'Entry: ${entry_price:.4f}')
+            ax1.axhline(y=signal['stop_loss'], color='red', linestyle='--', linewidth=1, label=f'SL: ${signal["stop_loss"]:.4f}')
+            ax1.axhline(y=signal['tp1'], color='green', linestyle='--', linewidth=1, alpha=0.7, label=f'TP1: ${signal["tp1"]:.4f}')
+            ax1.axhline(y=signal['tp2'], color='green', linestyle='--', linewidth=1, alpha=0.5, label=f'TP2: ${signal["tp2"]:.4f}')
+            ax1.axhline(y=signal['tp3'], color='green', linestyle='--', linewidth=1, alpha=0.3, label=f'TP3: ${signal["tp3"]:.4f}')
+            
+            # Signal arrow
+            direction_color = 'lime' if signal['direction'] == 'BUY' else 'red'
+            arrow_direction = '↑' if signal['direction'] == 'BUY' else '↓'
+            ax1.annotate(f'{signal["direction"]} {arrow_direction}', 
+                        xy=(df.index[-1], entry_price), 
+                        xytext=(10, 20 if signal['direction'] == 'BUY' else -20),
+                        textcoords='offset points',
+                        fontsize=14, fontweight='bold', color=direction_color,
+                        arrowprops=dict(arrowstyle='->', color=direction_color, lw=2))
+            
+            ax1.set_title(f'{symbol} - {signal["strategy"]} Signal (Strength: {signal["signal_strength"]:.0f}%)', 
+                         fontsize=14, fontweight='bold', color='white')
+            ax1.set_ylabel('Price (USDT)', fontsize=12)
+            ax1.legend(loc='upper left', fontsize=8)
+            ax1.grid(True, alpha=0.3)
+            
+            # Volume chart
+            ax2.bar(df.index, df['volume'], color='lightblue', alpha=0.6)
+            ax2.set_ylabel('Volume', fontsize=12)
+            ax2.set_xlabel('Time', fontsize=12)
+            ax2.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            
+            # Convert to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight', 
+                       facecolor='#1a1a1a', edgecolor='none')
+            buffer.seek(0)
+            
+            chart_base64 = base64.b64encode(buffer.getvalue()).decode()
+            plt.close(fig)
+            
+            return chart_base64
+            
+        except Exception as e:
+            self.logger.error(f"Error generating chart: {e}")
             return None
 
     async def scan_for_signals(self) -> List[Dict[str, Any]]:
@@ -699,22 +803,25 @@ class PerfectScalpingBot:
 📊 **Signal Strength:** `{signal['signal_strength']:.0f}%`
 ⚖️ **Risk/Reward:** `1:{signal['risk_reward_ratio']:.1f}`
 🛡️ **Risk:** `{signal['risk_percentage']:.2f}%`
+💵 **Capital Allocation:** `{signal['capital_allocation']:.1f}%`
+📏 **Position Size:** `{signal['position_size']:.2f}x`
 
 🧠 **Strategy:** `{signal['strategy']}`
 📈 **Timeframe:** `{signal['timeframe']}`
 🔧 **Indicators:** `{', '.join(signal['indicators_used'][:3])}`
 
 ⚠️ **Trade Management:**
+• Use only 5% of total capital
 • Move SL to entry after TP1 hit
-• Risk only 1-2% of capital
 • Scale out at each TP level
+• Maximum 3 signals per hour
 
 ⏰ **Generated:** `{timestamp}`
 🔢 **Signal #:** `{self.signal_counter}`
 
 ---
-*🤖 Perfect Scalping Bot - Most Profitable Strategy*
-*💎 1:3 RR Guaranteed - No Losses at Entry*
+*🤖 Perfect Scalping Bot - 5% Capital Strategy*
+*💎 1:3 RR - Controlled Risk Management*
         """
 
         return message.strip()
@@ -1141,7 +1248,14 @@ Please try again or use `/help` for available commands.
                 if signals:
                     self.logger.info(f"📊 Found {len(signals)} high-strength signals")
                     
+                    # Limit to maximum signals per hour and ensure uniqueness
+                    signals_sent_count = 0
+                    
                     for signal in signals:
+                        if signals_sent_count >= self.max_signals_per_hour:
+                            self.logger.info(f"⏸️ Reached maximum signals per hour ({self.max_signals_per_hour})")
+                            break
+                            
                         try:
                             self.signal_counter += 1
                             self.performance_stats['total_signals'] += 1
@@ -1161,9 +1275,10 @@ Please try again or use `/help` for available commands.
                             if self.admin_chat_id:
                                 admin_sent = await self.send_message(self.admin_chat_id, signal_msg)
 
-                            # Send to channel if accessible
+                            # Send to channel if accessible (only once to prevent duplicates)
                             channel_sent = False
-                            if self.channel_accessible:
+                            if self.channel_accessible and admin_sent:  # Only send to channel if admin was successful
+                                await asyncio.sleep(2)  # Small delay to prevent rate limiting
                                 channel_sent = await self.send_message(self.target_channel, signal_msg)
                             
                             # Log delivery status
@@ -1181,7 +1296,8 @@ Please try again or use `/help` for available commands.
 
                             self.logger.info(f"✅ Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%)")
 
-                            await asyncio.sleep(3)  # Delay between signals
+                            signals_sent_count += 1
+                            await asyncio.sleep(5)  # Longer delay between signals to prevent spam
 
                         except Exception as signal_error:
                             self.logger.error(f"Error processing signal for {signal.get('symbol', 'unknown')}: {signal_error}")

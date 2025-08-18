@@ -11,10 +11,7 @@ class Config:
 
     def __init__(self):
         # Telegram Configuration
-        self.TELEGRAM_BOT_TOKEN = os.getenv(
-            "TELEGRAM_BOT_TOKEN", 
-            "8463612278:AAGw8K3HDbbwSVsNxnVaYl3e4P8wN5i0PuE"
-        )
+        self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
         # Binance Configuration
         self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")

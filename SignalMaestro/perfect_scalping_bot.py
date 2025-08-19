@@ -51,9 +51,17 @@ except ImportError:
 
 # Import ML Trade Analyzer
 try:
+    import sys
+    import os
+    # Add current directory to path to ensure local imports work
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
     from ml_trade_analyzer import MLTradeAnalyzer
     ML_ANALYZER_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"ML Trade Analyzer import error: {e}")
     ML_ANALYZER_AVAILABLE = False
 
 class PerfectScalpingBot:

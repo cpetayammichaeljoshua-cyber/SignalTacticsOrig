@@ -115,7 +115,7 @@ class MLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error initializing database: {e}")
     
-    def record_trade(self, trade_data: Dict[str, Any]):
+    async def record_trade(self, trade_data: Dict[str, Any]):
         """Record a trade for machine learning analysis"""
         try:
             conn = sqlite3.connect(self.db_path)

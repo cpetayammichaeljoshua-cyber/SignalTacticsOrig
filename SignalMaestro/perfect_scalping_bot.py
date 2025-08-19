@@ -525,7 +525,7 @@ class PerfectScalpingBot:
                     vwap[i] = cumulative_pv[i] / cumulative_volume[i]
 
             indicators['vwap'] = vwap[-1] if len(vwap) > 0 else close[-1]
-            
+
             # Safe division for price vs VWAP
             if vwap[-1] != 0 and not np.isnan(vwap[-1]) and not np.isinf(vwap[-1]):
                 indicators['price_vs_vwap'] = (close[-1] - vwap[-1]) / vwap[-1] * 100
@@ -867,7 +867,7 @@ class PerfectScalpingBot:
         for i in range(k_period-1, len(close)):
             highest_high = np.max(high[i-k_period+1:i+1])
             lowest_low = np.min(low[i-k_period+1:i+1])
-            
+
             # Prevent division by zero
             if highest_high != lowest_low and not np.isnan(highest_high) and not np.isnan(lowest_low):
                 k_values[i] = ((close[i] - lowest_low) / (highest_high - lowest_low)) * 100
@@ -1055,7 +1055,7 @@ class PerfectScalpingBot:
                 placeholder_df = pd.DataFrame({'close': [current_price] * 20})
             else:
                 placeholder_df = df
-            
+
             optimal_leverage = self.calculate_dynamic_leverage(indicators, placeholder_df)
 
             # Update last signal time to prevent duplicates
@@ -1817,7 +1817,7 @@ Use `/help` for all commands
 • **Entry Timing:** `{learning_summary.get('model_performance', {}).get('entry_timing_accuracy', 0):.1%}`
 
 **💡 Recent Insights:**"""
-                    
+
                     for insight in learning_summary.get('recent_insights', [])[:3]:
                         ml_info += f"""
 • **{insight.get('type', 'Unknown').replace('_', ' ').title()}**
@@ -1855,7 +1855,7 @@ Contact support to enable ML features."""
                 # Get prediction for next potential signal
                 if self.ml_analyzer:
                     await self.send_message(chat_id, "🔮 **GENERATING ML PREDICTION**\n\nAnalyzing current market conditions for trade outcome prediction...")
-                    
+
                     # Get current market data for BTC (example)
                     try:
                         test_df = await self.get_binance_data('BTCUSDT', '15m', 100)
@@ -1874,9 +1874,9 @@ Contact support to enable ML features."""
                                     'macd_bullish': indicators.get('macd_bullish', False),
                                     'ema_bullish': indicators.get('ema_bullish', False)
                                 }
-                                
+
                                 prediction = self.ml_analyzer.predict_trade_outcome(signal_data)
-                                
+
                                 pred_msg = f"""🔮 **ML TRADE PREDICTION**
 
 **📊 Current Market Analysis (BTCUSDT):**
@@ -1895,7 +1895,7 @@ Contact support to enable ML features."""
 • RSI Level: `{indicators.get('rsi', 50):.1f}`
 
 *Prediction based on historical trade analysis and current market conditions*"""
-                                
+
                                 await self.send_message(chat_id, pred_msg)
                             else:
                                 await self.send_message(chat_id, "⚠️ **Unable to calculate indicators for prediction**")
@@ -2138,7 +2138,7 @@ Please try again or use `/help` for available commands.
                     'volume_ratio': 1.0,  # Placeholder
                     'lessons_learned': 'TP1 achieved successfully - risk eliminated'
                 }
-                self.ml_analyzer.record_trade(trade_data)
+                await self.ml_analyzer.record_trade(trade_data)
 
             self.logger.info(f"✅ TP1 hit for {symbol} - SL moved to entry")
 
@@ -2536,18 +2536,18 @@ Please try again or use `/help` for available commands.
         """
         if not self.ml_analyzer:
             return "W:0 L:0 (ML disabled)"
-        
+
         try:
             # Get symbol-specific trade history
             symbol_rec = self.ml_analyzer.get_trade_recommendations(symbol)
-            
+
             if 'trade_count' in symbol_rec:
                 trade_count = symbol_rec['trade_count']
                 win_rate = symbol_rec.get('historical_win_rate', 0)
-                
+
                 wins = int(trade_count * win_rate)
                 losses = trade_count - wins
-                
+
                 # Add learning status indicator
                 if trade_count >= 10:
                     learning_status = " (Learning Active)"
@@ -2555,11 +2555,11 @@ Please try again or use `/help` for available commands.
                     learning_status = " (Learning)"
                 else:
                     learning_status = " (Collecting Data)"
-                
+
                 return f"W:{wins} L:{losses}{learning_status}"
             else:
                 return "W:0 L:0 (New Symbol)"
-                
+
         except Exception as e:
             self.logger.error(f"Error getting learning status for {symbol}: {e}")
             return "W:0 L:0 (Error)"

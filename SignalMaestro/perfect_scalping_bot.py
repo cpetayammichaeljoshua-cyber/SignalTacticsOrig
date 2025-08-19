@@ -156,6 +156,17 @@ class PerfectScalpingBot:
             'cvd_strength': 0
         }
 
+        # Dynamic leverage settings based on market conditions
+        self.leverage_config = {
+            'min_leverage': 25,
+            'max_leverage': 75,
+            'base_leverage': 50,  # Default leverage
+            'volatility_threshold_low': 0.01,  # 1% for high leverage
+            'volatility_threshold_high': 0.04,  # 4% for low leverage
+            'volume_threshold_low': 0.8,  # 80% of average volume
+            'volume_threshold_high': 1.5   # 150% of average volume
+        }
+
         # Risk management - optimized for scalping with enhanced symbol coverage
         self.risk_reward_ratio = 3.0  # 1:3 RR
         self.min_signal_strength = 85  # Slightly lower for more opportunities with CVD
@@ -663,6 +674,90 @@ class PerfectScalpingBot:
             self.logger.error(f"Error calculating indicators: {e}")
             return {}
 
+    def calculate_dynamic_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
+        """Calculate optimal leverage based on market conditions"""
+        try:
+            base_leverage = self.leverage_config['base_leverage']
+            min_leverage = self.leverage_config['min_leverage']
+            max_leverage = self.leverage_config['max_leverage']
+            
+            # Market condition factors
+            volatility_factor = 0
+            volume_factor = 0
+            trend_factor = 0
+            signal_strength_factor = 0
+            
+            # 1. Volatility Analysis (40% weight)
+            if len(df) >= 20:
+                returns = df['close'].pct_change().dropna()
+                current_volatility = returns.tail(20).std()
+                
+                if current_volatility <= self.leverage_config['volatility_threshold_low']:
+                    # Low volatility = Higher leverage
+                    volatility_factor = 15  # Increase leverage
+                elif current_volatility >= self.leverage_config['volatility_threshold_high']:
+                    # High volatility = Lower leverage
+                    volatility_factor = -20  # Decrease leverage
+                else:
+                    # Medium volatility = Moderate adjustment
+                    volatility_factor = -5
+            
+            # 2. Volume Analysis (25% weight)
+            volume_ratio = indicators.get('volume_ratio', 1.0)
+            if volume_ratio >= self.leverage_config['volume_threshold_high']:
+                # High volume = More confidence = Higher leverage
+                volume_factor = 10
+            elif volume_ratio <= self.leverage_config['volume_threshold_low']:
+                # Low volume = Less confidence = Lower leverage
+                volume_factor = -15
+            else:
+                volume_factor = 0
+            
+            # 3. Trend Strength (20% weight)
+            # Strong trend = Higher leverage
+            ema_bullish = indicators.get('ema_bullish', False)
+            ema_bearish = indicators.get('ema_bearish', False)
+            supertrend_direction = indicators.get('supertrend_direction', 0)
+            
+            if (ema_bullish or ema_bearish) and abs(supertrend_direction) == 1:
+                # Strong trend alignment
+                trend_factor = 8
+            else:
+                # Weak or sideways trend
+                trend_factor = -10
+            
+            # 4. Signal Strength (15% weight)
+            # Higher signal strength = More confidence
+            signal_strength = indicators.get('signal_strength', 0)
+            if signal_strength >= 90:
+                signal_strength_factor = 5
+            elif signal_strength >= 80:
+                signal_strength_factor = 2
+            else:
+                signal_strength_factor = -5
+            
+            # Calculate final leverage
+            leverage_adjustment = (
+                volatility_factor * 0.4 +
+                volume_factor * 0.25 +
+                trend_factor * 0.2 +
+                signal_strength_factor * 0.15
+            )
+            
+            final_leverage = base_leverage + leverage_adjustment
+            
+            # Ensure leverage stays within bounds
+            final_leverage = max(min_leverage, min(max_leverage, final_leverage))
+            
+            # Round to nearest 5x for cleaner values
+            final_leverage = round(final_leverage / 5) * 5
+            
+            return int(final_leverage)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating dynamic leverage: {e}")
+            return self.leverage_config['base_leverage']
+
     def _calculate_atr(self, high: np.array, low: np.array, close: np.array, period: int) -> np.array:
         """Calculate Average True Range"""
         tr1 = high - low
@@ -911,6 +1006,10 @@ class PerfectScalpingBot:
             risk_per_trade = self.capital_allocation  # 5% of total capital
             position_size = risk_per_trade / (risk_percentage / 100)
             
+            # Calculate dynamic leverage based on market conditions
+            optimal_leverage = self.calculate_dynamic_leverage(indicators, 
+                                                             pd.DataFrame({'close': [current_price] * 20}))  # Placeholder for actual df
+            
             # Update last signal time to prevent duplicates
             self.last_signal_time[symbol] = current_time
 
@@ -927,6 +1026,7 @@ class PerfectScalpingBot:
                 'risk_reward_ratio': self.risk_reward_ratio,
                 'position_size': position_size,
                 'capital_allocation': self.capital_allocation * 100,  # Show as percentage
+                'optimal_leverage': optimal_leverage,
                 'indicators_used': [
                     'Enhanced SuperTrend', 'Micro Trends', 'CVD Confluence', 
                     'VWAP Position', 'Order Flow', 'Volume Delta', 'RSI Divergence'
@@ -1040,6 +1140,9 @@ class PerfectScalpingBot:
 
                         signal = self.generate_scalping_signal(symbol, indicators)
                         if signal and isinstance(signal, dict) and 'signal_strength' in signal:
+                            # Update leverage calculation with actual market data
+                            optimal_leverage = self.calculate_dynamic_leverage(indicators, df)
+                            signal['optimal_leverage'] = optimal_leverage
                             timeframe_scores[timeframe] = signal
                     except Exception as e:
                         self.logger.warning(f"Timeframe {timeframe} error for {symbol}: {str(e)[:100]}")
@@ -1172,13 +1275,17 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format signal for Telegram with Cornix compatibility"""
+        """Format signal for Telegram with professional appearance and Cornix compatibility"""
         direction = signal['direction']
         emoji = "🟢" if direction == 'BUY' else "🔴"
         action_emoji = "📈" if direction == 'BUY' else "📉"
-
+        
         timestamp = datetime.now().strftime('%H:%M:%S UTC')
-
+        optimal_leverage = signal.get('optimal_leverage', 50)
+        
+        # Determine leverage rationale
+        leverage_reason = self._get_leverage_rationale(optimal_leverage)
+        
         # Cornix-compatible format
         cornix_signal = self._format_cornix_signal(signal)
 
@@ -1187,43 +1294,60 @@ class PerfectScalpingBot:
 
 {cornix_signal}
 
-📊 **Signal Strength:** `{signal['signal_strength']:.0f}%`
-⚖️ **Risk/Reward:** `1:{signal['risk_reward_ratio']:.1f}`
-🛡️ **Risk:** `{signal['risk_percentage']:.2f}%`
-💵 **Capital Allocation:** `{signal['capital_allocation']:.1f}%`
-📏 **Position Size:** `{signal['position_size']:.2f}x`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 **SIGNAL ANALYTICS**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Signal Strength:** `{signal['signal_strength']:.0f}%`
+**Risk/Reward Ratio:** `1:{signal['risk_reward_ratio']:.1f}`
+**Risk Exposure:** `{signal['risk_percentage']:.2f}%`
+**Capital Allocation:** `{signal['capital_allocation']:.1f}%`
 
-🧠 **Strategy:** `{signal['strategy']}`
-📈 **Timeframe:** `{signal['timeframe']}`
-🔧 **Indicators:** `{', '.join(signal['indicators_used'][:3])}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ **LEVERAGE & EXECUTION**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Optimal Leverage:** `{optimal_leverage}x`
+**Leverage Logic:** `{leverage_reason}`
+**Market Type:** `USD-M Perpetual Futures`
+**Margin Mode:** `Cross/Isolated Available`
 
-📊 **CVD Analysis:**
-• **BTC PERP CVD:** `{self.cvd_data['cvd_trend'].title()}`
-• **CVD Strength:** `{self.cvd_data['cvd_strength']:.1f}%`
-• **Divergence:** `{'⚠️ Yes' if self.cvd_data['cvd_divergence'] else '✅ No'}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📈 **MARKET ANALYSIS**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Strategy:** `{signal['strategy']}`
+**Timeframes:** `{signal['timeframe']}`
+**BTC CVD Trend:** `{self.cvd_data['cvd_trend'].title()}`
+**CVD Strength:** `{self.cvd_data['cvd_strength']:.1f}%`
+**Divergence Alert:** `{'⚠️ Active' if self.cvd_data['cvd_divergence'] else '✅ None'}`
 
-⚡ **Futures Trading:**
-• **Market:** USD-M Futures
-• **Leverage:** 10x Recommended
-• **Margin:** Cross/Isolated
-• **Position Type:** Perpetual Contract
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ **RISK MANAGEMENT**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Move SL to breakeven after TP1 hit
+• Scale out: 40% at TP1, 35% at TP2, 25% at TP3
+• Maximum exposure: 5% of total capital
+• Monitor leverage carefully based on volatility
 
-⚠️ **Trade Management:**
-• Use only 5% of total capital
-• Move SL to entry after TP1 hit
-• Scale out at each TP level
-• Maximum 3 signals per hour
-• Manage leverage responsibly
+**Generated:** `{timestamp}` | **Signal #:** `{self.signal_counter}`
 
-⏰ **Generated:** `{timestamp}`
-🔢 **Signal #:** `{self.signal_counter}`
-
----
-*🤖 Perfect Scalping Bot - USD-M Futures Strategy*
-*💎 1:3 RR - Controlled Risk Management*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+*🤖 Perfect Scalping Bot | Advanced Algorithm*
+*💎 Professional Grade Signals | Risk Controlled*
         """
 
         return message.strip()
+
+    def _get_leverage_rationale(self, leverage: int) -> str:
+        """Get human-readable rationale for leverage selection"""
+        if leverage >= 65:
+            return "Low Volatility + Strong Trend"
+        elif leverage >= 55:
+            return "Favorable Market Conditions"
+        elif leverage >= 45:
+            return "Balanced Risk-Reward Setup"
+        elif leverage >= 35:
+            return "Elevated Volatility Detected"
+        else:
+            return "High Volatility + Conservative"
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
         """Format signal in Cornix-compatible format for USD-M futures"""
@@ -1253,6 +1377,8 @@ class PerfectScalpingBot:
             else:
                 cornix_symbol = symbol
 
+            optimal_leverage = signal.get('optimal_leverage', 50)
+            
             formatted_message = f"""**Channel:** SignalTactics
 **Symbol:** {cornix_symbol}
 **Exchanges:** Binance Futures, BingX Futures, Bitget Futures, ByBit Futures, OKX Futures
@@ -1264,7 +1390,7 @@ class PerfectScalpingBot:
 **Take Profit 2:** {tp2:.6f}
 **Take Profit 3:** {tp3:.6f}
 
-**Leverage:** 10x (Recommended)
+**Leverage:** {optimal_leverage}x (Optimized)
 **Margin:** Cross/Isolated
 **Type:** USD-M Futures
 **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
@@ -1275,6 +1401,7 @@ class PerfectScalpingBot:
         except Exception as e:
             self.logger.error(f"Error formatting Cornix signal: {e}")
             # Fallback to original format if error occurs
+            optimal_leverage = signal.get('optimal_leverage', 50)
             return f"""🏷️ **Pair:** `{signal['symbol']} (USD-M Futures)`
 🎯 **Direction:** `{signal['direction']}`
 💰 **Entry:** `${signal['entry_price']:.6f}`
@@ -1283,7 +1410,7 @@ class PerfectScalpingBot:
 • **TP1:** `${signal['tp1']:.6f}` (1:1)
 • **TP2:** `${signal['tp2']:.6f}` (1:2)  
 • **TP3:** `${signal['tp3']:.6f}` (1:3)
-⚡ **Leverage:** `10x Recommended`"""
+⚡ **Leverage:** `{optimal_leverage}x Optimized`"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""
@@ -1651,6 +1778,7 @@ Please try again or use `/help` for available commands.
                 return False
 
             # Format signal for Cornix webhook (USD-M Futures)
+            optimal_leverage = signal.get('optimal_leverage', 50)
             cornix_payload = {
                 'symbol': signal['symbol'].replace('USDT', '/USDT'),
                 'action': signal['direction'].lower(),
@@ -1662,7 +1790,7 @@ Please try again or use `/help` for available commands.
                 'exchange': 'binance',
                 'type': 'futures',  # Changed from 'spot' to 'futures'
                 'margin_type': 'cross',  # Cross margin recommended
-                'leverage': '10',  # Default 10x leverage for scalping
+                'leverage': str(optimal_leverage),  # Dynamic leverage based on market conditions
                 'timestamp': datetime.now().isoformat()
             }
 

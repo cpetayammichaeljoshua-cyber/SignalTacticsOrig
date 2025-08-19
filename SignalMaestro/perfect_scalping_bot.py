@@ -1386,15 +1386,21 @@ class PerfectScalpingBot:
         cornix_signal = self._format_cornix_signal(signal)
 
         # Message format optimized for Cornix parsing
-        message = f"""🎯 PERFECT SCALPING SIGNAL
+        message = f"""🎯 **PERFECT SCALPING SIGNAL**
 
 {cornix_signal}
 
-Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}% | {timestamp} UTC
-Risk/Reward: 1:{signal['risk_reward_ratio']:.1f} | CVD: {self.cvd_data['cvd_trend'].title()}
+**Signal #{self.signal_counter}** | **Strength: {signal['signal_strength']:.0f}%** | **{timestamp} UTC**
+**Risk/Reward: 1:{signal['risk_reward_ratio']:.1f}** | **CVD: {self.cvd_data['cvd_trend'].title()}**
 
-Management: Move SL to Entry after TP1
-Position: 40% TP1 | 35% TP2 | 25% TP3"""
+**🛡️ Auto Management:**
+• **TP1 Hit** → SL moves to Entry (Risk-Free)
+• **TP2 Hit** → SL moves to TP1 (Profit Lock)
+• **TP3 Hit** → Full Trade Closure
+
+**📊 Position Distribution:** 40% TP1 | 35% TP2 | 25% TP3
+
+*🤖 Perfect Scalping Bot | Cornix Integration Active*"""
 
         return message.strip()
 
@@ -1451,32 +1457,48 @@ Position: 40% TP1 | 35% TP2 | 25% TP3"""
             signal['tp2'] = tp2
             signal['tp3'] = tp3
 
-            # Format for Cornix - Clean, parseable format
-            formatted_message = f"""#{symbol} {direction}
+            # Enhanced Cornix-compatible format with proper structure
+            formatted_message = f"""**Channel:** SignalTactics
+**Symbol:** {symbol}
+**Exchanges:** Binance, BingX Spot, Bitget Spot, ByBit Spot, Huobi.pro, KuCoin, OKX
 
-Entry: {entry:.6f}
-Stop Loss: {stop_loss:.6f}
+**Entry Targets:**
+{entry:.6f}
 
-Take Profit:
-TP1: {tp1:.6f}
-TP2: {tp2:.6f}
-TP3: {tp3:.6f}
+**Take-Profit Targets:**
+🎯 {tp1:.6f}
+🎯 {tp2:.6f}
+🎯 {tp3:.6f}
 
-Leverage: {optimal_leverage}x"""
+**Stop Targets:**
+🛑 {stop_loss:.6f}
+
+**Leverage:** {optimal_leverage}x
+**Direction:** {direction}"""
 
             return formatted_message
 
         except Exception as e:
             self.logger.error(f"Error formatting Cornix signal: {e}")
-            # Fallback format
+            # Fallback format that exactly matches Cornix requirements
             optimal_leverage = signal.get('optimal_leverage', 50)
-            return f"""#{signal['symbol']} {signal['direction']}
-Entry: {signal['entry_price']:.6f}
-Stop Loss: {signal['stop_loss']:.6f}
-TP1: {signal['tp1']:.6f}
-TP2: {signal['tp2']:.6f}
-TP3: {signal['tp3']:.6f}
-Leverage: {optimal_leverage}x"""
+            return f"""**Channel:** SignalTactics
+**Symbol:** {signal['symbol']}
+**Exchanges:** Binance, BingX Spot, Bitget Spot, ByBit Spot, Huobi.pro, KuCoin, OKX
+
+**Entry Targets:**
+{signal['entry_price']:.6f}
+
+**Take-Profit Targets:**
+🎯 {signal['tp1']:.6f}
+🎯 {signal['tp2']:.6f}
+🎯 {signal['tp3']:.6f}
+
+**Stop Targets:**
+🛑 {signal['stop_loss']:.6f}
+
+**Leverage:** {optimal_leverage}x
+**Direction:** {signal['direction']}"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""
@@ -2117,7 +2139,7 @@ Please try again or use `/help` for available commands.
             self.logger.error(f"Error processing trade update: {e}")
 
     async def monitor_trade_progression(self, symbol: str):
-        """Monitor trade progression and manage SL/TP automatically"""
+        """Monitor trade progression and manage SL/TP automatically with real price checking"""
         try:
             if symbol not in self.active_trades:
                 return
@@ -2125,35 +2147,73 @@ Please try again or use `/help` for available commands.
             trade_info = self.active_trades[symbol]
             signal = trade_info['signal']
 
-            # Simulate trade progression (in real implementation, you'd get current price from exchange)
             monitoring_duration = 0
             check_interval = 30  # Check every 30 seconds
+            max_monitoring_time = 7200  # Monitor for 2 hours max
 
-            while not trade_info['trade_closed'] and monitoring_duration < 3600:  # Monitor for 1 hour max
+            self.logger.info(f"🔍 Starting trade monitoring for {symbol} {signal['direction']}")
+
+            while not trade_info['trade_closed'] and monitoring_duration < max_monitoring_time:
                 await asyncio.sleep(check_interval)
                 monitoring_duration += check_interval
 
-                # Simulate price movements and TP hits (replace with real price checking)
-                current_time = datetime.now()
-                trade_duration = (current_time - trade_info['start_time']).total_seconds()
+                try:
+                    # Get current price from Binance
+                    current_df = await self.get_binance_data(symbol, '1m', 1)
+                    if current_df is None or len(current_df) == 0:
+                        continue
+                    
+                    current_price = float(current_df['close'].iloc[-1])
+                    direction = signal['direction'].upper()
+                    
+                    # Check TP hits based on direction
+                    if direction == 'BUY':
+                        # BUY: Check if price reached TP levels
+                        if not trade_info['tp1_hit'] and current_price >= signal['tp1']:
+                            await self.handle_tp1_hit(symbol, current_price)
+                        elif trade_info['tp1_hit'] and not trade_info['tp2_hit'] and current_price >= signal['tp2']:
+                            await self.handle_tp2_hit(symbol, current_price)
+                        elif trade_info['tp2_hit'] and not trade_info['tp3_hit'] and current_price >= signal['tp3']:
+                            await self.handle_tp3_hit(symbol, current_price)
+                            break  # Trade fully closed
+                        
+                        # Check stop loss hit
+                        elif current_price <= trade_info['current_sl'] and not trade_info['tp1_hit']:
+                            await self.handle_stop_loss_hit(symbol, current_price)
+                            break
+                    
+                    else:  # SELL
+                        # SELL: Check if price reached TP levels
+                        if not trade_info['tp1_hit'] and current_price <= signal['tp1']:
+                            await self.handle_tp1_hit(symbol, current_price)
+                        elif trade_info['tp1_hit'] and not trade_info['tp2_hit'] and current_price <= signal['tp2']:
+                            await self.handle_tp2_hit(symbol, current_price)
+                        elif trade_info['tp2_hit'] and not trade_info['tp3_hit'] and current_price <= signal['tp3']:
+                            await self.handle_tp3_hit(symbol, current_price)
+                            break  # Trade fully closed
+                        
+                        # Check stop loss hit
+                        elif current_price >= trade_info['current_sl'] and not trade_info['tp1_hit']:
+                            await self.handle_stop_loss_hit(symbol, current_price)
+                            break
 
-                # TP1 Hit (after 5 minutes)
-                if trade_duration > 300 and not trade_info['tp1_hit']:
-                    await self.handle_tp1_hit(symbol)
+                    # Log progress every 5 minutes
+                    if monitoring_duration % 300 == 0:
+                        duration_str = f"{monitoring_duration//60}m"
+                        self.logger.info(f"📊 {symbol} monitoring - Duration: {duration_str}, Current: ${current_price:.6f}")
 
-                # TP2 Hit (after 10 minutes)
-                elif trade_duration > 600 and trade_info['tp1_hit'] and not trade_info['tp2_hit']:
-                    await self.handle_tp2_hit(symbol)
+                except Exception as price_check_error:
+                    self.logger.warning(f"Price check error for {symbol}: {price_check_error}")
+                    continue
 
-                # TP3 Hit (after 15 minutes)
-                elif trade_duration > 900 and trade_info['tp2_hit'] and not trade_info['tp3_hit']:
-                    await self.handle_tp3_hit(symbol)
-                    break  # Trade fully closed
+            # If monitoring ended without completion
+            if monitoring_duration >= max_monitoring_time and not trade_info['trade_closed']:
+                self.logger.info(f"⏰ Monitoring timeout for {symbol} - Trade still active")
 
         except Exception as e:
             self.logger.error(f"Error monitoring trade progression for {symbol}: {e}")
 
-    async def handle_tp1_hit(self, symbol: str):
+    async def handle_tp1_hit(self, symbol: str, current_price: float):
         """Handle TP1 hit - Move SL to entry"""
         try:
             trade_info = self.active_trades[symbol]
@@ -2163,24 +2223,43 @@ Please try again or use `/help` for available commands.
             trade_info['sl_moved_to_entry'] = True
             trade_info['current_sl'] = signal['entry_price']
             trade_info['profit_locked'] = 1.0  # 1:1 profit locked
+            trade_info['tp1_hit_price'] = current_price
+            trade_info['tp1_hit_time'] = datetime.now()
 
             # Send SL update to Cornix
             cornix_update = {
                 'symbol': signal['symbol'],
                 'action': 'update_sl',
                 'new_stop_loss': signal['entry_price'],
-                'reason': 'tp1_hit'
+                'reason': 'tp1_hit',
+                'current_price': current_price
             }
             await self.send_sl_update_to_cornix(cornix_update)
 
-            # Send compact Telegram notification
-            update_msg = f"""🎯 **TP1 HIT** | **{signal['symbol']}** {signal['direction']}
+            # Calculate trade duration
+            duration = datetime.now() - trade_info['start_time']
+            duration_str = f"{duration.seconds//60}m {duration.seconds%60}s"
 
-✅ **Profit Secured:** 1:1 | **SL→Entry** 🛡️
-**Remaining:** TP2 `{signal['tp2']:.6f}` TP3 `{signal['tp3']:.6f}`
-**Status:** Risk-Free Trade Active
+            # Enhanced Telegram notification with Cornix-compatible format
+            update_msg = f"""🎯 **TP1 ACHIEVED** ✅
 
-*Cornix Auto-Updated | Perfect Scalping Bot*"""
+**Channel:** SignalTactics
+**Symbol:** {signal['symbol']}
+**Direction:** {signal['direction']}
+
+**📊 Trade Update:**
+• **Entry:** `{signal['entry_price']:.6f}`
+• **TP1 Hit:** `{current_price:.6f}` ✅
+• **New SL:** `{signal['entry_price']:.6f}` (Entry Level)
+• **Duration:** `{duration_str}`
+
+**🎯 Remaining Targets:**
+• **TP2:** `{signal['tp2']:.6f}`
+• **TP3:** `{signal['tp3']:.6f}`
+
+**📈 Status:** Risk-Free Trade | 1:1 Profit Secured
+
+*🤖 Cornix Auto-Updated | Perfect Scalping Bot*"""
 
             # Send to both admin and channel
             if self.admin_chat_id:
@@ -2198,7 +2277,7 @@ Please try again or use `/help` for available commands.
                     'symbol': symbol,
                     'direction': signal['direction'],
                     'entry_price': signal['entry_price'],
-                    'exit_price': signal['tp1'],
+                    'exit_price': current_price,
                     'stop_loss': signal['stop_loss'],
                     'take_profit_1': signal['tp1'],
                     'take_profit_2': signal['tp2'],
@@ -2208,7 +2287,7 @@ Please try again or use `/help` for available commands.
                     'position_size': 1.0,  # Normalized
                     'trade_result': 'TP1',
                     'profit_loss': 1.0,  # 1:1 ratio achieved
-                    'duration_minutes': (datetime.now() - trade_info['start_time']).total_seconds() / 60,
+                    'duration_minutes': duration.total_seconds() / 60,
                     'entry_time': trade_info['start_time'].isoformat(),
                     'exit_time': datetime.now().isoformat(),
                     'cvd_trend': signal.get('cvd_trend', 'unknown'),
@@ -2218,12 +2297,12 @@ Please try again or use `/help` for available commands.
                 }
                 await self.ml_analyzer.record_trade(trade_data)
 
-            self.logger.info(f"✅ TP1 hit for {symbol} - SL moved to entry")
+            self.logger.info(f"✅ TP1 hit for {symbol} at ${current_price:.6f} - SL moved to entry")
 
         except Exception as e:
             self.logger.error(f"Error handling TP1 hit for {symbol}: {e}")
 
-    async def handle_tp2_hit(self, symbol: str):
+    async def handle_tp2_hit(self, symbol: str, current_price: float):
         """Handle TP2 hit - Move SL to TP1"""
         try:
             trade_info = self.active_trades[symbol]
@@ -2233,24 +2312,43 @@ Please try again or use `/help` for available commands.
             trade_info['sl_moved_to_tp1'] = True
             trade_info['current_sl'] = signal['tp1']
             trade_info['profit_locked'] = 2.0  # 1:2 profit locked
+            trade_info['tp2_hit_price'] = current_price
+            trade_info['tp2_hit_time'] = datetime.now()
 
             # Send SL update to Cornix
             cornix_update = {
                 'symbol': signal['symbol'],
                 'action': 'update_sl',
                 'new_stop_loss': signal['tp1'],
-                'reason': 'tp2_hit'
+                'reason': 'tp2_hit',
+                'current_price': current_price
             }
             await self.send_sl_update_to_cornix(cornix_update)
 
-            # Send compact Telegram notification
-            update_msg = f"""🚀 **TP2 HIT** | **{signal['symbol']}** {signal['direction']}
+            # Calculate total trade duration
+            duration = datetime.now() - trade_info['start_time']
+            duration_str = f"{duration.seconds//60}m {duration.seconds%60}s"
 
-💎 **Profit Secured:** 1:2 | **SL→TP1** 🔥
-**Final Target:** TP3 `{signal['tp3']:.6f}` (1:3)
-**Status:** Excellent Performance
+            # Enhanced Telegram notification with Cornix-compatible format
+            update_msg = f"""🚀 **TP2 ACHIEVED** ✅
 
-*Cornix Auto-Updated | Perfect Scalping Bot*"""
+**Channel:** SignalTactics
+**Symbol:** {signal['symbol']}
+**Direction:** {signal['direction']}
+
+**📊 Trade Update:**
+• **Entry:** `{signal['entry_price']:.6f}`
+• **TP1 Hit:** `{trade_info.get('tp1_hit_price', signal['tp1']):.6f}` ✅
+• **TP2 Hit:** `{current_price:.6f}` ✅
+• **New SL:** `{signal['tp1']:.6f}` (TP1 Level)
+• **Duration:** `{duration_str}`
+
+**🎯 Final Target:**
+• **TP3:** `{signal['tp3']:.6f}` (1:3 Complete)
+
+**📈 Status:** Excellent Performance | 1:2 Profit Secured
+
+*🤖 Cornix Auto-Updated | Perfect Scalping Bot*"""
 
             # Send to both admin and channel
             if self.admin_chat_id:
@@ -2261,12 +2359,12 @@ Please try again or use `/help` for available commands.
             # Update performance stats
             self.performance_stats['total_profit'] += 1.0  # Additional 1:1 profit
 
-            self.logger.info(f"🚀 TP2 hit for {symbol} - SL moved to TP1")
+            self.logger.info(f"🚀 TP2 hit for {symbol} at ${current_price:.6f} - SL moved to TP1")
 
         except Exception as e:
             self.logger.error(f"Error handling TP2 hit for {symbol}: {e}")
 
-    async def handle_tp3_hit(self, symbol: str):
+    async def handle_tp3_hit(self, symbol: str, current_price: float):
         """Handle TP3 hit - Close trade fully"""
         try:
             trade_info = self.active_trades[symbol]
@@ -2275,28 +2373,53 @@ Please try again or use `/help` for available commands.
             trade_info['tp3_hit'] = True
             trade_info['trade_closed'] = True
             trade_info['profit_locked'] = 3.0  # Full 1:3 profit achieved
+            trade_info['tp3_hit_price'] = current_price
+            trade_info['tp3_hit_time'] = datetime.now()
 
             # Send trade closure to Cornix
             cornix_closure = {
                 'symbol': signal['symbol'],
                 'action': 'close_trade',
                 'reason': 'tp3_hit',
-                'final_profit_ratio': '1:3'
+                'final_profit_ratio': '1:3',
+                'exit_price': current_price
             }
             await self.send_trade_closure_to_cornix(cornix_closure)
 
-            # Calculate trade duration
+            # Calculate total trade duration
             trade_duration = datetime.now() - trade_info['start_time']
             duration_str = f"{trade_duration.seconds//3600}h {(trade_duration.seconds%3600)//60}m"
 
-            # Send compact Telegram notification
-            completion_msg = f"""🏆 **PERFECT TRADE** | **{signal['symbol']}** {signal['direction']}
+            # Calculate total profit percentage
+            entry_price = signal['entry_price']
+            if signal['direction'].upper() == 'BUY':
+                profit_pct = ((current_price - entry_price) / entry_price) * 100
+            else:
+                profit_pct = ((entry_price - current_price) / entry_price) * 100
 
-🎯 **ALL TARGETS HIT:** 1:3 Perfect Execution
-**Duration:** {duration_str} | **Strength:** {signal['signal_strength']:.0f}%
-**Final:** Entry `{signal['entry_price']:.6f}` → Exit `{signal['tp3']:.6f}`
+            # Enhanced completion notification with Cornix-compatible format
+            completion_msg = f"""🏆 **PERFECT TRADE COMPLETED** 🎯
 
-*🤖 Perfect Scalping Bot | Trade Masterclass* ✅"""
+**Channel:** SignalTactics
+**Symbol:** {signal['symbol']}
+**Direction:** {signal['direction']}
+
+**📊 Final Results:**
+• **Entry:** `{signal['entry_price']:.6f}`
+• **TP1 Hit:** `{trade_info.get('tp1_hit_price', signal['tp1']):.6f}` ✅
+• **TP2 Hit:** `{trade_info.get('tp2_hit_price', signal['tp2']):.6f}` ✅
+• **TP3 Hit:** `{current_price:.6f}` ✅
+• **Total Duration:** `{duration_str}`
+• **Profit:** `{profit_pct:.2f}%` (1:3 RR Achieved)
+
+**🎯 Achievement:** ALL TARGETS HIT
+**📈 Performance:** PERFECT EXECUTION
+**🛡️ Risk Management:** FLAWLESS
+
+**Signal Strength:** {signal['signal_strength']:.0f}%
+**Leverage Used:** {signal.get('optimal_leverage', 50)}x
+
+*🤖 Perfect Scalping Bot | Trade Masterclass Complete* ✅"""
 
             # Send to both admin and channel
             if self.admin_chat_id:
@@ -2307,10 +2430,34 @@ Please try again or use `/help` for available commands.
             # Update performance stats
             self.performance_stats['total_profit'] += 1.0  # Final 1:1 profit (total 3:1)
 
+            # Record complete trade for ML learning
+            if self.ml_analyzer:
+                complete_trade_data = {
+                    'symbol': symbol,
+                    'direction': signal['direction'],
+                    'entry_price': signal['entry_price'],
+                    'exit_price': current_price,
+                    'stop_loss': signal['stop_loss'],
+                    'take_profit_1': signal['tp1'],
+                    'take_profit_2': signal['tp2'],
+                    'take_profit_3': signal['tp3'],
+                    'signal_strength': signal['signal_strength'],
+                    'leverage': signal.get('optimal_leverage', 50),
+                    'position_size': 1.0,
+                    'trade_result': 'PERFECT_TRADE_TP3',
+                    'profit_loss': 3.0,  # Full 1:3 achieved
+                    'duration_minutes': trade_duration.total_seconds() / 60,
+                    'entry_time': trade_info['start_time'].isoformat(),
+                    'exit_time': datetime.now().isoformat(),
+                    'cvd_trend': signal.get('cvd_trend', 'unknown'),
+                    'lessons_learned': 'Perfect trade execution - all targets achieved with proper SL management'
+                }
+                await self.ml_analyzer.record_trade(complete_trade_data)
+
             # Remove from active trades
             del self.active_trades[symbol]
 
-            self.logger.info(f"🏆 Perfect trade completed for {symbol} - Full 1:3 profit achieved")
+            self.logger.info(f"🏆 Perfect trade completed for {symbol} at ${current_price:.6f} - Full 1:3 profit achieved")
 
         except Exception as e:
             self.logger.error(f"Error handling TP3 hit for {symbol}: {e}")
@@ -2346,6 +2493,92 @@ Please try again or use `/help` for available commands.
             self.logger.error(f"Error sending SL update to Cornix: {e}")
             return False
 
+    async def handle_stop_loss_hit(self, symbol: str, current_price: float):
+        """Handle stop loss hit - Close trade with loss"""
+        try:
+            trade_info = self.active_trades[symbol]
+            signal = trade_info['signal']
+
+            trade_info['sl_hit'] = True
+            trade_info['trade_closed'] = True
+            trade_info['sl_hit_price'] = current_price
+            trade_info['sl_hit_time'] = datetime.now()
+
+            # Send trade closure to Cornix
+            cornix_closure = {
+                'symbol': signal['symbol'],
+                'action': 'close_trade',
+                'reason': 'stop_loss_hit',
+                'exit_price': current_price
+            }
+            await self.send_trade_closure_to_cornix(cornix_closure)
+
+            # Calculate trade duration and loss
+            trade_duration = datetime.now() - trade_info['start_time']
+            duration_str = f"{trade_duration.seconds//60}m {trade_duration.seconds%60}s"
+
+            entry_price = signal['entry_price']
+            if signal['direction'].upper() == 'BUY':
+                loss_pct = ((entry_price - current_price) / entry_price) * 100
+            else:
+                loss_pct = ((current_price - entry_price) / entry_price) * 100
+
+            # Stop loss notification
+            sl_msg = f"""🛑 **STOP LOSS HIT**
+
+**Channel:** SignalTactics
+**Symbol:** {signal['symbol']}
+**Direction:** {signal['direction']}
+
+**📊 Trade Results:**
+• **Entry:** `{signal['entry_price']:.6f}`
+• **SL Hit:** `{current_price:.6f}` 🛑
+• **Duration:** `{duration_str}`
+• **Loss:** `{loss_pct:.2f}%`
+
+**📈 Status:** Risk Managed | Stop Loss Executed
+**🛡️ Risk Control:** Working as Planned
+
+*🤖 Cornix Auto-Executed | Perfect Scalping Bot*"""
+
+            # Send to both admin and channel
+            if self.admin_chat_id:
+                await self.send_message(self.admin_chat_id, sl_msg)
+            if self.channel_accessible:
+                await self.send_message(self.target_channel, sl_msg)
+
+            # Record trade for ML learning
+            if self.ml_analyzer:
+                loss_trade_data = {
+                    'symbol': symbol,
+                    'direction': signal['direction'],
+                    'entry_price': signal['entry_price'],
+                    'exit_price': current_price,
+                    'stop_loss': signal['stop_loss'],
+                    'take_profit_1': signal['tp1'],
+                    'take_profit_2': signal['tp2'],
+                    'take_profit_3': signal['tp3'],
+                    'signal_strength': signal['signal_strength'],
+                    'leverage': signal.get('optimal_leverage', 50),
+                    'position_size': 1.0,
+                    'trade_result': 'STOP_LOSS',
+                    'profit_loss': -1.0,  # Loss
+                    'duration_minutes': trade_duration.total_seconds() / 60,
+                    'entry_time': trade_info['start_time'].isoformat(),
+                    'exit_time': datetime.now().isoformat(),
+                    'cvd_trend': signal.get('cvd_trend', 'unknown'),
+                    'lessons_learned': f'Stop loss executed - analyze signal strength {signal["signal_strength"]} and market conditions'
+                }
+                await self.ml_analyzer.record_trade(loss_trade_data)
+
+            # Remove from active trades
+            del self.active_trades[symbol]
+
+            self.logger.info(f"🛑 Stop loss hit for {symbol} at ${current_price:.6f}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling stop loss hit for {symbol}: {e}")
+
     async def send_trade_closure_to_cornix(self, closure: Dict[str, Any]):
         """Send trade closure to Cornix"""
         try:
@@ -2358,7 +2591,8 @@ Please try again or use `/help` for available commands.
                 'action': 'close_position',
                 'symbol': closure['symbol'].replace('USDT', '/USDT'),
                 'reason': closure['reason'],
-                'final_profit_ratio': closure['final_profit_ratio'],
+                'exit_price': closure.get('exit_price'),
+                'final_profit_ratio': closure.get('final_profit_ratio'),
                 'timestamp': datetime.now().isoformat(),
                 'bot_id': 'perfect_scalping_bot'
             }

@@ -60,13 +60,14 @@ class CornixIntegration:
             }
     
     def _format_signal_for_cornix(self, signal: Dict[str, Any], trade_result: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Format signal for Cornix webhook format"""
+        """Format signal for Cornix webhook format with enhanced compatibility"""
         try:
             # Base payload structure for Cornix
             payload = {
                 'uuid': self.bot_uuid,
                 'timestamp': datetime.utcnow().isoformat(),
-                'source': 'perfect_scalping_bot'
+                'source': 'perfect_scalping_bot',
+                'channel': 'SignalTactics'
             }
             
             # Map signal action to Cornix format
@@ -95,47 +96,74 @@ class CornixIntegration:
             if 'stop_loss' in signal:
                 payload['stop_loss'] = float(signal['stop_loss'])
             
-            # Multiple take profits
+            # Multiple take profits with enhanced formatting
+            take_profits = []
             if 'tp1' in signal:
+                take_profits.append(float(signal['tp1']))
                 payload['take_profit_1'] = float(signal['tp1'])
             if 'tp2' in signal:
+                take_profits.append(float(signal['tp2']))
                 payload['take_profit_2'] = float(signal['tp2'])
             if 'tp3' in signal:
+                take_profits.append(float(signal['tp3']))
                 payload['take_profit_3'] = float(signal['tp3'])
+            
+            payload['take_profits'] = take_profits
             
             # Add leverage
             if 'optimal_leverage' in signal:
                 payload['leverage'] = int(signal['optimal_leverage'])
             elif 'leverage' in signal:
                 payload['leverage'] = int(signal['leverage'])
+            else:
+                payload['leverage'] = 50  # Default leverage
             
-            # Trading parameters
+            # Trading parameters for USD-M Futures
             payload['exchange'] = 'binance'
             payload['type'] = 'futures'
             payload['margin_type'] = 'cross'
+            payload['exchanges'] = ['Binance', 'BingX Spot', 'Bitget Spot', 'ByBit Spot', 'Huobi.pro', 'KuCoin', 'OKX']
             
-            # Signal metadata
+            # Enhanced signal metadata
             payload['signal_strength'] = signal.get('signal_strength', 0)
             payload['risk_reward_ratio'] = signal.get('risk_reward_ratio', 3.0)
             payload['timeframe'] = signal.get('timeframe', 'Multi-TF')
             payload['strategy'] = signal.get('strategy', 'Perfect Scalping')
             
+            # SL/TP management instructions
+            payload['sl_management'] = {
+                'tp1_hit': 'move_sl_to_entry',
+                'tp2_hit': 'move_sl_to_tp1',
+                'tp3_hit': 'close_trade_fully'
+            }
+            
+            # Position distribution
+            payload['position_distribution'] = {
+                'tp1_percentage': 40,
+                'tp2_percentage': 35,
+                'tp3_percentage': 25
+            }
+            
             # Validate price relationships
             entry = payload.get('entry_price', 0)
             stop_loss = payload.get('stop_loss', 0)
             tp1 = payload.get('take_profit_1', 0)
+            tp2 = payload.get('take_profit_2', 0)
+            tp3 = payload.get('take_profit_3', 0)
             
             if entry == 0 or stop_loss == 0 or tp1 == 0:
                 self.logger.warning("Missing essential price data for Cornix")
                 return None
             
-            # Final validation
-            if action == 'BUY' and not (stop_loss < entry < tp1):
-                self.logger.warning("Invalid BUY price structure for Cornix")
-                return None
-            elif action == 'SELL' and not (tp1 < entry < stop_loss):
-                self.logger.warning("Invalid SELL price structure for Cornix")
-                return None
+            # Enhanced validation for proper price structure
+            if action == 'BUY':
+                if not (stop_loss < entry < tp1 < tp2 < tp3):
+                    self.logger.warning(f"Invalid BUY price structure for Cornix: SL({stop_loss}) < Entry({entry}) < TP1({tp1}) < TP2({tp2}) < TP3({tp3})")
+                    return None
+            elif action == 'SELL':
+                if not (tp3 < tp2 < tp1 < entry < stop_loss):
+                    self.logger.warning(f"Invalid SELL price structure for Cornix: TP3({tp3}) < TP2({tp2}) < TP1({tp1}) < Entry({entry}) < SL({stop_loss})")
+                    return None
             
             return payload
             

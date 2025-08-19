@@ -1377,24 +1377,38 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format Cornix-compatible signal message"""
+        """Format enhanced Cornix-compatible signal message"""
         direction = signal['direction']
         timestamp = datetime.now().strftime('%H:%M')
         optimal_leverage = signal.get('optimal_leverage', 50)
 
-        # Cornix-compatible format - Clean and parseable
+        # Enhanced Cornix-compatible format
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Message format optimized for Cornix parsing
-        message = f"""🎯 PERFECT SCALPING SIGNAL
+        # Message format optimized for Cornix parsing and Telegram display
+        message = f"""🎯 **PERFECT SCALPING SIGNAL**
 
 {cornix_signal}
 
-Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}% | {timestamp} UTC
-Risk/Reward: 1:{signal['risk_reward_ratio']:.1f} | CVD: {self.cvd_data['cvd_trend'].title()}
+**📊 Signal Details:**
+• **Signal #:** {self.signal_counter}
+• **Strength:** {signal['signal_strength']:.0f}%
+• **Time:** {timestamp} UTC
+• **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
+• **CVD Trend:** {self.cvd_data['cvd_trend'].title()}
 
-Management: Move SL to Entry after TP1
-Position: 40% TP1 | 35% TP2 | 25% TP3"""
+**🔧 Auto Management:**
+✅ **TP1 Hit:** SL moves to Entry (Risk-Free)
+✅ **TP2 Hit:** SL moves to TP1 (Profit Secured)  
+✅ **TP3 Hit:** Position fully closed (Perfect!)
+
+**📈 Position Distribution:**
+• **TP1:** 40% @ {signal['tp1']:.6f}
+• **TP2:** 35% @ {signal['tp2']:.6f}
+• **TP3:** 25% @ {signal['tp3']:.6f}
+
+*🤖 Cornix Auto-Execution Enabled*
+*📢 Perfect Scalping Bot | Replit Hosted*"""
 
         return message.strip()
 
@@ -1411,7 +1425,7 @@ Position: 40% TP1 | 35% TP2 | 25% TP3"""
 
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
-        """Format signal in Cornix-compatible format with proper price validation"""
+        """Format signal in Cornix-compatible format with enhanced integration"""
         try:
             symbol = signal['symbol']
             direction = signal['direction'].upper()
@@ -1451,18 +1465,24 @@ Position: 40% TP1 | 35% TP2 | 25% TP3"""
             signal['tp2'] = tp2
             signal['tp3'] = tp3
 
-            # Format for Cornix - Clean, parseable format
+            # Enhanced Cornix-compatible format with management instructions
             formatted_message = f"""#{symbol} {direction}
 
 Entry: {entry:.6f}
 Stop Loss: {stop_loss:.6f}
 
 Take Profit:
-TP1: {tp1:.6f}
-TP2: {tp2:.6f}
-TP3: {tp3:.6f}
+TP1: {tp1:.6f} (40%)
+TP2: {tp2:.6f} (35%) 
+TP3: {tp3:.6f} (25%)
 
-Leverage: {optimal_leverage}x"""
+Leverage: {optimal_leverage}x
+Exchange: Binance Futures
+
+Management:
+- Move SL to Entry after TP1
+- Move SL to TP1 after TP2  
+- Close all after TP3"""
 
             return formatted_message
 
@@ -1476,7 +1496,8 @@ Stop Loss: {signal['stop_loss']:.6f}
 TP1: {signal['tp1']:.6f}
 TP2: {signal['tp2']:.6f}
 TP3: {signal['tp3']:.6f}
-Leverage: {optimal_leverage}x"""
+Leverage: {optimal_leverage}x
+Exchange: Binance Futures"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""
@@ -2028,9 +2049,8 @@ Please try again or use `/help` for available commands.
             return "⚡ **STAGE 1** - Active monitoring (Original SL)"
 
     async def send_to_cornix(self, signal: Dict[str, Any]) -> bool:
-        """Send signal to Cornix bot for USD-M futures trading"""
+        """Send signal to Cornix bot for USD-M futures trading with enhanced integration"""
         try:
-            # Create Cornix-compatible webhook payload for futures
             cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
             if not cornix_webhook_url:
                 self.logger.info("CORNIX_WEBHOOK_URL not configured - skipping Cornix integration")
@@ -2057,26 +2077,41 @@ Please try again or use `/help` for available commands.
                     self.logger.warning(f"Skipping Cornix - Invalid SELL prices for {signal['symbol']}")
                     return False
 
+            # Enhanced Cornix payload with proper formatting
             cornix_payload = {
-                'symbol': signal['symbol'],
-                'action': signal['direction'].lower(),
+                'symbol': signal['symbol'].replace('USDT', '/USDT'),
+                'action': direction.lower(),
                 'entry_price': entry,
                 'stop_loss': stop_loss,
                 'take_profit_1': tp1,
                 'take_profit_2': tp2,
                 'take_profit_3': tp3,
-                'exchange': 'binance',
+                'exchange': 'binance_futures',
                 'type': 'futures',
                 'margin_type': 'cross',
                 'leverage': optimal_leverage,
+                'position_size_percentage': 100,  # Use full allocated capital
+                'tp_distribution': [40, 35, 25],  # TP distribution percentages
+                'sl_management': {
+                    'move_to_entry_on_tp1': True,
+                    'move_to_tp1_on_tp2': True,
+                    'close_all_on_tp3': True
+                },
                 'risk_reward': signal.get('risk_reward_ratio', 3.0),
                 'signal_strength': signal.get('signal_strength', 0),
                 'timestamp': datetime.now().isoformat(),
-                'bot_source': 'perfect_scalping_bot'
+                'bot_source': 'perfect_scalping_bot',
+                'auto_sl_management': True,  # Enable automatic SL management
+                'binance_integration': True   # Enable Binance API integration
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(cornix_webhook_url, json=cornix_payload, timeout=10) as response:
+                headers = {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'PerfectScalpingBot/1.0'
+                }
+                
+                async with session.post(cornix_webhook_url, json=cornix_payload, headers=headers, timeout=15) as response:
                     if response.status == 200:
                         self.logger.info(f"✅ Signal sent to Cornix successfully for {signal['symbol']}")
                         return True
@@ -2316,7 +2351,7 @@ Please try again or use `/help` for available commands.
             self.logger.error(f"Error handling TP3 hit for {symbol}: {e}")
 
     async def send_sl_update_to_cornix(self, update: Dict[str, Any]):
-        """Send stop loss update to Cornix"""
+        """Send stop loss update to Cornix with Binance integration"""
         try:
             cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
             if not cornix_webhook_url:
@@ -2329,13 +2364,22 @@ Please try again or use `/help` for available commands.
                 'new_stop_loss': update['new_stop_loss'],
                 'reason': update['reason'],
                 'timestamp': datetime.now().isoformat(),
-                'bot_id': 'perfect_scalping_bot'
+                'bot_id': 'perfect_scalping_bot',
+                'exchange': 'binance_futures',
+                'update_binance': True,  # Instruct Cornix to update Binance
+                'sl_type': 'stop_market',
+                'auto_execute': True
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(cornix_webhook_url, json=payload) as response:
+                headers = {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'PerfectScalpingBot/1.0'
+                }
+                
+                async with session.post(cornix_webhook_url, json=payload, headers=headers, timeout=10) as response:
                     if response.status == 200:
-                        self.logger.info(f"✅ SL update sent to Cornix for {update['symbol']}")
+                        self.logger.info(f"✅ SL update sent to Cornix for {update['symbol']} - Binance will be updated")
                         return True
                     else:
                         error_text = await response.text()
@@ -2347,7 +2391,7 @@ Please try again or use `/help` for available commands.
             return False
 
     async def send_trade_closure_to_cornix(self, closure: Dict[str, Any]):
-        """Send trade closure to Cornix"""
+        """Send trade closure to Cornix with Binance integration"""
         try:
             cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
             if not cornix_webhook_url:
@@ -2360,13 +2404,24 @@ Please try again or use `/help` for available commands.
                 'reason': closure['reason'],
                 'final_profit_ratio': closure['final_profit_ratio'],
                 'timestamp': datetime.now().isoformat(),
-                'bot_id': 'perfect_scalping_bot'
+                'bot_id': 'perfect_scalping_bot',
+                'exchange': 'binance_futures',
+                'close_type': 'market_order',
+                'close_percentage': 100,  # Close entire position
+                'update_binance': True,   # Instruct Cornix to close on Binance
+                'auto_execute': True,
+                'trade_completed': True
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(cornix_webhook_url, json=payload) as response:
+                headers = {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'PerfectScalpingBot/1.0'
+                }
+                
+                async with session.post(cornix_webhook_url, json=payload, headers=headers, timeout=10) as response:
                     if response.status == 200:
-                        self.logger.info(f"✅ Trade closure sent to Cornix for {closure['symbol']}")
+                        self.logger.info(f"✅ Trade closure sent to Cornix for {closure['symbol']} - Binance position will be closed")
                         return True
                     else:
                         error_text = await response.text()

@@ -1,8 +1,8 @@
 {
   "status": "running",
   "restart_count": 0,
-  "start_time": "2025-08-19T08:22:47.141429",
-  "last_update": "2025-08-19T08:22:47.141458",
-  "pid": 770,
+  "start_time": "2025-08-19T08:27:51.179495",
+  "last_update": "2025-08-19T08:27:51.179522",
+  "pid": 1134,
   "max_restarts": 100
 }

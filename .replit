@@ -63,7 +63,7 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python SignalMaestro/perfect_scalping_bot.py"
+args = "python SignalMaestro/process_manager.py start"
 
 [[workflows.workflow]]
 name = "Bot Process Manager"

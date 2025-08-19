@@ -49,6 +49,13 @@ try:
 except ImportError:
     CORNIX_VALIDATOR_AVAILABLE = False
 
+# Import ML Trade Analyzer
+try:
+    from ml_trade_analyzer import MLTradeAnalyzer
+    ML_ANALYZER_AVAILABLE = True
+except ImportError:
+    ML_ANALYZER_AVAILABLE = False
+
 class PerfectScalpingBot:
     """Perfect scalping bot with most profitable indicators"""
 
@@ -199,6 +206,15 @@ class PerfectScalpingBot:
         else:
             self.cornix_validator = None
             self.logger.warning("⚠️ Cornix validator not available")
+
+        # Initialize ML Trade Analyzer
+        if ML_ANALYZER_AVAILABLE:
+            self.ml_analyzer = MLTradeAnalyzer()
+            self.ml_analyzer.load_models()  # Load existing models if available
+            self.logger.info("🧠 ML Trade Analyzer initialized")
+        else:
+            self.ml_analyzer = None
+            self.logger.warning("⚠️ ML Trade Analyzer not available")
 
         self.logger.info("Perfect Scalping Bot initialized")
 
@@ -1048,6 +1064,36 @@ class PerfectScalpingBot:
             # Add learning adaptation status
             learning_adaptation = self.get_learning_adaptation_status(symbol)
 
+            # Get ML predictions if available
+            ml_prediction = {'prediction': 'unknown', 'confidence': 0}
+            if self.ml_analyzer:
+                signal_for_ml = {
+                    'symbol': symbol,
+                    'direction': direction,
+                    'signal_strength': signal_strength,
+                    'optimal_leverage': optimal_leverage,
+                    'volatility': indicators.get('volatility', 0.02),
+                    'volume_ratio': indicators.get('volume_ratio', 1.0),
+                    'rsi': indicators.get('rsi', 50),
+                    'cvd_trend': self.cvd_data['cvd_trend'],
+                    'macd_bullish': indicators.get('macd_bullish', False),
+                    'ema_bullish': indicators.get('ema_bullish', False)
+                }
+                ml_prediction = self.ml_analyzer.predict_trade_outcome(signal_for_ml)
+
+            # Adjust signal strength based on ML prediction
+            if ml_prediction['prediction'] == 'unfavorable':
+                signal_strength *= 0.8  # Reduce signal strength for unfavorable predictions
+            elif ml_prediction['prediction'] == 'favorable':
+                signal_strength *= 1.1  # Boost signal strength for favorable predictions
+
+            # Get historical recommendations for the symbol
+            symbol_recommendation = None
+            if self.ml_analyzer:
+                symbol_rec = self.ml_analyzer.get_trade_recommendations(symbol)
+                if symbol_rec.get('recommendation') == 'AVOID':
+                    return None  # Skip signals for symbols with poor historical performance
+
             return {
                 'symbol': symbol,
                 'direction': direction,
@@ -1056,7 +1102,7 @@ class PerfectScalpingBot:
                 'tp1': tp1,
                 'tp2': tp2,
                 'tp3': tp3,
-                'signal_strength': signal_strength,
+                'signal_strength': min(signal_strength, 100),  # Cap at 100%
                 'risk_percentage': risk_percentage,
                 'risk_reward_ratio': self.risk_reward_ratio,
                 'position_size': position_size,
@@ -1068,7 +1114,9 @@ class PerfectScalpingBot:
                 ],
                 'timeframe': 'Multi-TF (3m-4h)',
                 'strategy': 'Perfect Scalping',
-                'learning_adaptation': learning_adaptation
+                'learning_adaptation': learning_adaptation,
+                'ml_prediction': ml_prediction,
+                'symbol_recommendation': symbol_recommendation
             }
 
         except Exception as e:
@@ -1348,6 +1396,14 @@ class PerfectScalpingBot:
 **Learning Adaptation:** `{signal.get('learning_adaptation', 'W:0 L:0')}`
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧠 **ML ANALYSIS & PREDICTION**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**ML Prediction:** `{signal.get('ml_prediction', {}).get('prediction', 'unknown').title()}`
+**ML Confidence:** `{signal.get('ml_prediction', {}).get('confidence', 0):.1f}%`
+**Loss Probability:** `{signal.get('ml_prediction', {}).get('loss_probability', 0):.1f}%`
+**ML Recommendation:** `{signal.get('ml_prediction', {}).get('recommendation', 'Analysis pending')}`
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📈 **MARKET ANALYSIS**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 **Strategy:** `{signal['strategy']}`
@@ -1516,6 +1572,11 @@ Use `/help` for all commands
 • `/positions` - View active trades
 • `/performance` - Detailed performance
 
+**🧠 Machine Learning:**
+• `/ml` or `/learning` - ML analysis & insights
+• `/predict` - Get ML trade prediction
+• `/insights` - View learning insights
+
 **Advanced:**
 • `/session` - Session information
 • `/restart` - Restart scanning
@@ -1523,12 +1584,13 @@ Use `/help` for all commands
 
 **📈 Auto Features:**
 • Continuous market scanning
-• Auto-session renewal
+• Machine learning adaptation
 • Real-time signal generation
 • Advanced risk management
 • Smart channel fallback
+• Trade outcome prediction
 
-*Bot operates 24/7 with perfect error recovery*"""
+*Bot operates 24/7 with ML-enhanced performance*"""
                 await self.send_message(chat_id, help_text)
 
             elif text.startswith('/status'):
@@ -1820,6 +1882,112 @@ Use `/help` for all commands
 *Session runs indefinitely without restarts*"""
                 await self.send_message(chat_id, session_info)
 
+            elif text.startswith('/ml') or text.startswith('/learning'):
+                if self.ml_analyzer:
+                    learning_summary = self.ml_analyzer.get_learning_summary()
+                    ml_info = f"""🧠 **MACHINE LEARNING ANALYSIS**
+
+**📊 Learning Progress:**
+• **Trades Analyzed:** `{learning_summary.get('total_trades_analyzed', 0)}`
+• **Win Rate:** `{learning_summary.get('win_rate', 0):.1%}`
+• **Insights Generated:** `{learning_summary.get('total_insights_generated', 0)}`
+• **Learning Status:** `{learning_summary.get('learning_status', 'unknown').title()}`
+
+**🤖 Model Performance:**
+• **Loss Prediction:** `{learning_summary.get('model_performance', {}).get('loss_prediction_accuracy', 0):.1%}`
+• **Signal Strength:** `{learning_summary.get('model_performance', {}).get('signal_strength_accuracy', 0):.1%}`
+• **Entry Timing:** `{learning_summary.get('model_performance', {}).get('entry_timing_accuracy', 0):.1%}`
+
+**💡 Recent Insights:**"""
+                    
+                    for insight in learning_summary.get('recent_insights', [])[:3]:
+                        ml_info += f"""
+• **{insight.get('type', 'Unknown').replace('_', ' ').title()}**
+  Pattern: {insight.get('pattern', 'N/A')}
+  Action: {insight.get('recommendation', 'N/A')}
+  Confidence: {insight.get('confidence', 0):.0f}%"""
+
+                    ml_info += f"""
+
+**🎯 Capabilities:**
+• Predicts trade outcomes before execution
+• Learns from losing trades to avoid patterns
+• Optimizes signal strength thresholds
+• Identifies best performing symbols
+• Adapts to market condition changes
+
+*Machine Learning continuously improves bot performance*"""
+                else:
+                    ml_info = """🧠 **MACHINE LEARNING STATUS**
+
+❌ **ML Analyzer not available**
+
+The ML Trade Analyzer module is not currently loaded.
+This feature provides:
+• Loss pattern recognition
+• Trade outcome prediction
+• Historical performance analysis
+• Adaptive signal optimization
+
+Contact support to enable ML features."""
+
+                await self.send_message(chat_id, ml_info)
+
+            elif text.startswith('/predict'):
+                # Get prediction for next potential signal
+                if self.ml_analyzer:
+                    await self.send_message(chat_id, "🔮 **GENERATING ML PREDICTION**\n\nAnalyzing current market conditions for trade outcome prediction...")
+                    
+                    # Get current market data for BTC (example)
+                    try:
+                        test_df = await self.get_binance_data('BTCUSDT', '15m', 100)
+                        if test_df is not None:
+                            indicators = self.calculate_advanced_indicators(test_df)
+                            if indicators:
+                                signal_data = {
+                                    'symbol': 'BTCUSDT',
+                                    'direction': 'BUY',
+                                    'signal_strength': indicators.get('signal_strength', 85),
+                                    'optimal_leverage': 45,
+                                    'volatility': 0.025,
+                                    'volume_ratio': indicators.get('volume_ratio', 1.0),
+                                    'rsi': indicators.get('rsi', 50),
+                                    'cvd_trend': self.cvd_data['cvd_trend'],
+                                    'macd_bullish': indicators.get('macd_bullish', False),
+                                    'ema_bullish': indicators.get('ema_bullish', False)
+                                }
+                                
+                                prediction = self.ml_analyzer.predict_trade_outcome(signal_data)
+                                
+                                pred_msg = f"""🔮 **ML TRADE PREDICTION**
+
+**📊 Current Market Analysis (BTCUSDT):**
+• **ML Prediction:** `{prediction.get('prediction', 'unknown').title()}`
+• **Confidence Score:** `{prediction.get('confidence', 0):.1f}%`
+• **Loss Probability:** `{prediction.get('loss_probability', 0):.1f}%`
+• **Strength Score:** `{prediction.get('strength_score', 0):.1f}%`
+• **Timing Score:** `{prediction.get('timing_score', 0):.1f}%`
+
+**🎯 ML Recommendation:**
+`{prediction.get('recommendation', 'Analysis pending')}`
+
+**📈 Market Conditions:**
+• CVD Trend: `{self.cvd_data['cvd_trend'].title()}`
+• Signal Strength: `{indicators.get('signal_strength', 85):.0f}%`
+• RSI Level: `{indicators.get('rsi', 50):.1f}`
+
+*Prediction based on historical trade analysis and current market conditions*"""
+                                
+                                await self.send_message(chat_id, pred_msg)
+                            else:
+                                await self.send_message(chat_id, "⚠️ **Unable to calculate indicators for prediction**")
+                        else:
+                            await self.send_message(chat_id, "❌ **Unable to fetch market data for prediction**")
+                    except Exception as e:
+                        await self.send_message(chat_id, f"🚨 **Prediction Error:** {str(e)[:100]}")
+                else:
+                    await self.send_message(chat_id, "❌ **ML Analyzer not available for predictions**")
+
             elif text.startswith('/restart'):
                 await self.send_message(chat_id, """🔄 **RESTART INITIATED**
 
@@ -2043,6 +2211,32 @@ Please try again or use `/help` for available commands.
             # Update performance stats
             self.performance_stats['profitable_signals'] += 1
             self.performance_stats['total_profit'] += 1.0
+
+            # Record trade progress for ML learning
+            if self.ml_analyzer:
+                trade_data = {
+                    'symbol': symbol,
+                    'direction': signal['direction'],
+                    'entry_price': signal['entry_price'],
+                    'exit_price': signal['tp1'],
+                    'stop_loss': signal['stop_loss'],
+                    'take_profit_1': signal['tp1'],
+                    'take_profit_2': signal['tp2'],
+                    'take_profit_3': signal['tp3'],
+                    'signal_strength': signal['signal_strength'],
+                    'leverage': signal.get('optimal_leverage', 50),
+                    'position_size': 1.0,  # Normalized
+                    'trade_result': 'TP1',
+                    'profit_loss': 1.0,  # 1:1 ratio achieved
+                    'duration_minutes': (datetime.now() - trade_info['start_time']).total_seconds() / 60,
+                    'entry_time': trade_info['start_time'].isoformat(),
+                    'exit_time': datetime.now().isoformat(),
+                    'cvd_trend': signal.get('cvd_trend', 'unknown'),
+                    'volatility': 0.02,  # Placeholder
+                    'volume_ratio': 1.0,  # Placeholder
+                    'lessons_learned': 'TP1 achieved successfully - risk eliminated'
+                }
+                self.ml_analyzer.record_trade(trade_data)
 
             self.logger.info(f"✅ TP1 hit for {symbol} - SL moved to entry")
 
@@ -2486,27 +2680,37 @@ Please try again or use `/help` for available commands.
 
     def get_learning_adaptation_status(self, symbol: str) -> str:
         """
-        Placeholder for learning adaptation status.
-        In a real implementation, this would fetch data on losses and wins for the symbol
-        to determine how the strategy adapts.
-        For now, it returns a mock status.
+        Get real learning adaptation status from ML analyzer
         """
-        # Mock data: In a real scenario, you'd query a database or a file
-        # for learning data associated with the symbol.
-        # Example: 'W:5 L:2' could mean 5 wins, 2 losses considered for learning.
-        # The logic here is simplified for demonstration.
-        mock_losses = 0
-        mock_wins = 0
-
-        # Simplified logic: if signal strength is high, assume some adaptation might have occurred.
-        # This part needs to be replaced with actual learning data integration.
-        # For now, let's assume a fixed pattern or random adaptation for demonstration.
-        import random
-        if random.random() < 0.1: # 10% chance of a "learned" status
-            mock_wins = random.randint(1, 5)
-            mock_losses = random.randint(0, 3)
-
-        return f"W:{mock_wins} L:{mock_losses}"
+        if not self.ml_analyzer:
+            return "W:0 L:0 (ML disabled)"
+        
+        try:
+            # Get symbol-specific trade history
+            symbol_rec = self.ml_analyzer.get_trade_recommendations(symbol)
+            
+            if 'trade_count' in symbol_rec:
+                trade_count = symbol_rec['trade_count']
+                win_rate = symbol_rec.get('historical_win_rate', 0)
+                
+                wins = int(trade_count * win_rate)
+                losses = trade_count - wins
+                
+                # Add learning status indicator
+                if trade_count >= 10:
+                    learning_status = " (Learning Active)"
+                elif trade_count >= 5:
+                    learning_status = " (Learning)"
+                else:
+                    learning_status = " (Collecting Data)"
+                
+                return f"W:{wins} L:{losses}{learning_status}"
+            else:
+                return "W:0 L:0 (New Symbol)"
+                
+        except Exception as e:
+            self.logger.error(f"Error getting learning status for {symbol}: {e}")
+            return "W:0 L:0 (Error)"
 
 
 async def main():

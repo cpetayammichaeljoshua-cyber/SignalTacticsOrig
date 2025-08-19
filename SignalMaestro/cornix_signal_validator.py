@@ -94,7 +94,7 @@ class CornixSignalValidator:
             return signal
     
     def format_for_cornix(self, signal: Dict[str, Any]) -> str:
-        """Format signal message for Cornix compatibility with enhanced structure"""
+        """Format signal message for Cornix compatibility"""
         try:
             # Validate and fix signal first
             if not self.validate_signal(signal):
@@ -109,96 +109,22 @@ class CornixSignalValidator:
             tp3 = signal['tp3']
             leverage = signal.get('optimal_leverage', 50)
             
-            # Enhanced Cornix-compatible format that matches expected structure
-            formatted_message = f"""**Channel:** SignalTactics
-**Symbol:** {symbol}
-**Exchanges:** Binance, BingX Spot, Bitget Spot, ByBit Spot, Huobi.pro, KuCoin, OKX
+            # Clean format that Cornix can easily parse
+            formatted_message = f"""#{symbol} {direction}
 
-**Entry Targets:**
-{entry:.6f}
+Entry: {entry:.6f}
+Stop Loss: {stop_loss:.6f}
 
-**Take-Profit Targets:**
-🎯 {tp1:.6f}
-🎯 {tp2:.6f}
-🎯 {tp3:.6f}
+Take Profit:
+TP1: {tp1:.6f}
+TP2: {tp2:.6f}
+TP3: {tp3:.6f}
 
-**Stop Targets:**
-🛑 {stop_loss:.6f}
-
-**Leverage:** {leverage}x
-**Direction:** {direction}
-
-**Trade Management:**
-• TP1 Hit → SL moves to Entry
-• TP2 Hit → SL moves to TP1
-• TP3 Hit → Trade closes fully
-
-**Position Distribution:** 40% TP1 | 35% TP2 | 25% TP3"""
+Leverage: {leverage}x
+Exchange: Binance"""
             
             return formatted_message
             
         except Exception as e:
             self.logger.error(f"Error formatting for Cornix: {e}")
             return ""
-    
-    def validate_cornix_format(self, message: str) -> Dict[str, Any]:
-        """Validate if message follows Cornix-compatible format"""
-        try:
-            validation_result = {
-                'valid': False,
-                'errors': [],
-                'warnings': []
-            }
-            
-            # Check for required Cornix elements
-            required_elements = [
-                'Channel:',
-                'Symbol:',
-                'Entry Targets:',
-                'Take-Profit Targets:',
-                'Stop Targets:',
-                'Leverage:',
-                'Direction:'
-            ]
-            
-            missing_elements = []
-            for element in required_elements:
-                if element not in message:
-                    missing_elements.append(element)
-            
-            if missing_elements:
-                validation_result['errors'].append(f"Missing required elements: {', '.join(missing_elements)}")
-            
-            # Check for proper price format (6 decimal places)
-            import re
-            price_pattern = r'\d+\.\d{6}'
-            prices_found = re.findall(price_pattern, message)
-            
-            if len(prices_found) < 4:  # Entry + 3 TPs + 1 SL = 5 minimum
-                validation_result['warnings'].append("Insufficient price targets found")
-            
-            # Check for leverage format
-            leverage_pattern = r'Leverage:\s*(\d+)x'
-            leverage_match = re.search(leverage_pattern, message)
-            
-            if not leverage_match:
-                validation_result['errors'].append("Leverage format not found")
-            elif int(leverage_match.group(1)) > 125:
-                validation_result['warnings'].append("Leverage exceeds maximum (125x)")
-            
-            # Check for direction
-            if not any(direction in message for direction in ['Direction: BUY', 'Direction: SELL']):
-                validation_result['errors'].append("Valid direction not found")
-            
-            # Set validation status
-            validation_result['valid'] = len(validation_result['errors']) == 0
-            
-            return validation_result
-            
-        except Exception as e:
-            self.logger.error(f"Error validating Cornix format: {e}")
-            return {
-                'valid': False,
-                'errors': [f"Validation error: {str(e)}"],
-                'warnings': []
-            }

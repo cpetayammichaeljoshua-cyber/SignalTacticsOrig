@@ -508,8 +508,13 @@ class PerfectScalpingBot:
                 if cumulative_volume[i] > 0:
                     vwap[i] = cumulative_pv[i] / cumulative_volume[i]
 
-            indicators['vwap'] = vwap[-1]
-            indicators['price_vs_vwap'] = (close[-1] - vwap[-1]) / vwap[-1] * 100
+            indicators['vwap'] = vwap[-1] if len(vwap) > 0 else close[-1]
+            
+            # Safe division for price vs VWAP
+            if vwap[-1] != 0 and not np.isnan(vwap[-1]) and not np.isinf(vwap[-1]):
+                indicators['price_vs_vwap'] = (close[-1] - vwap[-1]) / vwap[-1] * 100
+            else:
+                indicators['price_vs_vwap'] = 0.0
 
             # 1.2 MICRO TREND DETECTION (1-5 minute scalping)
             if len(close) >= 10:
@@ -578,8 +583,12 @@ class PerfectScalpingBot:
 
             # 7. Volume analysis
             volume_sma = np.mean(volume[-20:])
-            indicators['volume_ratio'] = volume[-1] / volume_sma
-            indicators['volume_surge'] = volume[-1] > volume_sma * 1.5
+            if volume_sma > 0 and not np.isnan(volume_sma) and not np.isinf(volume_sma):
+                indicators['volume_ratio'] = volume[-1] / volume_sma
+                indicators['volume_surge'] = volume[-1] > volume_sma * 1.5
+            else:
+                indicators['volume_ratio'] = 1.0
+                indicators['volume_surge'] = False
 
             # 8. Support and Resistance levels
             swing_highs = self._find_swing_points(high, 'high')
@@ -837,12 +846,17 @@ class PerfectScalpingBot:
 
     def _calculate_stochastic(self, high: np.array, low: np.array, close: np.array, 
                              k_period: int, d_period: int) -> tuple:
-        """Calculate Stochastic Oscillator"""
+        """Calculate Stochastic Oscillator with division by zero protection"""
         k_values = np.zeros(len(close))
         for i in range(k_period-1, len(close)):
             highest_high = np.max(high[i-k_period+1:i+1])
             lowest_low = np.min(low[i-k_period+1:i+1])
-            k_values[i] = ((close[i] - lowest_low) / (highest_high - lowest_low)) * 100
+            
+            # Prevent division by zero
+            if highest_high != lowest_low and not np.isnan(highest_high) and not np.isnan(lowest_low):
+                k_values[i] = ((close[i] - lowest_low) / (highest_high - lowest_low)) * 100
+            else:
+                k_values[i] = 50.0  # Neutral value
 
         d_values = np.zeros(len(close))
         for i in range(k_period + d_period - 2, len(close)):
@@ -899,7 +913,7 @@ class PerfectScalpingBot:
         except:
             return False
 
-    def generate_scalping_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def generate_scalping_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
         """Generate enhanced scalping signal with CVD confluence and optimized logic"""
         try:
             # Check if we recently sent a signal for this symbol
@@ -913,18 +927,20 @@ class PerfectScalpingBot:
             bullish_signals = 0
             bearish_signals = 0
 
-            current_price = indicators['current_price']
+            current_price = indicators.get('current_price', 0)
+            if current_price <= 0:
+                return None
 
             # 1. ENHANCED SUPERTREND (25% weight)
-            if indicators['supertrend_direction'] == 1:
+            if indicators.get('supertrend_direction') == 1:
                 bullish_signals += 25
-            elif indicators['supertrend_direction'] == -1:
+            elif indicators.get('supertrend_direction') == -1:
                 bearish_signals += 25
 
             # 2. EMA CONFLUENCE (20% weight)
-            if indicators['ema_bullish']:
+            if indicators.get('ema_bullish'):
                 bullish_signals += 20
-            elif indicators['ema_bearish']:
+            elif indicators.get('ema_bearish'):
                 bearish_signals += 20
 
             # 3. MICRO TREND CONSENSUS (15% weight) - Critical for scalping
@@ -942,10 +958,11 @@ class PerfectScalpingBot:
 
             # 5. VWAP POSITION (10% weight) - Institutional reference
             price_vs_vwap = indicators.get('price_vs_vwap', 0)
-            if price_vs_vwap > 0.1:  # Above VWAP
-                bullish_signals += 10
-            elif price_vs_vwap < -0.1:  # Below VWAP
-                bearish_signals += 10
+            if not np.isnan(price_vs_vwap) and not np.isinf(price_vs_vwap):
+                if price_vs_vwap > 0.1:  # Above VWAP
+                    bullish_signals += 10
+                elif price_vs_vwap < -0.1:  # Below VWAP
+                    bearish_signals += 10
 
             # 6. RSI WITH DIVERGENCE (10% weight)
             if indicators.get('rsi_oversold') or indicators.get('rsi_bullish_div'):
@@ -970,12 +987,17 @@ class PerfectScalpingBot:
             else:
                 return None
 
+            # Safe fallbacks for support/resistance levels
+            support_level = indicators.get('support_level', current_price * 0.995)
+            resistance_level = indicators.get('resistance_level', current_price * 1.005)
+            supertrend = indicators.get('supertrend', current_price)
+
             # Calculate entry, stop loss, and take profits
             if direction == 'BUY':
                 entry_price = current_price
 
                 # Stop loss below recent support or SuperTrend
-                stop_loss = min(indicators['support_level'], indicators['supertrend']) * 0.998
+                stop_loss = min(support_level, supertrend) * 0.998
 
                 # 3 Take Profits with 1:3 RR ratio
                 risk_amount = entry_price - stop_loss
@@ -988,7 +1010,7 @@ class PerfectScalpingBot:
                 entry_price = current_price
 
                 # Stop loss above recent resistance or SuperTrend
-                stop_loss = max(indicators['resistance_level'], indicators['supertrend']) * 1.002
+                stop_loss = max(resistance_level, supertrend) * 1.002
 
                 # 3 Take Profits with 1:3 RR ratio
                 risk_amount = stop_loss - entry_price
@@ -998,17 +1020,26 @@ class PerfectScalpingBot:
                 tp3 = entry_price - (risk_amount * 3.0)  # 1:3
 
             # Risk validation
+            if entry_price == 0:
+                return None
             risk_percentage = abs(entry_price - stop_loss) / entry_price * 100
             if risk_percentage > 3.0:  # Max 3% risk
                 return None
 
-            # Calculate position size based on 5% capital allocation
-            risk_per_trade = self.capital_allocation  # 5% of total capital
-            position_size = risk_per_trade / (risk_percentage / 100)
+            # Calculate position size based on capital allocation
+            risk_per_trade = self.capital_allocation
+            if risk_percentage > 0:
+                position_size = risk_per_trade / (risk_percentage / 100)
+            else:
+                position_size = 0
 
             # Calculate dynamic leverage based on market conditions
-            # Pass a placeholder DataFrame for leverage calculation if df is not available or relevant for this specific check
-            placeholder_df = pd.DataFrame({'close': [current_price] * 20 if len(df) < 20 else df['close'].tail(20)})
+            # Create placeholder DataFrame if df is not provided
+            if df is None or len(df) < 20:
+                placeholder_df = pd.DataFrame({'close': [current_price] * 20})
+            else:
+                placeholder_df = df
+            
             optimal_leverage = self.calculate_dynamic_leverage(indicators, placeholder_df)
 
             # Update last signal time to prevent duplicates
@@ -1143,7 +1174,7 @@ class PerfectScalpingBot:
                         if not indicators or not isinstance(indicators, dict):
                             continue
 
-                        signal = self.generate_scalping_signal(symbol, indicators)
+                        signal = self.generate_scalping_signal(symbol, indicators, df)
                         if signal and isinstance(signal, dict) and 'signal_strength' in signal:
                             # Update leverage calculation with actual market data
                             optimal_leverage = self.calculate_dynamic_leverage(indicators, df)
@@ -1600,7 +1631,7 @@ Use `/help` for all commands
                     if test_df is not None:
                         indicators = self.calculate_advanced_indicators(test_df)
                         if indicators:
-                            test_signal = self.generate_scalping_signal('BTCUSDT', indicators)
+                            test_signal = self.generate_scalping_signal('BTCUSDT', indicators, test_df)
                             if test_signal:
                                 self.signal_counter += 1
                                 signal_msg = self.format_signal_message(test_signal)

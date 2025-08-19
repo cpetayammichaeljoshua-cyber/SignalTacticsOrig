@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Perfect Scalping Bot Auto-Restart"
+runButton = "Perfect Scalping Bot Fixed"
 
 [[workflows.workflow]]
 name = "Project"
@@ -73,6 +73,15 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python SignalMaestro/process_manager.py status"
+
+[[workflows.workflow]]
+name = "Perfect Scalping Bot Fixed"
+author = 34160275
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/perfect_scalping_bot.py"
 
 [[ports]]
 localPort = 5000

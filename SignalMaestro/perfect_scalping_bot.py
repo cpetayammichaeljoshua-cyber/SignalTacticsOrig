@@ -177,7 +177,7 @@ class PerfectScalpingBot:
         # Risk management - optimized for scalping with enhanced symbol coverage
         self.risk_reward_ratio = 3.0  # 1:3 RR
         self.min_signal_strength = 85  # Slightly lower for more opportunities with CVD
-        self.max_signals_per_hour = 5  # Increased for larger symbol pool
+        self.max_signals_per_hour = 3  # Limited to 3 per hour as requested
         self.capital_allocation = 0.03  # 3% per trade for better diversification
         self.max_concurrent_trades = 8  # Maximum concurrent positions
 
@@ -1359,73 +1359,25 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format signal for Telegram with professional appearance and Cornix compatibility"""
+        """Format compact Cornix-compatible signal message"""
         direction = signal['direction']
         emoji = "🟢" if direction == 'BUY' else "🔴"
-        action_emoji = "📈" if direction == 'BUY' else "📉"
-
-        timestamp = datetime.now().strftime('%H:%M:%S UTC')
+        timestamp = datetime.now().strftime('%H:%M')
         optimal_leverage = signal.get('optimal_leverage', 50)
-
-        # Determine leverage rationale
-        leverage_reason = self._get_leverage_rationale(optimal_leverage)
 
         # Cornix-compatible format
         cornix_signal = self._format_cornix_signal(signal)
 
-        message = f"""
-{emoji} **PERFECT SCALPING SIGNAL** {action_emoji}
+        # Compact message format
+        message = f"""{emoji} **SCALPING SIGNAL**
 
 {cornix_signal}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 **SIGNAL ANALYTICS**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**Signal Strength:** `{signal['signal_strength']:.0f}%`
-**Risk/Reward Ratio:** `1:{signal['risk_reward_ratio']:.1f}`
-**Risk Exposure:** `{signal['risk_percentage']:.2f}%`
-**Capital Allocation:** `{signal['capital_allocation']:.1f}%`
+**📊 Analytics:** Strength `{signal['signal_strength']:.0f}%` | RR `1:{signal['risk_reward_ratio']:.1f}` | Risk `{signal['risk_percentage']:.1f}%`
+**⚡ Setup:** `{optimal_leverage}x Cross` | CVD `{self.cvd_data['cvd_trend'].title()}` | ML `{signal.get('ml_prediction', {}).get('prediction', 'Unknown').title()}`
+**🎯 Management:** SL→Entry@TP1 | Scale: 40%-35%-25%
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ **LEVERAGE & EXECUTION**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**Optimal Leverage:** `{optimal_leverage}x` (Max 50x)
-**Leverage Logic:** `{leverage_reason}`
-**Market Type:** `USD-M Perpetual Futures`
-**Margin Mode:** `Cross Only (Required)`
-**Learning Adaptation:** `{signal.get('learning_adaptation', 'W:0 L:0')}`
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧠 **ML ANALYSIS & PREDICTION**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**ML Prediction:** `{signal.get('ml_prediction', {}).get('prediction', 'unknown').title()}`
-**ML Confidence:** `{signal.get('ml_prediction', {}).get('confidence', 0):.1f}%`
-**Loss Probability:** `{signal.get('ml_prediction', {}).get('loss_probability', 0):.1f}%`
-**ML Recommendation:** `{signal.get('ml_prediction', {}).get('recommendation', 'Analysis pending')}`
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📈 **MARKET ANALYSIS**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**Strategy:** `{signal['strategy']}`
-**Timeframes:** `{signal['timeframe']}`
-**BTC CVD Trend:** `{self.cvd_data['cvd_trend'].title()}`
-**CVD Strength:** `{self.cvd_data['cvd_strength']:.1f}%`
-**Divergence Alert:** `{'⚠️ Active' if self.cvd_data['cvd_divergence'] else '✅ None'}`
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛡️ **RISK MANAGEMENT**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Move SL to breakeven after TP1 hit
-• Scale out: 40% at TP1, 35% at TP2, 25% at TP3
-• Maximum exposure: 5% of total capital
-• Monitor leverage carefully based on volatility
-
-**Generated:** `{timestamp}` | **Signal #:** `{self.signal_counter}`
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-*🤖 Perfect Scalping Bot | Advanced Algorithm*
-*💎 Professional Grade Signals | Risk Controlled*
-        """
+*#{self.signal_counter} | {timestamp} UTC | Perfect Scalping Bot*"""
 
         return message.strip()
 
@@ -1442,19 +1394,8 @@ class PerfectScalpingBot:
 
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
-        """Format signal in Cornix-compatible format for USD-M futures"""
+        """Format signal in enhanced Cornix-compatible format for USD-M futures"""
         try:
-            # Use Cornix validator if available
-            if self.cornix_validator:
-                # Validate and fix signal if needed
-                if not self.cornix_validator.validate_signal(signal):
-                    self.logger.info("🔧 Fixing signal for Cornix compatibility...")
-                    signal = self.cornix_validator.fix_signal_prices(signal)
-
-                # Use validator's formatting
-                return self.cornix_validator.format_for_cornix(signal)
-
-            # Fallback formatting if validator not available
             symbol = signal['symbol']
             direction = signal['direction'].upper()
             entry = signal['entry_price']
@@ -1462,47 +1403,24 @@ class PerfectScalpingBot:
             tp1 = signal['tp1']
             tp2 = signal['tp2']
             tp3 = signal['tp3']
-
-            # Format symbol for Cornix futures (remove USDT suffix if present)
-            if symbol.endswith('USDT'):
-                cornix_symbol = symbol[:-4] + '/USDT'
-            else:
-                cornix_symbol = symbol
-
             optimal_leverage = signal.get('optimal_leverage', 50)
 
-            formatted_message = f"""**Channel:** SignalTactics
-**Symbol:** {cornix_symbol}
-**Exchanges:** Binance Futures, BingX Futures, Bitget Futures, ByBit Futures, OKX Futures
-
-**{direction}** {'📈' if direction == 'BUY' else '📉'}
-**Entry:** {entry:.6f}
-**Stop Loss:** {stop_loss:.6f}
-**Take Profit 1:** {tp1:.6f}
-**Take Profit 2:** {tp2:.6f}
-**Take Profit 3:** {tp3:.6f}
-
-**Leverage:** {optimal_leverage}x (Optimized)
-**Margin:** Cross Only
-**Type:** USD-M Futures
-**Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
-**Signal Strength:** {signal['signal_strength']:.0f}%"""
+            # Enhanced Cornix format with better compatibility
+            formatted_message = f"""📊 **{symbol}** | **{direction}** {'📈' if direction == 'BUY' else '📉'}
+**Entry:** `{entry:.6f}` | **SL:** `{stop_loss:.6f}`
+**TP1:** `{tp1:.6f}` **TP2:** `{tp2:.6f}` **TP3:** `{tp3:.6f}`
+**Leverage:** `{optimal_leverage}x Cross` | **Exchanges:** Binance, BingX, Bitget, ByBit"""
 
             return formatted_message
 
         except Exception as e:
             self.logger.error(f"Error formatting Cornix signal: {e}")
-            # Fallback to original format if error occurs
+            # Fallback format
             optimal_leverage = signal.get('optimal_leverage', 50)
-            return f"""🏷️ **Pair:** `{signal['symbol']} (USD-M Futures)`
-🎯 **Direction:** `{signal['direction']}`
-💰 **Entry:** `${signal['entry_price']:.6f}`
-🛑 **Stop Loss:** `${signal['stop_loss']:.6f}`
-🎯 **Take Profits:**
-• **TP1:** `${signal['tp1']:.6f}` (1:1)
-• **TP2:** `${signal['tp2']:.6f}` (1:2)  
-• **TP3:** `${signal['tp3']:.6f}` (1:3)
-⚡ **Leverage:** `{optimal_leverage}x Optimized`"""
+            return f"""**{signal['symbol']}** {signal['direction']}
+Entry: `{signal['entry_price']:.6f}` | SL: `{signal['stop_loss']:.6f}`
+TP1: `{signal['tp1']:.6f}` TP2: `{signal['tp2']:.6f}` TP3: `{signal['tp3']:.6f}`
+Leverage: `{optimal_leverage}x Cross`"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""
@@ -2177,30 +2095,14 @@ Please try again or use `/help` for available commands.
             }
             await self.send_sl_update_to_cornix(cornix_update)
 
-            # Send Telegram notification
-            update_msg = f"""
-🎯 **TP1 HIT - STOP LOSS MOVED TO ENTRY** 🛡️
+            # Send compact Telegram notification
+            update_msg = f"""🎯 **TP1 HIT** | **{signal['symbol']}** {signal['direction']}
 
-**{signal['symbol']}** | **{signal['direction']}**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ **Profit Secured:** 1:1 | **SL→Entry** 🛡️
+**Remaining:** TP2 `{signal['tp2']:.6f}` TP3 `{signal['tp3']:.6f}`
+**Status:** Risk-Free Trade Active
 
-✅ **TP1 Reached:** `${signal['tp1']:.6f}`
-🛡️ **New Stop Loss:** `${signal['entry_price']:.6f}` (Entry)
-💰 **Profit Locked:** `1:1 Ratio` (Risk-Free Trade)
-📈 **Trade Status:** `Active - No Loss Possible`
-
-**🎯 Remaining Targets:**
-• **TP2:** `${signal['tp2']:.6f}` (1:2 Ratio)
-• **TP3:** `${signal['tp3']:.6f}` (1:3 Ratio)
-
-**⚡ Cornix Integration:**
-• Stop Loss automatically updated
-• Position partially secured (33%)
-• Remaining 67% running to TP2 & TP3
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-*🤖 Perfect Scalping Bot | Risk Management Active*
-            """
+*Cornix Auto-Updated | Perfect Scalping Bot*"""
 
             # Send to both admin and channel
             if self.admin_chat_id:
@@ -2263,34 +2165,14 @@ Please try again or use `/help` for available commands.
             }
             await self.send_sl_update_to_cornix(cornix_update)
 
-            # Send Telegram notification
-            update_msg = f"""
-🚀 **TP2 HIT - STOP LOSS MOVED TO TP1** 🔥
+            # Send compact Telegram notification
+            update_msg = f"""🚀 **TP2 HIT** | **{signal['symbol']}** {signal['direction']}
 
-**{signal['symbol']}** | **{signal['direction']}**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💎 **Profit Secured:** 1:2 | **SL→TP1** 🔥
+**Final Target:** TP3 `{signal['tp3']:.6f}` (1:3)
+**Status:** Excellent Performance
 
-✅ **TP2 Reached:** `${signal['tp2']:.6f}`
-🛡️ **New Stop Loss:** `${signal['tp1']:.6f}` (Previous TP1)
-💎 **Profit Locked:** `1:2 Ratio` (Excellent Performance)
-📈 **Trade Status:** `Active - Guaranteed Profit`
-
-**🎯 Final Target:**
-• **TP3:** `${signal['tp3']:.6f}` (1:3 Ratio - Full Target)
-
-**⚡ Cornix Integration:**
-• Stop Loss automatically updated to TP1
-• Position 67% secured with 1:2 profit
-• Final 33% running to maximum target
-
-🏆 **Performance Update:**
-• Risk/Reward achieved: 1:2 minimum guaranteed
-• Running for maximum 1:3 target
-• Perfect trade management execution
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-*🤖 Perfect Scalping Bot | Advanced Profit Locking*
-            """
+*Cornix Auto-Updated | Perfect Scalping Bot*"""
 
             # Send to both admin and channel
             if self.admin_chat_id:
@@ -2329,44 +2211,14 @@ Please try again or use `/help` for available commands.
             trade_duration = datetime.now() - trade_info['start_time']
             duration_str = f"{trade_duration.seconds//3600}h {(trade_duration.seconds%3600)//60}m"
 
-            # Send Telegram notification
-            completion_msg = f"""
-🏆 **PERFECT TRADE COMPLETED - TP3 HIT!** 🎯
+            # Send compact Telegram notification
+            completion_msg = f"""🏆 **PERFECT TRADE** | **{signal['symbol']}** {signal['direction']}
 
-**{signal['symbol']}** | **{signal['direction']}**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 **ALL TARGETS HIT:** 1:3 Perfect Execution
+**Duration:** {duration_str} | **Strength:** {signal['signal_strength']:.0f}%
+**Final:** Entry `{signal['entry_price']:.6f}` → Exit `{signal['tp3']:.6f}`
 
-🎯 **ALL TARGETS ACHIEVED:**
-✅ **TP1:** `${signal['tp1']:.6f}` ✓
-✅ **TP2:** `${signal['tp2']:.6f}` ✓
-✅ **TP3:** `${signal['tp3']:.6f}` ✓
-
-💎 **FINAL RESULTS:**
-• **Entry:** `${signal['entry_price']:.6f}`
-• **Exit:** `${signal['tp3']:.6f}`
-• **Profit Ratio:** `1:3 (Perfect Execution)`
-• **Trade Duration:** `{duration_str}`
-• **Signal Strength:** `{signal['signal_strength']:.0f}%`
-
-**📊 TRADE PROGRESSION:**
-1️⃣ **TP1 Hit** → SL moved to Entry (Risk-Free)
-2️⃣ **TP2 Hit** → SL moved to TP1 (Profit Secured)
-3️⃣ **TP3 Hit** → Trade Fully Closed (Maximum Target)
-
-**⚡ Cornix Integration:**
-• Trade automatically managed throughout
-• All SL movements executed perfectly
-• Position fully closed at maximum profit
-
-🏅 **PERFORMANCE IMPACT:**
-• Perfect 1:3 Risk/Reward achieved
-• Advanced trade management validated
-• Algorithm performance: EXCELLENT
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-*🤖 Perfect Scalping Bot | Trade Management Masterclass*
-*💎 This is how professional trading should work!*
-            """
+*🤖 Perfect Scalping Bot | Trade Masterclass* ✅"""
 
             # Send to both admin and channel
             if self.admin_chat_id:

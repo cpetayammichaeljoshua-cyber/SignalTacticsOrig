@@ -1016,56 +1016,42 @@ class PerfectScalpingBot:
             resistance_level = indicators.get('resistance_level', current_price * 1.005)
             supertrend = indicators.get('supertrend', current_price)
 
-            # Calculate entry, stop loss, and take profits
+            # Calculate entry, stop loss, and take profits with proper validation
+            entry_price = current_price
+            
+            # Use fixed risk percentage for consistent results
+            risk_percentage = 1.5  # 1.5% risk
+            risk_amount = entry_price * (risk_percentage / 100)
+
             if direction == 'BUY':
-                entry_price = current_price
+                # BUY: SL < Entry < TP1 < TP2 < TP3
+                stop_loss = entry_price - risk_amount
+                tp1 = entry_price + (risk_amount * 1.0)  # 1:1 RR
+                tp2 = entry_price + (risk_amount * 2.0)  # 1:2 RR
+                tp3 = entry_price + (risk_amount * 3.0)  # 1:3 RR
 
-                # Stop loss below recent support or SuperTrend (ensure it's below entry)
-                stop_loss = min(support_level, supertrend) * 0.998
-                # Ensure stop loss is below entry price
-                if stop_loss >= entry_price:
-                    stop_loss = entry_price * 0.985  # 1.5% below entry
-
-                # 3 Take Profits with 1:3 RR ratio
-                risk_amount = entry_price - stop_loss
-
-                tp1 = entry_price + (risk_amount * 1.0)  # 1:1
-                tp2 = entry_price + (risk_amount * 2.0)  # 1:2
-                tp3 = entry_price + (risk_amount * 3.0)  # 1:3
-
-                # Validate BUY order: SL < Entry < TP1 < TP2 < TP3
+                # Final validation
                 if not (stop_loss < entry_price < tp1 < tp2 < tp3):
-                    self.logger.warning(f"Invalid BUY price structure for {symbol}, adjusting...")
-                    # Recalculate with fixed percentages
-                    stop_loss = entry_price * 0.985  # 1.5% below
-                    tp1 = entry_price * 1.015  # 1.5% above
-                    tp2 = entry_price * 1.030  # 3% above
-                    tp3 = entry_price * 1.045  # 4.5% above
+                    self.logger.warning(f"BUY price validation failed for {symbol}, using fallback")
+                    stop_loss = entry_price * 0.985
+                    tp1 = entry_price * 1.015
+                    tp2 = entry_price * 1.030
+                    tp3 = entry_price * 1.045
 
             else:  # SELL
-                entry_price = current_price
+                # SELL: TP3 < TP2 < TP1 < Entry < SL
+                stop_loss = entry_price + risk_amount
+                tp1 = entry_price - (risk_amount * 1.0)  # 1:1 RR
+                tp2 = entry_price - (risk_amount * 2.0)  # 1:2 RR
+                tp3 = entry_price - (risk_amount * 3.0)  # 1:3 RR
 
-                # Stop loss above recent resistance or SuperTrend (ensure it's above entry)
-                stop_loss = max(resistance_level, supertrend) * 1.002
-                # Ensure stop loss is above entry price
-                if stop_loss <= entry_price:
-                    stop_loss = entry_price * 1.015  # 1.5% above entry
-
-                # 3 Take Profits with 1:3 RR ratio
-                risk_amount = stop_loss - entry_price
-
-                tp1 = entry_price - (risk_amount * 1.0)  # 1:1
-                tp2 = entry_price - (risk_amount * 2.0)  # 1:2
-                tp3 = entry_price - (risk_amount * 3.0)  # 1:3
-
-                # Validate SELL order: TP3 < TP2 < TP1 < Entry < SL
+                # Final validation
                 if not (tp3 < tp2 < tp1 < entry_price < stop_loss):
-                    self.logger.warning(f"Invalid SELL price structure for {symbol}, adjusting...")
-                    # Recalculate with fixed percentages
-                    stop_loss = entry_price * 1.015  # 1.5% above
-                    tp1 = entry_price * 0.985  # 1.5% below
-                    tp2 = entry_price * 0.970  # 3% below
-                    tp3 = entry_price * 0.955  # 4.5% below
+                    self.logger.warning(f"SELL price validation failed for {symbol}, using fallback")
+                    stop_loss = entry_price * 1.015
+                    tp1 = entry_price * 0.985
+                    tp2 = entry_price * 0.970
+                    tp3 = entry_price * 0.955
 
             # Risk validation
             if entry_price == 0:
@@ -1393,27 +1379,22 @@ class PerfectScalpingBot:
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
         """Format Cornix-compatible signal message"""
         direction = signal['direction']
-        emoji = "🟢" if direction == 'BUY' else "🔴"
         timestamp = datetime.now().strftime('%H:%M')
         optimal_leverage = signal.get('optimal_leverage', 50)
 
-        # Cornix-compatible format
+        # Cornix-compatible format - Clean and parseable
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Clean message format that Cornix can parse
-        message = f"""{emoji} **PERFECT SCALPING SIGNAL**
+        # Message format optimized for Cornix parsing
+        message = f"""🎯 PERFECT SCALPING SIGNAL
 
 {cornix_signal}
 
-📊 **Signal Strength:** {signal['signal_strength']:.0f}%
-⚡ **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
-🎯 **Risk:** {signal['risk_percentage']:.1f}%
-🔥 **CVD Trend:** {self.cvd_data['cvd_trend'].title()}
+Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}% | {timestamp} UTC
+Risk/Reward: 1:{signal['risk_reward_ratio']:.1f} | CVD: {self.cvd_data['cvd_trend'].title()}
 
-💎 **Management:** Move SL to Entry after TP1
-⚖️ **Position Sizing:** 40% TP1 | 35% TP2 | 25% TP3
-
-*Signal #{self.signal_counter} | {timestamp} UTC*"""
+Management: Move SL to Entry after TP1
+Position: 40% TP1 | 35% TP2 | 25% TP3"""
 
         return message.strip()
 
@@ -1441,36 +1422,37 @@ class PerfectScalpingBot:
             tp3 = signal['tp3']
             optimal_leverage = signal.get('optimal_leverage', 50)
 
-            # Validate price ordering for Cornix compatibility
+            # Validate and fix price ordering for Cornix compatibility
             if direction == 'BUY':
                 # For BUY: SL < Entry < TP1 < TP2 < TP3
                 if not (stop_loss < entry < tp1 < tp2 < tp3):
-                    self.logger.warning(f"Invalid BUY price order for {symbol}: SL={stop_loss}, Entry={entry}, TP1={tp1}")
-                    # Fix the ordering
-                    if stop_loss >= entry:
-                        stop_loss = entry * 0.985  # 1.5% below entry
-                    if tp1 <= entry:
-                        tp1 = entry * 1.015  # 1.5% above entry
-                    if tp2 <= tp1:
-                        tp2 = entry * 1.030  # 3% above entry
-                    if tp3 <= tp2:
-                        tp3 = entry * 1.045  # 4.5% above entry
+                    self.logger.warning(f"Fixing BUY price order for {symbol}")
+                    # Calculate proper risk-reward ratios
+                    risk_amount = entry * 0.015  # 1.5% risk
+                    stop_loss = entry - risk_amount
+                    tp1 = entry + (risk_amount * 1.0)  # 1:1
+                    tp2 = entry + (risk_amount * 2.0)  # 1:2
+                    tp3 = entry + (risk_amount * 3.0)  # 1:3
             else:  # SELL
                 # For SELL: TP3 < TP2 < TP1 < Entry < SL
                 if not (tp3 < tp2 < tp1 < entry < stop_loss):
-                    self.logger.warning(f"Invalid SELL price order for {symbol}: TP3={tp3}, Entry={entry}, SL={stop_loss}")
-                    # Fix the ordering
-                    if stop_loss <= entry:
-                        stop_loss = entry * 1.015  # 1.5% above entry
-                    if tp1 >= entry:
-                        tp1 = entry * 0.985  # 1.5% below entry
-                    if tp2 >= tp1:
-                        tp2 = entry * 0.970  # 3% below entry
-                    if tp3 >= tp2:
-                        tp3 = entry * 0.955  # 4.5% below entry
+                    self.logger.warning(f"Fixing SELL price order for {symbol}")
+                    # Calculate proper risk-reward ratios
+                    risk_amount = entry * 0.015  # 1.5% risk
+                    stop_loss = entry + risk_amount
+                    tp1 = entry - (risk_amount * 1.0)  # 1:1
+                    tp2 = entry - (risk_amount * 2.0)  # 1:2
+                    tp3 = entry - (risk_amount * 3.0)  # 1:3
 
-            # Standard Cornix format that Cornix can parse correctly
-            formatted_message = f"""🎯 #{symbol} | {direction}
+            # Update signal with corrected prices
+            signal['entry_price'] = entry
+            signal['stop_loss'] = stop_loss
+            signal['tp1'] = tp1
+            signal['tp2'] = tp2
+            signal['tp3'] = tp3
+
+            # Format for Cornix - Clean, parseable format
+            formatted_message = f"""#{symbol} {direction}
 
 Entry: {entry:.6f}
 Stop Loss: {stop_loss:.6f}
@@ -1480,8 +1462,7 @@ TP1: {tp1:.6f}
 TP2: {tp2:.6f}
 TP3: {tp3:.6f}
 
-Leverage: {optimal_leverage}x
-Exchange: Binance"""
+Leverage: {optimal_leverage}x"""
 
             return formatted_message
 
@@ -1489,7 +1470,7 @@ Exchange: Binance"""
             self.logger.error(f"Error formatting Cornix signal: {e}")
             # Fallback format
             optimal_leverage = signal.get('optimal_leverage', 50)
-            return f"""#{signal['symbol']} | {signal['direction']}
+            return f"""#{signal['symbol']} {signal['direction']}
 Entry: {signal['entry_price']:.6f}
 Stop Loss: {signal['stop_loss']:.6f}
 TP1: {signal['tp1']:.6f}
@@ -2052,30 +2033,52 @@ Please try again or use `/help` for available commands.
             # Create Cornix-compatible webhook payload for futures
             cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
             if not cornix_webhook_url:
-                self.logger.warning("CORNIX_WEBHOOK_URL not configured")
-                return False
+                self.logger.info("CORNIX_WEBHOOK_URL not configured - skipping Cornix integration")
+                return True  # Return True to continue normal operation
 
             # Format signal for Cornix webhook (USD-M Futures)
             optimal_leverage = signal.get('optimal_leverage', 50)
+            
+            # Ensure prices are properly validated before sending
+            entry = float(signal['entry_price'])
+            stop_loss = float(signal['stop_loss'])
+            tp1 = float(signal['tp1'])
+            tp2 = float(signal['tp2'])
+            tp3 = float(signal['tp3'])
+            
+            # Final price validation
+            direction = signal['direction'].upper()
+            if direction == 'BUY':
+                if not (stop_loss < entry < tp1 < tp2 < tp3):
+                    self.logger.warning(f"Skipping Cornix - Invalid BUY prices for {signal['symbol']}")
+                    return False
+            else:  # SELL
+                if not (tp3 < tp2 < tp1 < entry < stop_loss):
+                    self.logger.warning(f"Skipping Cornix - Invalid SELL prices for {signal['symbol']}")
+                    return False
+
             cornix_payload = {
-                'symbol': signal['symbol'].replace('USDT', '/USDT'),
+                'symbol': signal['symbol'],
                 'action': signal['direction'].lower(),
-                'price': signal['entry_price'],
-                'stop_loss': signal['stop_loss'],
-                'take_profit_1': signal['tp1'],
-                'take_profit_2': signal['tp2'],
-                'take_profit_3': signal['tp3'],
+                'entry_price': entry,
+                'stop_loss': stop_loss,
+                'take_profit_1': tp1,
+                'take_profit_2': tp2,
+                'take_profit_3': tp3,
                 'exchange': 'binance',
-                'type': 'futures',  # Changed from 'spot' to 'futures'
-                'margin_type': 'cross',  # Cross margin recommended
-                'leverage': str(optimal_leverage),  # Dynamic leverage based on market conditions
-                'timestamp': datetime.now().isoformat()
+                'type': 'futures',
+                'margin_type': 'cross',
+                'leverage': optimal_leverage,
+                'risk_reward': signal.get('risk_reward_ratio', 3.0),
+                'signal_strength': signal.get('signal_strength', 0),
+                'timestamp': datetime.now().isoformat(),
+                'bot_source': 'perfect_scalping_bot'
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(cornix_webhook_url, json=cornix_payload) as response:
+                async with session.post(cornix_webhook_url, json=cornix_payload, timeout=10) as response:
                     if response.status == 200:
-                        self.logger.info(f"✅ Futures signal sent to Cornix successfully for {signal['symbol']}")
+                        self.logger.info(f"✅ Signal sent to Cornix successfully for {signal['symbol']}")
                         return True
                     else:
                         error_text = await response.text()
@@ -2083,7 +2086,7 @@ Please try again or use `/help` for available commands.
                         return False
 
         except Exception as e:
-            self.logger.error(f"Error sending futures signal to Cornix: {e}")
+            self.logger.error(f"Error sending signal to Cornix: {e}")
             return False
 
     async def process_trade_update(self, signal: Dict[str, Any]):
@@ -2415,6 +2418,11 @@ Please try again or use `/help` for available commands.
 
                             # Format and send signal
                             signal_msg = self.format_signal_message(signal)
+
+                            # Send to Cornix first (if configured)
+                            cornix_sent = await self.send_to_cornix(signal)
+                            if cornix_sent:
+                                self.logger.info(f"📤 Signal sent to Cornix for {signal['symbol']}")
 
                             # Send to admin first (always works)
                             admin_sent = False

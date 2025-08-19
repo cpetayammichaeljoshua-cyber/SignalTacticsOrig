@@ -66,7 +66,7 @@ class CornixIntegration:
             payload = {
                 'uuid': self.bot_uuid,
                 'timestamp': datetime.utcnow().isoformat(),
-                'source': 'telegram_bot'
+                'source': 'perfect_scalping_bot'
             }
             
             # Map signal action to Cornix format
@@ -77,7 +77,7 @@ class CornixIntegration:
                 'SHORT': 'sell'
             }
             
-            action = signal.get('action', '').upper()
+            action = signal.get('direction', signal.get('action', '')).upper()
             if action not in action_mapping:
                 self.logger.warning(f"Unsupported action for Cornix: {action}")
                 return None
@@ -85,48 +85,57 @@ class CornixIntegration:
             payload['action'] = action_mapping[action]
             payload['symbol'] = signal.get('symbol', '')
             
-            # Add price information
-            if 'price' in signal:
-                payload['price'] = str(signal['price'])
-            elif trade_result and 'price' in trade_result:
-                payload['price'] = str(trade_result['price'])
+            # Add entry price
+            if 'entry_price' in signal:
+                payload['entry_price'] = float(signal['entry_price'])
+            elif 'price' in signal:
+                payload['entry_price'] = float(signal['price'])
             
-            # Add quantity/amount
-            if 'quantity' in signal:
-                payload['quantity'] = str(signal['quantity'])
-            elif trade_result and 'amount' in trade_result:
-                payload['quantity'] = str(trade_result['amount'])
-            
-            # Add stop loss
+            # Add stop loss and take profits
             if 'stop_loss' in signal:
-                payload['stop_loss'] = str(signal['stop_loss'])
+                payload['stop_loss'] = float(signal['stop_loss'])
             
-            # Add take profit
-            if 'take_profit' in signal:
-                payload['take_profit'] = str(signal['take_profit'])
+            # Multiple take profits
+            if 'tp1' in signal:
+                payload['take_profit_1'] = float(signal['tp1'])
+            if 'tp2' in signal:
+                payload['take_profit_2'] = float(signal['tp2'])
+            if 'tp3' in signal:
+                payload['take_profit_3'] = float(signal['tp3'])
             
-            # Add leverage if specified
-            if 'leverage' in signal:
-                payload['leverage'] = str(signal['leverage'])
+            # Add leverage
+            if 'optimal_leverage' in signal:
+                payload['leverage'] = int(signal['optimal_leverage'])
+            elif 'leverage' in signal:
+                payload['leverage'] = int(signal['leverage'])
             
-            # Add trade execution details if available
-            if trade_result:
-                payload['execution'] = {
-                    'order_id': trade_result.get('order_id', ''),
-                    'executed_price': str(trade_result.get('price', 0)),
-                    'executed_amount': str(trade_result.get('amount', 0)),
-                    'timestamp': trade_result.get('timestamp', ''),
-                    'success': trade_result.get('success', False)
-                }
+            # Trading parameters
+            payload['exchange'] = 'binance'
+            payload['type'] = 'futures'
+            payload['margin_type'] = 'cross'
             
-            # Add additional metadata
-            payload['metadata'] = {
-                'signal_type': signal.get('type', 'unknown'),
-                'risk_level': signal.get('risk_level', 'medium'),
-                'confidence': signal.get('confidence', 0),
-                'timeframe': signal.get('timeframe', ''),
-                'source_platform': 'telegram'
-            }
+            # Signal metadata
+            payload['signal_strength'] = signal.get('signal_strength', 0)
+            payload['risk_reward_ratio'] = signal.get('risk_reward_ratio', 3.0)
+            payload['timeframe'] = signal.get('timeframe', 'Multi-TF')
+            payload['strategy'] = signal.get('strategy', 'Perfect Scalping')
+            
+            # Validate price relationships
+            entry = payload.get('entry_price', 0)
+            stop_loss = payload.get('stop_loss', 0)
+            tp1 = payload.get('take_profit_1', 0)
+            
+            if entry == 0 or stop_loss == 0 or tp1 == 0:
+                self.logger.warning("Missing essential price data for Cornix")
+                return None
+            
+            # Final validation
+            if action == 'BUY' and not (stop_loss < entry < tp1):
+                self.logger.warning("Invalid BUY price structure for Cornix")
+                return None
+            elif action == 'SELL' and not (tp1 < entry < stop_loss):
+                self.logger.warning("Invalid SELL price structure for Cornix")
+                return None
             
             return payload
             

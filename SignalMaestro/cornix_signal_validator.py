@@ -107,26 +107,21 @@ class CornixSignalValidator:
             tp1 = signal['tp1']
             tp2 = signal['tp2']
             tp3 = signal['tp3']
+            leverage = signal.get('optimal_leverage', 50)
             
-            # Format symbol for Cornix
-            if symbol.endswith('USDT'):
-                cornix_symbol = symbol[:-4] + '/USDT'
-            else:
-                cornix_symbol = symbol
-            
-            formatted_message = f"""Channel: SignalTactics
-Symbol: {cornix_symbol}
-Exchanges: Binance, BingX Spot, Bitget Spot, ByBit Spot, Coinbase Advanced Spot, Huobi.pro, KuCoin, OKX
+            # Clean format that Cornix can easily parse
+            formatted_message = f"""#{symbol} {direction}
 
-{direction}
 Entry: {entry:.6f}
 Stop Loss: {stop_loss:.6f}
-Take Profit 1: {tp1:.6f}
-Take Profit 2: {tp2:.6f}
-Take Profit 3: {tp3:.6f}
 
-Risk/Reward: 1:3
-Signal Strength: {signal.get('signal_strength', 0):.0f}%"""
+Take Profit:
+TP1: {tp1:.6f}
+TP2: {tp2:.6f}
+TP3: {tp3:.6f}
+
+Leverage: {leverage}x
+Exchange: Binance"""
             
             return formatted_message
             

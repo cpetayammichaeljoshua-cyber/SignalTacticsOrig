@@ -1020,8 +1020,11 @@ class PerfectScalpingBot:
             if direction == 'BUY':
                 entry_price = current_price
 
-                # Stop loss below recent support or SuperTrend
+                # Stop loss below recent support or SuperTrend (ensure it's below entry)
                 stop_loss = min(support_level, supertrend) * 0.998
+                # Ensure stop loss is below entry price
+                if stop_loss >= entry_price:
+                    stop_loss = entry_price * 0.985  # 1.5% below entry
 
                 # 3 Take Profits with 1:3 RR ratio
                 risk_amount = entry_price - stop_loss
@@ -1030,11 +1033,23 @@ class PerfectScalpingBot:
                 tp2 = entry_price + (risk_amount * 2.0)  # 1:2
                 tp3 = entry_price + (risk_amount * 3.0)  # 1:3
 
+                # Validate BUY order: SL < Entry < TP1 < TP2 < TP3
+                if not (stop_loss < entry_price < tp1 < tp2 < tp3):
+                    self.logger.warning(f"Invalid BUY price structure for {symbol}, adjusting...")
+                    # Recalculate with fixed percentages
+                    stop_loss = entry_price * 0.985  # 1.5% below
+                    tp1 = entry_price * 1.015  # 1.5% above
+                    tp2 = entry_price * 1.030  # 3% above
+                    tp3 = entry_price * 1.045  # 4.5% above
+
             else:  # SELL
                 entry_price = current_price
 
-                # Stop loss above recent resistance or SuperTrend
+                # Stop loss above recent resistance or SuperTrend (ensure it's above entry)
                 stop_loss = max(resistance_level, supertrend) * 1.002
+                # Ensure stop loss is above entry price
+                if stop_loss <= entry_price:
+                    stop_loss = entry_price * 1.015  # 1.5% above entry
 
                 # 3 Take Profits with 1:3 RR ratio
                 risk_amount = stop_loss - entry_price
@@ -1042,6 +1057,15 @@ class PerfectScalpingBot:
                 tp1 = entry_price - (risk_amount * 1.0)  # 1:1
                 tp2 = entry_price - (risk_amount * 2.0)  # 1:2
                 tp3 = entry_price - (risk_amount * 3.0)  # 1:3
+
+                # Validate SELL order: TP3 < TP2 < TP1 < Entry < SL
+                if not (tp3 < tp2 < tp1 < entry_price < stop_loss):
+                    self.logger.warning(f"Invalid SELL price structure for {symbol}, adjusting...")
+                    # Recalculate with fixed percentages
+                    stop_loss = entry_price * 1.015  # 1.5% above
+                    tp1 = entry_price * 0.985  # 1.5% below
+                    tp2 = entry_price * 0.970  # 3% below
+                    tp3 = entry_price * 0.955  # 4.5% below
 
             # Risk validation
             if entry_price == 0:
@@ -1367,7 +1391,7 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format compact Cornix-compatible signal message"""
+        """Format Cornix-compatible signal message"""
         direction = signal['direction']
         emoji = "🟢" if direction == 'BUY' else "🔴"
         timestamp = datetime.now().strftime('%H:%M')
@@ -1376,16 +1400,20 @@ class PerfectScalpingBot:
         # Cornix-compatible format
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Compact message format
-        message = f"""{emoji} **SCALPING SIGNAL**
+        # Clean message format that Cornix can parse
+        message = f"""{emoji} **PERFECT SCALPING SIGNAL**
 
 {cornix_signal}
 
-**📊 Analytics:** Strength `{signal['signal_strength']:.0f}%` | RR `1:{signal['risk_reward_ratio']:.1f}` | Risk `{signal['risk_percentage']:.1f}%`
-**⚡ Setup:** `{optimal_leverage}x Cross` | CVD `{self.cvd_data['cvd_trend'].title()}` | ML `{signal.get('ml_prediction', {}).get('prediction', 'Unknown').title()}`
-**🎯 Management:** SL→Entry@TP1 | Scale: 40%-35%-25%
+📊 **Signal Strength:** {signal['signal_strength']:.0f}%
+⚡ **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
+🎯 **Risk:** {signal['risk_percentage']:.1f}%
+🔥 **CVD Trend:** {self.cvd_data['cvd_trend'].title()}
 
-*#{self.signal_counter} | {timestamp} UTC | Perfect Scalping Bot*"""
+💎 **Management:** Move SL to Entry after TP1
+⚖️ **Position Sizing:** 40% TP1 | 35% TP2 | 25% TP3
+
+*Signal #{self.signal_counter} | {timestamp} UTC*"""
 
         return message.strip()
 
@@ -1402,7 +1430,7 @@ class PerfectScalpingBot:
 
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
-        """Format signal in enhanced Cornix-compatible format for USD-M futures"""
+        """Format signal in Cornix-compatible format with proper price validation"""
         try:
             symbol = signal['symbol']
             direction = signal['direction'].upper()
@@ -1413,11 +1441,47 @@ class PerfectScalpingBot:
             tp3 = signal['tp3']
             optimal_leverage = signal.get('optimal_leverage', 50)
 
-            # Enhanced Cornix format with better compatibility
-            formatted_message = f"""📊 **{symbol}** | **{direction}** {'📈' if direction == 'BUY' else '📉'}
-**Entry:** `{entry:.6f}` | **SL:** `{stop_loss:.6f}`
-**TP1:** `{tp1:.6f}` **TP2:** `{tp2:.6f}` **TP3:** `{tp3:.6f}`
-**Leverage:** `{optimal_leverage}x Cross` | **Exchanges:** Binance, BingX, Bitget, ByBit"""
+            # Validate price ordering for Cornix compatibility
+            if direction == 'BUY':
+                # For BUY: SL < Entry < TP1 < TP2 < TP3
+                if not (stop_loss < entry < tp1 < tp2 < tp3):
+                    self.logger.warning(f"Invalid BUY price order for {symbol}: SL={stop_loss}, Entry={entry}, TP1={tp1}")
+                    # Fix the ordering
+                    if stop_loss >= entry:
+                        stop_loss = entry * 0.985  # 1.5% below entry
+                    if tp1 <= entry:
+                        tp1 = entry * 1.015  # 1.5% above entry
+                    if tp2 <= tp1:
+                        tp2 = entry * 1.030  # 3% above entry
+                    if tp3 <= tp2:
+                        tp3 = entry * 1.045  # 4.5% above entry
+            else:  # SELL
+                # For SELL: TP3 < TP2 < TP1 < Entry < SL
+                if not (tp3 < tp2 < tp1 < entry < stop_loss):
+                    self.logger.warning(f"Invalid SELL price order for {symbol}: TP3={tp3}, Entry={entry}, SL={stop_loss}")
+                    # Fix the ordering
+                    if stop_loss <= entry:
+                        stop_loss = entry * 1.015  # 1.5% above entry
+                    if tp1 >= entry:
+                        tp1 = entry * 0.985  # 1.5% below entry
+                    if tp2 >= tp1:
+                        tp2 = entry * 0.970  # 3% below entry
+                    if tp3 >= tp2:
+                        tp3 = entry * 0.955  # 4.5% below entry
+
+            # Standard Cornix format that Cornix can parse correctly
+            formatted_message = f"""🎯 #{symbol} | {direction}
+
+Entry: {entry:.6f}
+Stop Loss: {stop_loss:.6f}
+
+Take Profit:
+TP1: {tp1:.6f}
+TP2: {tp2:.6f}
+TP3: {tp3:.6f}
+
+Leverage: {optimal_leverage}x
+Exchange: Binance"""
 
             return formatted_message
 
@@ -1425,10 +1489,13 @@ class PerfectScalpingBot:
             self.logger.error(f"Error formatting Cornix signal: {e}")
             # Fallback format
             optimal_leverage = signal.get('optimal_leverage', 50)
-            return f"""**{signal['symbol']}** {signal['direction']}
-Entry: `{signal['entry_price']:.6f}` | SL: `{signal['stop_loss']:.6f}`
-TP1: `{signal['tp1']:.6f}` TP2: `{signal['tp2']:.6f}` TP3: `{signal['tp3']:.6f}`
-Leverage: `{optimal_leverage}x Cross`"""
+            return f"""#{signal['symbol']} | {signal['direction']}
+Entry: {signal['entry_price']:.6f}
+Stop Loss: {signal['stop_loss']:.6f}
+TP1: {signal['tp1']:.6f}
+TP2: {signal['tp2']:.6f}
+TP3: {signal['tp3']:.6f}
+Leverage: {optimal_leverage}x"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""

@@ -137,6 +137,24 @@ mode = "sequential"
 task = "shell.exec"
 args = "python start_enhanced_perfect_bot.py"
 
+[[workflows.workflow]]
+name = "Keep-Alive Service"
+author = 46688834
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python keep_alive.py"
+
+[[workflows.workflow]]
+name = "Setup Uptime Monitoring"
+author = 46688834
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python setup_uptime_monitoring.py"
+
 [[ports]]
 localPort = 5000
 externalPort = 80

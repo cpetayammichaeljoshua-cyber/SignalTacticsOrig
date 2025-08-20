@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Ultimate Trading Bot"
+runButton = "ML-Enhanced Trading Bot"
 
 [[workflows.workflow]]
 name = "Project"

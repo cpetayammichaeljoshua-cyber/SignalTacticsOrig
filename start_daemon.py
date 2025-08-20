@@ -45,8 +45,12 @@ def main():
     daemon = ReplitDaemon("SignalMaestro/perfect_scalping_bot.py")
     
     # Setup production features
-    daemon.setup_production_logging()
-    daemon.setup_deployment_alerts()
+    try:
+        daemon.setup_production_logging()
+        daemon.setup_deployment_alerts()
+    except AttributeError as e:
+        print(f"⚠️ Warning: {e}")
+        print("🔧 Some production features may not be available")
     
     print("\n🎯 Production Features Enabled:")
     print("  ✅ Auto-restart on failures")
@@ -65,11 +69,15 @@ def main():
         daemon.start_daemon()
     except KeyboardInterrupt:
         print("\n🛑 Production shutdown initiated")
-        daemon.stop_daemon()
+        daemon.running = False
+        daemon._cleanup()
     except Exception as e:
         print(f"❌ Production error: {e}")
         # Attempt emergency recovery
-        daemon._emergency_recovery()
+        try:
+            daemon._emergency_recovery()
+        except AttributeError:
+            print("⚠️ Emergency recovery not available")
         return
 
 if __name__ == "__main__":

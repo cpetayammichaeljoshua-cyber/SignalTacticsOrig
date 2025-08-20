@@ -134,7 +134,13 @@ class ReplitDaemon:
     def start_keep_alive_server(self):
         """Start keep-alive HTTP server for Replit with comprehensive monitoring"""
         try:
-            from flask import Flask, jsonify, request
+            try:
+                from flask import Flask, jsonify, request
+            except ImportError:
+                self.logger.error("Flask not available - installing...")
+                import subprocess
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "flask"])
+                from flask import Flask, jsonify, request
             app = Flask(__name__)
 
             @app.route('/')

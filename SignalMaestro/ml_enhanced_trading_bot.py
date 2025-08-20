@@ -271,9 +271,23 @@ class MLTradePredictor:
             features['macd_bullish'] = df['macd_signal'].map({'bullish': 1, 'bearish': 0}).fillna(0)
             
             # Time features
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            features['hour'] = df['timestamp'].dt.hour
-            features['day_of_week'] = df['timestamp'].dt.dayofweek
+            try:
+                # Handle timestamp conversion safely
+                if 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                    features['hour'] = df['timestamp'].dt.hour
+                    features['day_of_week'] = df['timestamp'].dt.dayofweek
+                else:
+                    # Use current time as fallback
+                    current_time = datetime.now()
+                    features['hour'] = current_time.hour
+                    features['day_of_week'] = current_time.weekday()
+            except Exception as e:
+                self.logger.warning(f"Error processing time features: {e}")
+                # Use current time as fallback
+                current_time = datetime.now()
+                features['hour'] = current_time.hour
+                features['day_of_week'] = current_time.weekday()
             
             # Targets (optimal SL/TP levels based on successful trades)
             targets = {}
@@ -289,8 +303,8 @@ class MLTradePredictor:
                 # Align features with profitable trades
                 features = features.loc[profitable_trades.index]
             
-            # Remove NaN values
-            features = features.fillna(method='forward').fillna(method='backward')
+            # Remove NaN values using newer pandas syntax
+            features = features.ffill().bfill().fillna(0)
             
             return features, targets
             
@@ -729,16 +743,25 @@ class MLEnhancedTradingBot:
                     if response.status == 200:
                         data = await response.json()
 
+                        # Create DataFrame with proper column names
                         df = pd.DataFrame(data, columns=[
                             'timestamp', 'open', 'high', 'low', 'close', 'volume',
                             'close_time', 'quote_volume', 'trades', 'taker_buy_base',
                             'taker_buy_quote', 'ignore'
                         ])
 
-                        for col in ['open', 'high', 'low', 'close', 'volume']:
-                            df[col] = pd.to_numeric(df[col])
+                        # Convert numeric columns
+                        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+                        for col in numeric_cols:
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-                        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                        # Convert timestamp from milliseconds to datetime with proper handling
+                        try:
+                            df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
+                        except (ValueError, TypeError) as e:
+                            self.logger.error(f"Timestamp conversion error for {symbol}: {e}")
+                            return None
+                        
                         df.set_index('timestamp', inplace=True)
 
                         return df
@@ -1532,14 +1555,18 @@ class MLEnhancedTradingBot:
                     continue
 
                 # Multi-timeframe analysis for better accuracy
-                signal = await self._comprehensive_symbol_analysis(symbol, market_analysis)
-                if signal:
-                    # Apply ML confidence filtering
-                    ml_confidence = await self._calculate_ml_confidence(signal)
-                    if ml_confidence >= self.adaptive_config['min_confidence_threshold']:
-                        signal['ml_confidence'] = ml_confidence
-                        signals.append(signal)
-                        successful_scans += 1
+                try:
+                    signal = await self._comprehensive_symbol_analysis(symbol, market_analysis)
+                    if signal:
+                        # Apply ML confidence filtering
+                        ml_confidence = await self._calculate_ml_confidence(signal)
+                        if ml_confidence >= self.adaptive_config['min_confidence_threshold']:
+                            signal['ml_confidence'] = ml_confidence
+                            signals.append(signal)
+                            successful_scans += 1
+                except Exception as analysis_error:
+                    self.logger.warning(f"Analysis error for {symbol}: {str(analysis_error)[:100]}")
+                    continue
 
                 # Adaptive rate limiting based on market volatility
                 sleep_time = 0.05 if market_analysis['volatility_regime'] == 'high' else 0.1

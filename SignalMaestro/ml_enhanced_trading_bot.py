@@ -884,9 +884,7 @@ class MLEnhancedTradingBot:
 
             # 7. Support/Resistance levels
             try:
-                # Pass year for potential historical context if needed by the function
-                current_year = datetime.now().year
-                indicators['support_resistance'] = self._calculate_support_resistance(high, low, current_year)
+                indicators['support_resistance'] = self._calculate_support_resistance(high, low)
             except Exception as e:
                 self.logger.warning(f"Support/Resistance calculation error: {e}")
                 indicators['support_resistance'] = {'resistance': close[-1], 'support': close[-1], 'pivot': close[-1]}
@@ -1052,24 +1050,80 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 'uncertain'
 
-    def _calculate_support_resistance(self, high: np.array, low: np.array, year: int) -> Dict[str, float]:
-        """Calculate support and resistance levels"""
+    def _calculate_support_resistance(self, high: np.array, low: np.array) -> Dict[str, float]:
+        """Calculate support and resistance levels using improved pivot point analysis"""
         try:
-            # Simple pivot point calculation
+            if len(high) < 20 or len(low) < 20:
+                return {'resistance': 0, 'support': 0, 'pivot': 0}
+
+            # Enhanced support/resistance calculation with multiple methods
+            
+            # Method 1: Recent highs/lows (20 periods)
             recent_high = np.max(high[-20:])
             recent_low = np.min(low[-20:])
-
-            # The 'year' argument is now present, though not explicitly used in this simple implementation.
-            # It's here to fulfill the requirement of the fix.
-
+            
+            # Method 2: Pivot point analysis (5-period pivots)
+            resistance_levels = []
+            support_levels = []
+            
+            # Find local peaks and troughs
+            for i in range(2, len(high) - 2):
+                # Resistance (local high)
+                if (high[i] > high[i-1] and high[i] > high[i+1] and 
+                    high[i] > high[i-2] and high[i] > high[i+2]):
+                    resistance_levels.append(high[i])
+                
+                # Support (local low)
+                if (low[i] < low[i-1] and low[i] < low[i+1] and 
+                    low[i] < low[i-2] and low[i] < low[i+2]):
+                    support_levels.append(low[i])
+            
+            # Get the most relevant levels (closest to current price)
+            current_price = (high[-1] + low[-1]) / 2
+            
+            if resistance_levels:
+                # Find resistance above current price
+                above_current = [r for r in resistance_levels if r > current_price]
+                if above_current:
+                    nearest_resistance = min(above_current)
+                else:
+                    nearest_resistance = recent_high
+            else:
+                nearest_resistance = recent_high
+                
+            if support_levels:
+                # Find support below current price
+                below_current = [s for s in support_levels if s < current_price]
+                if below_current:
+                    nearest_support = max(below_current)
+                else:
+                    nearest_support = recent_low
+            else:
+                nearest_support = recent_low
+            
+            # Calculate pivot point (traditional method)
+            pivot = (nearest_resistance + nearest_support + current_price) / 3
+            
             return {
-                'resistance': recent_high,
-                'support': recent_low,
-                'pivot': (recent_high + recent_low) / 2
+                'resistance': float(nearest_resistance),
+                'support': float(nearest_support),
+                'pivot': float(pivot)
             }
 
         except Exception as e:
-            return {'resistance': 0, 'support': 0, 'pivot': 0}
+            # Fallback to simple calculation
+            try:
+                recent_high = np.max(high[-10:]) if len(high) >= 10 else high[-1]
+                recent_low = np.min(low[-10:]) if len(low) >= 10 else low[-1]
+                pivot = (recent_high + recent_low + ((high[-1] + low[-1]) / 2)) / 3
+                
+                return {
+                    'resistance': float(recent_high),
+                    'support': float(recent_low),
+                    'pivot': float(pivot)
+                }
+            except:
+                return {'resistance': 0, 'support': 0, 'pivot': 0}
 
     def _calculate_trend_strength(self, close: np.array) -> float:
         """Calculate trend strength (0-100)"""

@@ -128,6 +128,15 @@ mode = "sequential"
 task = "shell.exec"
 args = "python start_adaptive_ml_bot.py"
 
+[[workflows.workflow]]
+name = "Enhanced Perfect Scalping Bot"
+author = 46688834
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_enhanced_perfect_bot.py"
+
 [[ports]]
 localPort = 5000
 externalPort = 80

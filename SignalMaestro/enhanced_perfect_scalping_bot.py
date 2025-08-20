@@ -29,68 +29,8 @@ from database import Database
 from risk_manager import RiskManager
 from advanced_trading_strategy import AdvancedTradingStrategy
 
-# Define a simple web server for uptime monitoring
-class UptimeService:
-    """Minimal web server for uptime checks"""
-    def __init__(self, port: int = 8080):
-        self.port = port
-        self.server = None
-        self.logger = logging.getLogger(__name__)
-
-    async def handle_request(self, reader, writer):
-        """Handle incoming HTTP requests"""
-        request_line = await reader.readline()
-        if not request_line:
-            writer.close()
-            return
-
-        method, path, version = request_line.decode().strip().split(' ')
-        self.logger.debug(f"Received request: {method} {path} {version}")
-
-        # Respond to PING or root path
-        if path == "/" or path == "/ping":
-            response_body = "OK"
-            response_headers = [
-                b"HTTP/1.1 200 OK\r\n",
-                b"Content-Type: text/plain\r\n",
-                f"Content-Length: {len(response_body)}\r\n".encode(),
-                b"Connection: close\r\n",
-                b"\r\n",
-            ]
-            writer.writelines(response_headers)
-            writer.write(response_body.encode())
-        else:
-            response_body = "Not Found"
-            response_headers = [
-                b"HTTP/1.1 404 Not Found\r\n",
-                b"Content-Type: text/plain\r\n",
-                f"Content-Length: {len(response_body)}\r\n".encode(),
-                b"Connection: close\r\n",
-                b"\r\n",
-            ]
-            writer.writelines(response_headers)
-            writer.write(response_body.encode())
-
-        await writer.drain()
-        writer.close()
-
-    async def run(self):
-        """Start the web server"""
-        try:
-            self.server = await asyncio.start_server(
-                self.handle_request, '0.0.0.0', self.port)
-            addr = self.server.sockets[0].getsockname()
-            self.logger.info(f"🌐 Uptime service listening on {addr}")
-            await self.server.serve_forever()
-        except OSError as e:
-            self.logger.error(f"❌ Failed to start uptime service on port {self.port}: {e}")
-        except Exception as e:
-            self.logger.error(f"❌ Error in uptime service: {e}")
-        finally:
-            if self.server:
-                self.server.close()
-                await self.server.wait_closed()
-                self.logger.info("🌐 Uptime service stopped")
+# Import enhanced uptime service
+from uptime_service import EnhancedUptimeService
 
 @dataclass
 class TradeProgress:
@@ -120,7 +60,7 @@ class EnhancedPerfectScalpingBot:
         self.cornix = EnhancedCornixIntegration()
         self.db = Database()
         self.strategy = AdvancedTradingStrategy()
-        self.uptime_service = UptimeService(port=8080)
+        self.uptime_service = EnhancedUptimeService(port=8080)
 
         # Telegram bot
         self.bot_token = self.config.TELEGRAM_BOT_TOKEN
@@ -200,9 +140,9 @@ class EnhancedPerfectScalpingBot:
 
         self.running = True
 
-        # Start uptime service
+        # Start enhanced uptime service
         asyncio.create_task(self.uptime_service.run())
-        self.logger.info("🌐 Uptime service started on port 8080")
+        self.logger.info("🌐 Enhanced uptime service started on port 8080")
 
         # Start Telegram bot
         await self.application.initialize()

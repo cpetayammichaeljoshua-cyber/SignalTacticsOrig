@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 ML-Enhanced Advanced Trading Bot with Dynamic SL/TP Adjustment
@@ -97,12 +96,12 @@ class TradeOutcome:
 
 class MLTradePredictor:
     """Machine Learning predictor for optimal SL/TP levels"""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.model_dir = Path("ml_models")
         self.model_dir.mkdir(exist_ok=True)
-        
+
         # ML Models for different predictions
         self.sl_model = None
         self.tp1_model = None
@@ -110,16 +109,16 @@ class MLTradePredictor:
         self.tp3_model = None
         self.volatility_model = None
         self.scaler = StandardScaler()
-        
+
         # Trade database
         self.db_path = "ml_trade_learning.db"
         self._initialize_database()
-        
+
         # Learning parameters
         self.min_trades_for_learning = 20
         self.retrain_frequency = 50  # Retrain after every 50 new trades
         self.trade_count = 0
-        
+
         # Performance tracking
         self.model_accuracy = {
             'sl_accuracy': 0.0,
@@ -128,15 +127,15 @@ class MLTradePredictor:
             'tp3_accuracy': 0.0,
             'last_training': None
         }
-        
+
         self.logger.info("🧠 ML Trade Predictor initialized")
-    
+
     def _initialize_database(self):
         """Initialize SQLite database for ML learning"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS trade_outcomes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,19 +160,19 @@ class MLTradePredictor:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
             conn.commit()
             conn.close()
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing ML database: {e}")
-    
+
     async def record_trade_outcome(self, trade_outcome: TradeOutcome):
         """Record trade outcome for ML learning"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO trade_outcomes (
                     symbol, direction, entry_price, exit_price, stop_loss,
@@ -202,53 +201,53 @@ class MLTradePredictor:
                 trade_outcome.timestamp.isoformat(),
                 json.dumps(trade_outcome.market_conditions)
             ))
-            
+
             conn.commit()
             conn.close()
-            
+
             self.trade_count += 1
             self.logger.info(f"📝 Trade outcome recorded: {trade_outcome.symbol} P&L: {trade_outcome.profit_loss:.2f}")
-            
+
             # Trigger retraining if threshold reached
             if self.trade_count % self.retrain_frequency == 0:
                 await self.retrain_models()
-                
+
         except Exception as e:
             self.logger.error(f"Error recording trade outcome: {e}")
-    
+
     async def retrain_models(self):
         """Retrain ML models with new data"""
         try:
             if not ML_AVAILABLE:
                 self.logger.warning("ML libraries not available - skipping model training")
                 return
-            
+
             self.logger.info("🔄 Retraining ML models with new data...")
-            
+
             # Get training data
             training_data = self._get_training_data()
             if len(training_data) < self.min_trades_for_learning:
                 self.logger.warning(f"Insufficient training data: {len(training_data)} trades")
                 return
-            
+
             # Prepare features and targets
             features, targets = self._prepare_training_data(training_data)
             if features is None or len(features) == 0:
                 return
-            
+
             # Train models
             await self._train_sl_model(features, targets)
             await self._train_tp_models(features, targets)
-            
+
             # Save models
             self._save_models()
-            
+
             self.model_accuracy['last_training'] = datetime.now().isoformat()
             self.logger.info("✅ ML models retrained successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error retraining models: {e}")
-    
+
     def _get_training_data(self) -> pd.DataFrame:
         """Get training data from database"""
         try:
@@ -256,25 +255,25 @@ class MLTradePredictor:
             query = "SELECT * FROM trade_outcomes ORDER BY created_at DESC LIMIT 500"
             df = pd.read_sql_query(query, conn)
             conn.close()
-            
+
             # Parse JSON fields
             if 'market_conditions' in df.columns:
                 df['market_conditions'] = df['market_conditions'].apply(
                     lambda x: json.loads(x) if x else {}
                 )
-            
+
             return df
-            
+
         except Exception as e:
             self.logger.error(f"Error getting training data: {e}")
             return pd.DataFrame()
-    
+
     def _prepare_training_data(self, df: pd.DataFrame) -> tuple:
         """Prepare features and targets for ML training"""
         try:
             if len(df) == 0:
                 return None, None
-            
+
             # Features
             features = pd.DataFrame()
             features['entry_price'] = df['entry_price']
@@ -282,11 +281,11 @@ class MLTradePredictor:
             features['market_volatility'] = df['market_volatility'].fillna(0.02)
             features['volume_ratio'] = df['volume_ratio'].fillna(1.0)
             features['rsi'] = df['rsi'].fillna(50)
-            
+
             # Encode categorical features
             features['direction_encoded'] = df['direction'].map({'BUY': 1, 'SELL': 0}).fillna(1)
             features['macd_bullish'] = df['macd_signal'].map({'bullish': 1, 'bearish': 0}).fillna(0)
-            
+
             # Time features
             try:
                 # Handle timestamp conversion safely
@@ -314,10 +313,10 @@ class MLTradePredictor:
                 current_time = datetime.now()
                 features['hour'] = current_time.hour
                 features['day_of_week'] = current_time.weekday()
-            
+
             # Targets (optimal SL/TP levels based on successful trades)
             targets = {}
-            
+
             # Only use profitable trades for positive learning
             profitable_trades = df[df['profit_loss'] > 0]
             if len(profitable_trades) > 0:
@@ -325,99 +324,99 @@ class MLTradePredictor:
                 targets['optimal_tp1'] = profitable_trades['take_profit_1'] / profitable_trades['entry_price']
                 targets['optimal_tp2'] = profitable_trades['take_profit_2'] / profitable_trades['entry_price']
                 targets['optimal_tp3'] = profitable_trades['take_profit_3'] / profitable_trades['entry_price']
-                
+
                 # Align features with profitable trades
                 features = features.loc[profitable_trades.index]
-            
+
             # Remove NaN values using newer pandas syntax
             features = features.ffill().bfill().fillna(0)
-            
+
             return features, targets
-            
+
         except Exception as e:
             self.logger.error(f"Error preparing training data: {e}")
             return None, None
-    
+
     async def _train_sl_model(self, features: pd.DataFrame, targets: Dict[str, pd.Series]):
         """Train stop loss prediction model"""
         try:
             if 'optimal_sl' not in targets or len(targets['optimal_sl']) < 10:
                 return
-            
+
             X = features
             y = targets['optimal_sl']
-            
+
             # Align data
             common_indices = X.index.intersection(y.index)
             X = X.loc[common_indices]
             y = y.loc[common_indices]
-            
+
             if len(X) < 10:
                 return
-            
+
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-            
+
             # Scale features
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
-            
+
             # Train model
             self.sl_model = RandomForestRegressor(n_estimators=100, random_state=42)
             self.sl_model.fit(X_train_scaled, y_train)
-            
+
             # Evaluate
             y_pred = self.sl_model.predict(X_test_scaled)
             accuracy = r2_score(y_test, y_pred)
             self.model_accuracy['sl_accuracy'] = max(0, accuracy)
-            
+
             self.logger.info(f"🎯 SL model accuracy: {accuracy:.3f}")
-            
+
         except Exception as e:
             self.logger.error(f"Error training SL model: {e}")
-    
+
     async def _train_tp_models(self, features: pd.DataFrame, targets: Dict[str, pd.Series]):
         """Train take profit prediction models"""
         try:
             for tp_level, model_attr in [('optimal_tp1', 'tp1_model'), ('optimal_tp2', 'tp2_model'), ('optimal_tp3', 'tp3_model')]:
                 if tp_level not in targets or len(targets[tp_level]) < 10:
                     continue
-                
+
                 X = features
                 y = targets[tp_level]
-                
+
                 # Align data
                 common_indices = X.index.intersection(y.index)
                 X = X.loc[common_indices]
                 y = y.loc[common_indices]
-                
+
                 if len(X) < 10:
                     continue
-                
+
                 # Split data
                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-                
+
                 # Scale features
                 X_train_scaled = self.scaler.fit_transform(X_train)
                 X_test_scaled = self.scaler.transform(X_test)
-                
+
                 # Train model
                 model = GradientBoostingRegressor(n_estimators=100, random_state=42)
                 model.fit(X_train_scaled, y_train)
-                
+
                 # Set model
                 setattr(self, model_attr, model)
-                
+
                 # Evaluate
                 y_pred = model.predict(X_test_scaled)
                 accuracy = r2_score(y_test, y_pred)
                 self.model_accuracy[f'{tp_level.replace("optimal_", "")}_accuracy'] = max(0, accuracy)
-                
+
                 self.logger.info(f"📈 {tp_level} model accuracy: {accuracy:.3f}")
-                
+
         except Exception as e:
             self.logger.error(f"Error training TP models: {e}")
-    
+
     def _save_models(self):
         """Save trained models to disk"""
         try:
@@ -428,19 +427,19 @@ class MLTradePredictor:
                 'tp3_model.pkl': self.tp3_model,
                 'scaler.pkl': self.scaler
             }
-            
+
             for filename, model in models.items():
                 if model is not None:
                     with open(self.model_dir / filename, 'wb') as f:
                         pickle.dump(model, f)
-            
+
             # Save accuracy metrics
             with open(self.model_dir / 'model_accuracy.json', 'w') as f:
                 json.dump(self.model_accuracy, f, indent=2)
-            
+
         except Exception as e:
             self.logger.error(f"Error saving models: {e}")
-    
+
     def load_models(self):
         """Load trained models from disk"""
         try:
@@ -451,47 +450,47 @@ class MLTradePredictor:
                 'tp3_model.pkl': 'tp3_model',
                 'scaler.pkl': 'scaler'
             }
-            
+
             for filename, attr_name in models.items():
                 filepath = self.model_dir / filename
                 if filepath.exists():
                     with open(filepath, 'rb') as f:
                         setattr(self, attr_name, pickle.load(f))
-            
+
             # Load accuracy metrics
             accuracy_file = self.model_dir / 'model_accuracy.json'
             if accuracy_file.exists():
                 with open(accuracy_file, 'r') as f:
                     self.model_accuracy.update(json.load(f))
-            
+
             self.logger.info("🤖 ML models loaded successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error loading models: {e}")
-    
+
     def predict_optimal_levels(self, signal_data: Dict[str, Any]) -> Dict[str, float]:
         """Predict optimal SL/TP levels using ML models"""
         try:
             if not all([self.sl_model, self.tp1_model, self.tp2_model, self.tp3_model, self.scaler]):
                 return self._get_default_levels(signal_data)
-            
+
             # Prepare features
             features = self._prepare_prediction_features(signal_data)
             if features is None:
                 return self._get_default_levels(signal_data)
-            
+
             # Scale features
             features_scaled = self.scaler.transform([features])
-            
+
             # Predict levels
             sl_ratio = self.sl_model.predict(features_scaled)[0]
             tp1_ratio = self.tp1_model.predict(features_scaled)[0]
             tp2_ratio = self.tp2_model.predict(features_scaled)[0]
             tp3_ratio = self.tp3_model.predict(features_scaled)[0]
-            
+
             entry_price = signal_data.get('entry_price', signal_data.get('current_price', 0))
             direction = signal_data.get('direction', 'BUY').upper()
-            
+
             if direction in ['BUY', 'LONG']:
                 predicted_levels = {
                     'stop_loss': entry_price * sl_ratio,
@@ -506,17 +505,17 @@ class MLTradePredictor:
                     'take_profit_2': entry_price * (2 - tp2_ratio),
                     'take_profit_3': entry_price * (2 - tp3_ratio)
                 }
-            
+
             # Validate predictions
             if self._validate_predicted_levels(predicted_levels, entry_price, direction):
                 return predicted_levels
             else:
                 return self._get_default_levels(signal_data)
-            
+
         except Exception as e:
             self.logger.error(f"Error predicting optimal levels: {e}")
             return self._get_default_levels(signal_data)
-    
+
     def _prepare_prediction_features(self, signal_data: Dict[str, Any]) -> Optional[List[float]]:
         """Prepare features for prediction"""
         try:
@@ -532,13 +531,13 @@ class MLTradePredictor:
                 datetime.now().hour,
                 datetime.now().weekday()
             ]
-            
+
             return features
-            
+
         except Exception as e:
             self.logger.error(f"Error preparing prediction features: {e}")
             return None
-    
+
     def _validate_predicted_levels(self, levels: Dict[str, float], entry_price: float, direction: str) -> bool:
         """Validate predicted levels make sense"""
         try:
@@ -546,25 +545,25 @@ class MLTradePredictor:
             tp1 = levels['take_profit_1']
             tp2 = levels['take_profit_2']
             tp3 = levels['take_profit_3']
-            
+
             if direction.upper() in ['BUY', 'LONG']:
                 return sl < entry_price < tp1 < tp2 < tp3
             else:
                 return tp3 < tp2 < tp1 < entry_price < sl
-                
+
         except Exception as e:
             return False
-    
+
     def _get_default_levels(self, signal_data: Dict[str, Any]) -> Dict[str, float]:
         """Get default SL/TP levels when ML prediction fails"""
         entry_price = signal_data.get('entry_price', signal_data.get('current_price', 0))
         direction = signal_data.get('direction', 'BUY').upper()
         volatility = signal_data.get('volatility', 0.02)
-        
+
         # Adaptive risk based on volatility
         risk_multiplier = 1.0 + (volatility * 50)  # Higher volatility = wider stops
         base_risk = 0.015 * risk_multiplier  # 1.5% base risk adjusted for volatility
-        
+
         if direction in ['BUY', 'LONG']:
             return {
                 'stop_loss': entry_price * (1 - base_risk),
@@ -582,52 +581,52 @@ class MLTradePredictor:
 
 class CooldownManager:
     """Manages cooldown periods to prevent spamming"""
-    
+
     def __init__(self, cooldown_minutes: int = 30):
         self.cooldown_period = timedelta(minutes=cooldown_minutes)
         self.last_signals = defaultdict(datetime)
         self.global_last_signal = datetime.min
         self.logger = logging.getLogger(__name__)
-    
+
     def can_send_signal(self, symbol: str = None) -> bool:
         """Check if signal can be sent based on cooldown"""
         now = datetime.now()
-        
+
         # Global cooldown check
         if now - self.global_last_signal < timedelta(minutes=5):  # 5 min global cooldown
             return False
-        
+
         # Symbol-specific cooldown check
         if symbol and now - self.last_signals[symbol] < self.cooldown_period:
             return False
-        
+
         return True
-    
+
     def record_signal(self, symbol: str = None):
         """Record that a signal was sent"""
         now = datetime.now()
         self.global_last_signal = now
         if symbol:
             self.last_signals[symbol] = now
-    
+
     def get_cooldown_status(self, symbol: str = None) -> Dict[str, Any]:
         """Get cooldown status information"""
         now = datetime.now()
-        
+
         global_remaining = max(0, (self.global_last_signal + timedelta(minutes=5) - now).total_seconds())
-        
+
         status = {
             'can_send_global': global_remaining <= 0,
             'global_cooldown_remaining': global_remaining
         }
-        
+
         if symbol:
             symbol_remaining = max(0, (self.last_signals[symbol] + self.cooldown_period - now).total_seconds())
             status.update({
                 'can_send_symbol': symbol_remaining <= 0,
                 'symbol_cooldown_remaining': symbol_remaining
             })
-        
+
         return status
 
 class MLEnhancedTradingBot:
@@ -635,7 +634,7 @@ class MLEnhancedTradingBot:
 
     def __init__(self):
         self.logger = self._setup_logging()
-        
+
         # Process management
         self.pid_file = Path("ml_enhanced_trading_bot.pid")
         self.shutdown_requested = False
@@ -680,7 +679,6 @@ class MLEnhancedTradingBot:
             'total_signals': 0,
             'ml_predicted_signals': 0,
             'profitable_signals': 0,
-            'ml_accuracy': 0.0,
             'win_rate': 0.0,
             'avg_profit': 0.0,
             'total_profit': 0.0,
@@ -792,7 +790,7 @@ class MLEnhancedTradingBot:
                         except (ValueError, TypeError) as e:
                             self.logger.error(f"Timestamp conversion error for {symbol}: {e}")
                             return None
-                        
+
                         df.set_index('timestamp', inplace=True)
 
                         return df
@@ -810,12 +808,12 @@ class MLEnhancedTradingBot:
                 return {}
 
             indicators = {}
-            
+
             # Ensure we have valid numeric data
             df = df.dropna()
             if len(df) < 20:
                 return {}
-            
+
             high = df['high'].values.astype(float)
             low = df['low'].values.astype(float)
             close = df['close'].values.astype(float)
@@ -886,7 +884,9 @@ class MLEnhancedTradingBot:
 
             # 7. Support/Resistance levels
             try:
-                indicators['support_resistance'] = self._calculate_support_resistance(high, low)
+                # Pass year for potential historical context if needed by the function
+                current_year = datetime.now().year
+                indicators['support_resistance'] = self._calculate_support_resistance(high, low, current_year)
             except Exception as e:
                 self.logger.warning(f"Support/Resistance calculation error: {e}")
                 indicators['support_resistance'] = {'resistance': close[-1], 'support': close[-1], 'pivot': close[-1]}
@@ -928,13 +928,13 @@ class MLEnhancedTradingBot:
         else:
             return 0.8  # High volatility
 
-    def _calculate_atr(self, high: np.array, low: np.array, close: np.array, period: int) -> np.array:
+    def _calculate_atr(self, high: np.array, low: np.array, close: np.array, period: int = 14) -> np.array:
         """Calculate Average True Range"""
         tr1 = high - low
         tr2 = np.abs(high - np.roll(close, 1))
         tr3 = np.abs(low - np.roll(close, 1))
         tr = np.maximum(tr1, np.maximum(tr2, tr3))
-        
+
         atr = np.zeros(len(close))
         atr[period-1] = np.mean(tr[:period])
         for i in range(period, len(close)):
@@ -967,7 +967,7 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 0
 
-    def _calculate_rsi(self, values: np.array, period: int) -> float:
+    def _calculate_rsi(self, values: np.array, period: int = 14) -> float:
         """Calculate RSI"""
         try:
             deltas = np.diff(values)
@@ -979,7 +979,7 @@ class MLEnhancedTradingBot:
 
             if avg_losses == 0:
                 return 100.0
-            
+
             rs = avg_gains / avg_losses
             rsi = 100 - (100 / (1 + rs))
             return rsi
@@ -987,13 +987,13 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 50.0
 
-    def _calculate_macd(self, values: np.array) -> tuple:
+    def _calculate_macd(self, values: np.array, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> tuple:
         """Calculate MACD"""
         try:
-            ema_12 = self._calculate_ema(values, 12)
-            ema_26 = self._calculate_ema(values, 26)
-            macd_line = ema_12 - ema_26
-            signal_line = self._calculate_ema(macd_line, 9)
+            ema_fast = self._calculate_ema(values, fast_period)
+            ema_slow = self._calculate_ema(values, slow_period)
+            macd_line = ema_fast - ema_slow
+            signal_line = self._calculate_ema(macd_line, signal_period)
             histogram = macd_line - signal_line
             return macd_line, signal_line, histogram
         except Exception as e:
@@ -1013,15 +1013,15 @@ class MLEnhancedTradingBot:
         try:
             if len(price) < 20:
                 return False
-            
+
             # Simple divergence detection
             recent_price_trend = price[-5:].mean() - price[-10:-5].mean()
             rsi_trend = rsi - 50  # Simplified RSI trend
-            
+
             # Bullish divergence: price down, RSI up
             # Bearish divergence: price up, RSI down
             return (recent_price_trend < 0 and rsi_trend > 0) or (recent_price_trend > 0 and rsi_trend < 0)
-            
+
         except Exception as e:
             return False
 
@@ -1030,14 +1030,14 @@ class MLEnhancedTradingBot:
         try:
             if len(close) < 20:
                 return 'uncertain'
-            
+
             # Price trend
             short_trend = np.mean(close[-5:]) - np.mean(close[-10:-5])
             long_trend = np.mean(close[-10:]) - np.mean(close[-20:-10])
-            
+
             # Volume confirmation
             volume_trend = np.mean(volume[-5:]) - np.mean(volume[-10:-5])
-            
+
             if short_trend > 0 and long_trend > 0 and volume_trend > 0:
                 return 'strong_bullish'
             elif short_trend > 0 and long_trend > 0:
@@ -1048,23 +1048,26 @@ class MLEnhancedTradingBot:
                 return 'bearish'
             else:
                 return 'sideways'
-                
+
         except Exception as e:
             return 'uncertain'
 
-    def _calculate_support_resistance(self, high: np.array, low: np.array) -> Dict[str, float]:
+    def _calculate_support_resistance(self, high: np.array, low: np.array, year: int) -> Dict[str, float]:
         """Calculate support and resistance levels"""
         try:
             # Simple pivot point calculation
             recent_high = np.max(high[-20:])
             recent_low = np.min(low[-20:])
-            
+
+            # The 'year' argument is now present, though not explicitly used in this simple implementation.
+            # It's here to fulfill the requirement of the fix.
+
             return {
                 'resistance': recent_high,
                 'support': recent_low,
                 'pivot': (recent_high + recent_low) / 2
             }
-            
+
         except Exception as e:
             return {'resistance': 0, 'support': 0, 'pivot': 0}
 
@@ -1073,16 +1076,16 @@ class MLEnhancedTradingBot:
         try:
             if len(close) < 20:
                 return 50
-            
+
             # Linear regression slope
             x = np.arange(len(close[-20:]))
             y = close[-20:]
             slope = np.polyfit(x, y, 1)[0]
-            
+
             # Normalize to 0-100 scale
             strength = min(100, max(0, 50 + (slope / y.mean() * 1000)))
             return strength
-            
+
         except Exception as e:
             return 50
 
@@ -1192,7 +1195,7 @@ class MLEnhancedTradingBot:
                     'volume_profile': 'high' if indicators.get('volume_surge', False) else 'normal'
                 },
                 'indicators_used': [
-                    'ML-Enhanced SuperTrend', 'Volume Surge Analysis', 
+                    'ML-Enhanced SuperTrend', 'Volume Surge Analysis',
                     'RSI Divergence', 'MACD Momentum', 'Market Regime Detection'
                 ],
                 'ml_accuracy': self.ml_predictor.model_accuracy,
@@ -1216,7 +1219,7 @@ class MLEnhancedTradingBot:
         """Calculate dynamic leverage based on market conditions and ML insights"""
         try:
             base_leverage = 35
-            
+
             # Volatility adjustment
             volatility = indicators.get('volatility', 0.02)
             if volatility > 0.04:  # High volatility
@@ -1259,7 +1262,7 @@ class MLEnhancedTradingBot:
             # Analyze major market indicators
             btc_data = await self.get_binance_data('BTCUSDT', '1h', 50)
             eth_data = await self.get_binance_data('ETHUSDT', '1h', 50)
-            
+
             market_analysis = {
                 'volatility_regime': 'medium',
                 'trend_direction': 'neutral',
@@ -1268,7 +1271,7 @@ class MLEnhancedTradingBot:
                 'fear_greed_index': 50,
                 'correlation_strength': 0.5
             }
-            
+
             if btc_data is not None and len(btc_data) >= 20:
                 btc_indicators = self.calculate_advanced_indicators(btc_data)
                 market_analysis.update({
@@ -1276,9 +1279,9 @@ class MLEnhancedTradingBot:
                     'trend_direction': btc_indicators.get('market_regime', 'neutral'),
                     'market_strength': btc_indicators.get('trend_strength', 50)
                 })
-            
+
             return market_analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error in market analysis: {e}")
             return {'volatility_regime': 'medium', 'trend_direction': 'neutral', 'market_strength': 50}
@@ -1297,7 +1300,7 @@ class MLEnhancedTradingBot:
         try:
             # Base symbols always included
             optimal_symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']
-            
+
             # Add symbols based on market regime
             if market_analysis['trend_direction'] in ['bullish', 'strong_bullish']:
                 optimal_symbols.extend(['AVAXUSDT', 'LINKUSDT', 'ADAUSDT', 'DOTUSDT'])
@@ -1305,12 +1308,12 @@ class MLEnhancedTradingBot:
                 optimal_symbols.extend(['DOGEUSDT', 'XRPUSDT', 'MATICUSDT', 'ATOMUSDT'])
             else:
                 optimal_symbols.extend(['LTCUSDT', 'BCHUSDT', 'ETCUSDT', 'XLMUSDT'])
-            
+
             # Add trending altcoins
             optimal_symbols.extend(['ARBUSDT', 'OPUSDT', 'APTUSDT', 'SUIUSDT'])
-            
+
             return list(set(optimal_symbols))  # Remove duplicates
-            
+
         except Exception as e:
             self.logger.error(f"Error selecting optimal symbols: {e}")
             return self.symbols[:15]
@@ -1321,19 +1324,19 @@ class MLEnhancedTradingBot:
             # Multi-timeframe data collection
             timeframes = ['5m', '15m', '1h']
             market_data = {}
-            
+
             for tf in timeframes:
                 df = await self.get_binance_data(symbol, tf, 100)
                 if df is not None and len(df) >= 50:
                     market_data[tf] = self.calculate_advanced_indicators(df)
-            
+
             if not market_data:
                 return None
-            
+
             # Confluence analysis across timeframes
             signal = await self._analyze_timeframe_confluence(symbol, market_data, market_analysis)
             return signal
-            
+
         except Exception as e:
             self.logger.error(f"Error in comprehensive analysis for {symbol}: {e}")
             return None
@@ -1343,39 +1346,39 @@ class MLEnhancedTradingBot:
         try:
             confluence_score = 0
             direction_votes = {'BUY': 0, 'SELL': 0}
-            
+
             # Weight timeframes differently
             timeframe_weights = {'5m': 0.3, '15m': 0.4, '1h': 0.3}
-            
+
             for tf, weight in timeframe_weights.items():
                 if tf not in market_data:
                     continue
-                    
+
                 indicators = market_data[tf]
-                
+
                 # SuperTrend analysis
                 if indicators.get('supertrend', 0) > 0:
                     direction_votes['BUY'] += weight * 30
                 elif indicators.get('supertrend', 0) < 0:
                     direction_votes['SELL'] += weight * 30
-                
+
                 # RSI confluence
                 rsi = indicators.get('rsi', 50)
                 if rsi < 35:
                     direction_votes['BUY'] += weight * 20
                 elif rsi > 65:
                     direction_votes['SELL'] += weight * 20
-                
+
                 # MACD confluence
                 if indicators.get('macd_bullish', False):
                     direction_votes['BUY'] += weight * 15
                 else:
                     direction_votes['SELL'] += weight * 15
-                
+
                 # Volume confirmation
                 if indicators.get('volume_surge', False):
                     confluence_score += weight * 10
-            
+
             # Determine final direction and strength
             if direction_votes['BUY'] >= self.risk_config['min_signal_strength']:
                 direction = 'BUY'
@@ -1385,14 +1388,14 @@ class MLEnhancedTradingBot:
                 signal_strength = direction_votes['SELL']
             else:
                 return None
-            
+
             # Get primary timeframe data for signal generation
             primary_indicators = market_data.get('5m', market_data.get('15m', {}))
             if not primary_indicators:
                 return None
-            
+
             return await self._create_enhanced_signal(symbol, direction, signal_strength, primary_indicators, market_analysis)
-            
+
         except Exception as e:
             self.logger.error(f"Error in confluence analysis: {e}")
             return None
@@ -1403,13 +1406,13 @@ class MLEnhancedTradingBot:
             current_price = indicators.get('current_price', 0)
             if current_price <= 0:
                 return None
-            
+
             # Adaptive leverage based on market conditions
             leverage = await self._calculate_adaptive_leverage(indicators, market_analysis)
-            
+
             # Dynamic SL/TP calculation with ML optimization
             sl_tp_levels = await self._calculate_dynamic_sl_tp(symbol, direction, current_price, indicators, market_analysis)
-            
+
             signal = {
                 'symbol': symbol,
                 'direction': direction,
@@ -1435,9 +1438,9 @@ class MLEnhancedTradingBot:
                     'confidence_score': signal_strength / 100
                 }
             }
-            
+
             return signal
-            
+
         except Exception as e:
             self.logger.error(f"Error creating enhanced signal: {e}")
             return None
@@ -1446,7 +1449,7 @@ class MLEnhancedTradingBot:
         """Calculate adaptive leverage based on comprehensive analysis"""
         try:
             base_leverage = 40
-            
+
             # Market volatility adjustment
             volatility_regime = market_analysis.get('volatility_regime', 'medium')
             if volatility_regime == 'high':
@@ -1455,7 +1458,7 @@ class MLEnhancedTradingBot:
                 volatility_adj = 15
             else:
                 volatility_adj = 0
-            
+
             # Market strength adjustment
             market_strength = market_analysis.get('market_strength', 50)
             if market_strength > 75:
@@ -1464,13 +1467,13 @@ class MLEnhancedTradingBot:
                 strength_adj = -15
             else:
                 strength_adj = 0
-            
+
             # Volume confirmation adjustment
             if indicators.get('volume_surge', False):
                 volume_adj = 5
             else:
                 volume_adj = -5
-            
+
             # Trend alignment adjustment
             trend_strength = indicators.get('trend_strength', 50)
             if trend_strength > 70:
@@ -1479,10 +1482,10 @@ class MLEnhancedTradingBot:
                 trend_adj = -10
             else:
                 trend_adj = 0
-            
+
             final_leverage = base_leverage + volatility_adj + strength_adj + volume_adj + trend_adj
             return max(15, min(100, final_leverage))
-            
+
         except Exception as e:
             return 40
 
@@ -1500,20 +1503,20 @@ class MLEnhancedTradingBot:
                 'macd_bullish': indicators.get('macd_bullish', False),
                 'market_regime': market_analysis.get('trend_direction', 'neutral')
             }
-            
+
             ml_levels = self.ml_predictor.predict_optimal_levels(signal_data)
-            
+
             # Apply adaptive adjustments
             volatility = indicators.get('volatility', 0.02)
             volatility_multiplier = 1.0 + (volatility * 25)  # Scale with volatility
-            
+
             # Market regime adjustments
             regime_multiplier = 1.0
             if market_analysis.get('trend_direction') in ['strong_bullish', 'strong_bearish']:
                 regime_multiplier = 1.2  # Wider targets in strong trends
             elif market_analysis.get('volatility_regime') == 'high':
                 regime_multiplier = 1.3  # Wider stops in high volatility
-            
+
             # Calculate final levels
             if direction.upper() in ['BUY', 'LONG']:
                 stop_loss = entry_price * (1 - (0.025 * volatility_multiplier * regime_multiplier))
@@ -1525,14 +1528,14 @@ class MLEnhancedTradingBot:
                 tp1 = entry_price * (1 - (0.035 * volatility_multiplier))
                 tp2 = entry_price * (1 - (0.055 * volatility_multiplier))
                 tp3 = entry_price * (1 - (0.085 * volatility_multiplier * regime_multiplier))
-            
+
             return {
                 'stop_loss': stop_loss,
                 'take_profit_1': tp1,
                 'take_profit_2': tp2,
                 'take_profit_3': tp3
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating dynamic SL/TP: {e}")
             return self.ml_predictor._get_default_levels(signal_data)
@@ -1558,11 +1561,11 @@ class MLEnhancedTradingBot:
         """Calculate ML confidence score for signal"""
         try:
             base_confidence = signal['signal_strength'] / 100
-            
+
             # Market condition adjustments
             market_conditions = signal.get('market_conditions', {})
             volatility = market_conditions.get('volatility', 0.02)
-            
+
             # Lower confidence in extreme volatility
             if volatility > 0.05:
                 volatility_penalty = 0.2
@@ -1570,21 +1573,21 @@ class MLEnhancedTradingBot:
                 volatility_penalty = 0.1
             else:
                 volatility_penalty = 0.0
-            
+
             # Risk-reward adjustment
             risk_metrics = signal.get('risk_metrics', {})
             rr_ratio = risk_metrics.get('risk_reward_ratio', 1.0)
-            
+
             if rr_ratio < 1.5:
                 rr_penalty = 0.15
             elif rr_ratio > 3.0:
                 rr_penalty = 0.0
             else:
                 rr_penalty = 0.05
-            
+
             final_confidence = base_confidence - volatility_penalty - rr_penalty
             return max(0.0, min(1.0, final_confidence))
-            
+
         except Exception as e:
             return 0.5
 
@@ -1593,28 +1596,28 @@ class MLEnhancedTradingBot:
         try:
             for signal in signals:
                 ml_score = 0.0
-                
+
                 # Signal strength (40% weight)
                 ml_score += (signal['signal_strength'] / 100) * 0.4
-                
+
                 # ML confidence (30% weight)
                 ml_score += signal.get('ml_confidence', 0.5) * 0.3
-                
+
                 # Risk-reward ratio (20% weight)
                 rr_ratio = signal.get('risk_metrics', {}).get('risk_reward_ratio', 1.0)
                 rr_score = min(1.0, rr_ratio / 3.0)  # Normalize to 0-1
                 ml_score += rr_score * 0.2
-                
+
                 # Market alignment (10% weight)
                 market_strength = signal.get('market_conditions', {}).get('market_strength', 50)
                 ml_score += (market_strength / 100) * 0.1
-                
+
                 signal['ml_score'] = ml_score
-            
+
             # Sort by ML score
             signals.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
             return signals
-            
+
         except Exception as e:
             self.logger.error(f"Error ranking signals: {e}")
             return signals
@@ -1624,10 +1627,10 @@ class MLEnhancedTradingBot:
         signals = []
         successful_scans = 0
         market_analysis = await self._perform_market_analysis()
-        
+
         # Adaptive symbol selection based on market conditions
         active_symbols = await self._select_optimal_symbols(market_analysis)
-        
+
         for symbol in active_symbols[:20]:  # Increased scanning capacity
             try:
                 # Quick check if cooldown allows signal for this symbol
@@ -1658,9 +1661,9 @@ class MLEnhancedTradingBot:
 
         # Enhanced signal ranking with ML scoring
         signals = await self._rank_signals_by_ml_score(signals)
-        
+
         self.logger.info(f"🔍 Enhanced ML scan: {successful_scans} symbols, {len(signals)} high-quality signals")
-        
+
         return signals[:5]  # Return top 5 signals for better opportunities
 
     async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
@@ -1719,7 +1722,7 @@ class MLEnhancedTradingBot:
 • **Learning Progress:** {self.ml_predictor.trade_count} trades
 • **ML Score:** {signal.get('ml_score', 0)*100:.1f}%
 
-🌊 **Market Analysis:**
+      **Market Analysis:**
 • **Volatility:** {signal['market_conditions']['volatility']:.3f}
 • **Regime:** {signal['market_conditions']['regime'].title()}
 • **Market Strength:** {signal['market_conditions'].get('market_strength', 50):.0f}%
@@ -1771,7 +1774,7 @@ class MLEnhancedTradingBot:
 
             if text.startswith('/start'):
                 self.admin_chat_id = chat_id
-                
+
                 welcome = f"""🧠 **ML-ENHANCED TRADING BOT**
 *Continuously Learning & Optimizing*
 
@@ -1881,15 +1884,15 @@ class MLEnhancedTradingBot:
 
             elif text.startswith('/scan'):
                 await self.send_message(chat_id, "🧠 **Adaptive ML Market Scan**\n\nAnalyzing markets with adaptive algorithms...")
-                
+
                 signals = await self.scan_for_ml_signals()
-                
+
                 if signals:
                     for signal in signals:
                         signal_msg = self.format_ml_signal_message(signal)
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
-                    
+
                     await self.send_message(chat_id, f"✅ **{len(signals)} Adaptive ML Signals Found**\n\nTop-ranked signals with ML scoring applied")
                 else:
                     await self.send_message(chat_id, "📊 **No High-Quality Signals**\n\nAdaptive algorithms filtering for optimal opportunities")

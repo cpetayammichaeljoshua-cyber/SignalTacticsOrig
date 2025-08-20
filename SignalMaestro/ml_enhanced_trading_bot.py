@@ -786,7 +786,7 @@ class MLEnhancedTradingBot:
                             # Ensure timestamp is numeric and convert to datetime
                             df['timestamp'] = pd.to_numeric(df['timestamp'], errors='coerce')
                             # Convert milliseconds to datetime using explicit unit parameter
-                            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce', utc=True)
                             # Remove any rows with invalid timestamps
                             df = df.dropna(subset=['timestamp'])
                         except (ValueError, TypeError) as e:

@@ -1,9 +1,0 @@
-{
-  "status": "running",
-  "timestamp": "2025-08-20T03:34:09.980965",
-  "restart_count": 0,
-  "details": {
-    "pid": 220,
-    "restart_count": 0
-  }
-}

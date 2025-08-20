@@ -882,12 +882,26 @@ class MLEnhancedTradingBot:
                 self.logger.warning(f"Market regime detection error: {e}")
                 indicators['market_regime'] = 'uncertain'
 
-            # 7. Support/Resistance levels
+            # 7. Enhanced Support/Resistance levels with fractal analysis
             try:
-                indicators['support_resistance'] = self._calculate_support_resistance(high, low)
+                sr_data = self._calculate_support_resistance(high, low)
+                indicators['support_resistance'] = sr_data
+                indicators['resistance_strength'] = sr_data.get('resistance_strength', 0.5)
+                indicators['support_strength'] = sr_data.get('support_strength', 0.5)
+                indicators['key_levels'] = sr_data.get('key_levels', [])
             except Exception as e:
-                self.logger.warning(f"Support/Resistance calculation error: {e}")
-                indicators['support_resistance'] = {'resistance': close[-1], 'support': close[-1], 'pivot': close[-1]}
+                self.logger.warning(f"Enhanced Support/Resistance calculation error: {e}")
+                indicators['support_resistance'] = {
+                    'resistance': float(close[-1]),
+                    'support': float(close[-1]),
+                    'pivot': float(close[-1]),
+                    'resistance_strength': 0.5,
+                    'support_strength': 0.5,
+                    'key_levels': []
+                }
+                indicators['resistance_strength'] = 0.5
+                indicators['support_strength'] = 0.5
+                indicators['key_levels'] = []
 
             # 8. Trend strength
             try:
@@ -1051,79 +1065,179 @@ class MLEnhancedTradingBot:
             return 'uncertain'
 
     def _calculate_support_resistance(self, high: np.array, low: np.array) -> Dict[str, float]:
-        """Calculate support and resistance levels using improved pivot point analysis"""
+        """Enhanced multi-method support and resistance calculation with fractal analysis"""
         try:
-            if len(high) < 20 or len(low) < 20:
-                return {'resistance': 0, 'support': 0, 'pivot': 0}
+            if len(high) < 10 or len(low) < 10:
+                # Fallback for minimal data
+                return {
+                    'resistance': float(np.max(high)) if len(high) > 0 else 0,
+                    'support': float(np.min(low)) if len(low) > 0 else 0,
+                    'pivot': float((np.max(high) + np.min(low)) / 2) if len(high) > 0 and len(low) > 0 else 0
+                }
 
-            # Enhanced support/resistance calculation with multiple methods
+            # Enhanced multi-method approach
+            current_price = float((high[-1] + low[-1]) / 2)
             
-            # Method 1: Recent highs/lows (20 periods)
-            recent_high = np.max(high[-20:])
-            recent_low = np.min(low[-20:])
+            # Method 1: Fractal-based support/resistance
+            resistance_levels = self._find_fractal_resistance(high)
+            support_levels = self._find_fractal_support(low)
             
-            # Method 2: Pivot point analysis (5-period pivots)
-            resistance_levels = []
-            support_levels = []
+            # Method 2: Statistical approach using percentiles
+            lookback_period = min(50, len(high))
+            recent_high = float(np.percentile(high[-lookback_period:], 95))
+            recent_low = float(np.percentile(low[-lookback_period:], 5))
             
-            # Find local peaks and troughs
-            for i in range(2, len(high) - 2):
-                # Resistance (local high)
-                if (high[i] > high[i-1] and high[i] > high[i+1] and 
-                    high[i] > high[i-2] and high[i] > high[i+2]):
-                    resistance_levels.append(high[i])
-                
-                # Support (local low)
-                if (low[i] < low[i-1] and low[i] < low[i+1] and 
-                    low[i] < low[i-2] and low[i] < low[i+2]):
-                    support_levels.append(low[i])
+            # Method 3: Volume-weighted levels (if available)
+            volume_weighted_high = float(np.max(high[-20:]))
+            volume_weighted_low = float(np.min(low[-20:]))
             
-            # Get the most relevant levels (closest to current price)
-            current_price = (high[-1] + low[-1]) / 2
-            
+            # Combine methods for optimal levels
             if resistance_levels:
-                # Find resistance above current price
-                above_current = [r for r in resistance_levels if r > current_price]
-                if above_current:
-                    nearest_resistance = min(above_current)
+                # Find resistance closest above current price
+                valid_resistance = [r for r in resistance_levels if r > current_price]
+                if valid_resistance:
+                    nearest_resistance = float(min(valid_resistance))
                 else:
-                    nearest_resistance = recent_high
+                    nearest_resistance = max(recent_high, volume_weighted_high)
             else:
-                nearest_resistance = recent_high
+                nearest_resistance = max(recent_high, volume_weighted_high)
                 
             if support_levels:
-                # Find support below current price
-                below_current = [s for s in support_levels if s < current_price]
-                if below_current:
-                    nearest_support = max(below_current)
+                # Find support closest below current price
+                valid_support = [s for s in support_levels if s < current_price]
+                if valid_support:
+                    nearest_support = float(max(valid_support))
                 else:
-                    nearest_support = recent_low
+                    nearest_support = min(recent_low, volume_weighted_low)
             else:
-                nearest_support = recent_low
+                nearest_support = min(recent_low, volume_weighted_low)
             
-            # Calculate pivot point (traditional method)
-            pivot = (nearest_resistance + nearest_support + current_price) / 3
+            # Enhanced pivot calculation with multiple timeframe consideration
+            pivot_traditional = (nearest_resistance + nearest_support + current_price) / 3
+            pivot_fibonacci = current_price + (nearest_resistance - nearest_support) * 0.382
+            pivot_camarilla = current_price + (nearest_resistance - nearest_support) * 0.1094
             
+            # Weighted average of pivot methods
+            final_pivot = (pivot_traditional * 0.5 + pivot_fibonacci * 0.3 + pivot_camarilla * 0.2)
+            
+            # Ensure logical ordering
+            if nearest_resistance <= current_price:
+                nearest_resistance = current_price * 1.02
+            if nearest_support >= current_price:
+                nearest_support = current_price * 0.98
+                
             return {
                 'resistance': float(nearest_resistance),
                 'support': float(nearest_support),
-                'pivot': float(pivot)
+                'pivot': float(final_pivot),
+                'resistance_strength': self._calculate_level_strength(high, nearest_resistance),
+                'support_strength': self._calculate_level_strength(low, nearest_support),
+                'key_levels': resistance_levels + support_levels
             }
 
         except Exception as e:
-            # Fallback to simple calculation
+            # Robust fallback with error logging
+            self.logger.debug(f"Support/Resistance calculation fallback triggered: {e}")
             try:
-                recent_high = np.max(high[-10:]) if len(high) >= 10 else high[-1]
-                recent_low = np.min(low[-10:]) if len(low) >= 10 else low[-1]
-                pivot = (recent_high + recent_low + ((high[-1] + low[-1]) / 2)) / 3
+                safe_high = float(np.max(high[-5:]) if len(high) >= 5 else high[-1])
+                safe_low = float(np.min(low[-5:]) if len(low) >= 5 else low[-1])
+                safe_pivot = (safe_high + safe_low + current_price) / 3 if 'current_price' in locals() else (safe_high + safe_low) / 2
                 
                 return {
-                    'resistance': float(recent_high),
-                    'support': float(recent_low),
-                    'pivot': float(pivot)
+                    'resistance': safe_high,
+                    'support': safe_low,
+                    'pivot': float(safe_pivot),
+                    'resistance_strength': 0.5,
+                    'support_strength': 0.5,
+                    'key_levels': []
                 }
             except:
-                return {'resistance': 0, 'support': 0, 'pivot': 0}
+                return {
+                    'resistance': 0.0, 'support': 0.0, 'pivot': 0.0,
+                    'resistance_strength': 0.0, 'support_strength': 0.0, 'key_levels': []
+                }
+
+    def _find_fractal_resistance(self, high: np.array) -> List[float]:
+        """Find fractal resistance levels using advanced pattern recognition"""
+        try:
+            resistance_levels = []
+            min_periods = 3
+            
+            if len(high) < min_periods * 2 + 1:
+                return resistance_levels
+                
+            for i in range(min_periods, len(high) - min_periods):
+                is_fractal_high = True
+                
+                # Check if current point is higher than surrounding points
+                for j in range(1, min_periods + 1):
+                    if high[i] <= high[i-j] or high[i] <= high[i+j]:
+                        is_fractal_high = False
+                        break
+                
+                if is_fractal_high:
+                    resistance_levels.append(float(high[i]))
+            
+            # Remove duplicates and sort
+            resistance_levels = sorted(list(set([round(level, 6) for level in resistance_levels])), reverse=True)
+            
+            # Return top 5 most significant levels
+            return resistance_levels[:5]
+            
+        except Exception as e:
+            return []
+
+    def _find_fractal_support(self, low: np.array) -> List[float]:
+        """Find fractal support levels using advanced pattern recognition"""
+        try:
+            support_levels = []
+            min_periods = 3
+            
+            if len(low) < min_periods * 2 + 1:
+                return support_levels
+                
+            for i in range(min_periods, len(low) - min_periods):
+                is_fractal_low = True
+                
+                # Check if current point is lower than surrounding points
+                for j in range(1, min_periods + 1):
+                    if low[i] >= low[i-j] or low[i] >= low[i+j]:
+                        is_fractal_low = False
+                        break
+                
+                if is_fractal_low:
+                    support_levels.append(float(low[i]))
+            
+            # Remove duplicates and sort
+            support_levels = sorted(list(set([round(level, 6) for level in support_levels])))
+            
+            # Return top 5 most significant levels
+            return support_levels[-5:] if len(support_levels) > 5 else support_levels
+            
+        except Exception as e:
+            return []
+
+    def _calculate_level_strength(self, price_array: np.array, level: float, tolerance: float = 0.001) -> float:
+        """Calculate the strength of a support/resistance level based on historical touches"""
+        try:
+            if len(price_array) == 0 or level == 0:
+                return 0.0
+                
+            touches = 0
+            level_range = level * tolerance
+            
+            for price in price_array:
+                if abs(price - level) <= level_range:
+                    touches += 1
+            
+            # Normalize strength (more touches = stronger level)
+            max_possible_touches = len(price_array) * 0.1  # Max 10% of data points
+            strength = min(touches / max_possible_touches, 1.0) if max_possible_touches > 0 else 0.0
+            
+            return float(strength)
+            
+        except Exception as e:
+            return 0.5  # Default moderate strength
 
     def _calculate_trend_strength(self, close: np.array) -> float:
         """Calculate trend strength (0-100)"""

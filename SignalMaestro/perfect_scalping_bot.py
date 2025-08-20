@@ -1377,40 +1377,30 @@ class PerfectScalpingBot:
             return []
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format enhanced Cornix-compatible signal message"""
-        direction = signal['direction']
-        timestamp = datetime.now().strftime('%H:%M')
-        optimal_leverage = signal.get('optimal_leverage', 50)
+        """Format signal message in strict Cornix-compatible format"""
+        symbol = signal['symbol']
+        direction = signal['direction'].upper()
+        entry = signal['entry_price']
+        stop_loss = signal['stop_loss']
+        tp1 = signal['tp1']
+        tp2 = signal['tp2']
+        tp3 = signal['tp3']
+        leverage = signal.get('optimal_leverage', 50)
 
-        # Enhanced Cornix-compatible format
-        cornix_signal = self._format_cornix_signal(signal)
+        # Strict Cornix format as requested
+        cornix_message = f"""#{symbol} {direction}
 
-        # Message format optimized for Cornix parsing and Telegram display
-        message = f"""🎯 **PERFECT SCALPING SIGNAL**
+Entry: {entry:.6f}
+Stop Loss: {stop_loss:.6f}
 
-{cornix_signal}
+Take Profit:
+TP1: {tp1:.6f}
+TP2: {tp2:.6f}
+TP3: {tp3:.6f}
 
-**📊 Signal Details:**
-• **Signal #:** {self.signal_counter}
-• **Strength:** {signal['signal_strength']:.0f}%
-• **Time:** {timestamp} UTC
-• **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
-• **CVD Trend:** {self.cvd_data['cvd_trend'].title()}
+Leverage: {leverage}x"""
 
-**🔧 Auto Management:**
-✅ **TP1 Hit:** SL moves to Entry (Risk-Free)
-✅ **TP2 Hit:** SL moves to TP1 (Profit Secured)  
-✅ **TP3 Hit:** Position fully closed (Perfect!)
-
-**📈 Position Distribution:**
-• **TP1:** 40% @ {signal['tp1']:.6f}
-• **TP2:** 35% @ {signal['tp2']:.6f}
-• **TP3:** 25% @ {signal['tp3']:.6f}
-
-*🤖 Cornix Auto-Execution Enabled*
-*📢 Perfect Scalping Bot | Replit Hosted*"""
-
-        return message.strip()
+        return cornix_message
 
     def _get_leverage_rationale(self, leverage: int) -> str:
         """Get human-readable rationale for leverage selection"""
@@ -1425,7 +1415,7 @@ class PerfectScalpingBot:
 
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
-        """Format signal in Cornix-compatible format with enhanced integration"""
+        """Format signal in strict Cornix-compatible format"""
         try:
             symbol = signal['symbol']
             direction = signal['direction'].upper()
@@ -1434,7 +1424,7 @@ class PerfectScalpingBot:
             tp1 = signal['tp1']
             tp2 = signal['tp2']
             tp3 = signal['tp3']
-            optimal_leverage = signal.get('optimal_leverage', 50)
+            leverage = signal.get('optimal_leverage', 50)
 
             # Validate and fix price ordering for Cornix compatibility
             if direction == 'BUY':
@@ -1465,39 +1455,36 @@ class PerfectScalpingBot:
             signal['tp2'] = tp2
             signal['tp3'] = tp3
 
-            # Enhanced Cornix-compatible format with management instructions
+            # Strict Cornix format
             formatted_message = f"""#{symbol} {direction}
 
 Entry: {entry:.6f}
 Stop Loss: {stop_loss:.6f}
 
 Take Profit:
-TP1: {tp1:.6f} (40%)
-TP2: {tp2:.6f} (35%) 
-TP3: {tp3:.6f} (25%)
+TP1: {tp1:.6f}
+TP2: {tp2:.6f}
+TP3: {tp3:.6f}
 
-Leverage: {optimal_leverage}x
-Exchange: Binance Futures
-
-Management:
-- Move SL to Entry after TP1
-- Move SL to TP1 after TP2  
-- Close all after TP3"""
+Leverage: {leverage}x"""
 
             return formatted_message
 
         except Exception as e:
             self.logger.error(f"Error formatting Cornix signal: {e}")
             # Fallback format
-            optimal_leverage = signal.get('optimal_leverage', 50)
+            leverage = signal.get('optimal_leverage', 50)
             return f"""#{signal['symbol']} {signal['direction']}
+
 Entry: {signal['entry_price']:.6f}
 Stop Loss: {signal['stop_loss']:.6f}
+
+Take Profit:
 TP1: {signal['tp1']:.6f}
 TP2: {signal['tp2']:.6f}
 TP3: {signal['tp3']:.6f}
-Leverage: {optimal_leverage}x
-Exchange: Binance Futures"""
+
+Leverage: {leverage}x"""
 
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands with improved error handling"""

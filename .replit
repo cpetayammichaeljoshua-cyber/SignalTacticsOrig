@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Perfect Scalping Daemon"
+runButton = "Perfect Scalping Master"
 
 [[workflows.workflow]]
 name = "Project"
@@ -94,6 +94,15 @@ args = "python start_daemon.py"
 
 [[workflows.workflow]]
 name = "Perfect Scalping Daemon"
+author = 34160275
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_daemon.py"
+
+[[workflows.workflow]]
+name = "Perfect Scalping Master"
 author = 34160275
 mode = "sequential"
 

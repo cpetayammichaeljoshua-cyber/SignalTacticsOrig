@@ -101,6 +101,15 @@ mode = "sequential"
 task = "shell.exec"
 args = "python start_daemon.py"
 
+[[workflows.workflow]]
+name = "Production Monitor"
+author = 34160275
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python production_monitor.py"
+
 [[ports]]
 localPort = 5000
 externalPort = 80

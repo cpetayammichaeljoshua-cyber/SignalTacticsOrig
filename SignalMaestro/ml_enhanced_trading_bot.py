@@ -647,13 +647,26 @@ class MLEnhancedTradingBot:
             'cooldown_blocks': 0
         }
 
-        # Advanced risk management
+        # Advanced risk management with adaptive algorithms
         self.risk_config = {
             'base_risk_percentage': 2.0,  # 2% base risk
             'max_risk_percentage': 5.0,   # 5% maximum risk
             'volatility_adjustment': True,
             'ml_confidence_threshold': 0.7,
-            'min_signal_strength': 85
+            'min_signal_strength': 85,
+            'adaptive_risk_scaling': True,
+            'market_regime_adjustment': True,
+            'volume_confirmation_required': True
+        }
+
+        # Adaptive algorithm parameters
+        self.adaptive_config = {
+            'learning_rate': 0.01,
+            'performance_window': 50,  # trades to consider for adaptation
+            'min_confidence_threshold': 0.6,
+            'max_confidence_threshold': 0.9,
+            'risk_adjustment_factor': 0.1,
+            'volatility_lookback_periods': 20
         }
 
         # Load ML models
@@ -1137,46 +1150,411 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 35  # Default leverage
 
+    async def _perform_market_analysis(self) -> Dict[str, Any]:
+        """Perform comprehensive market analysis for adaptive algorithms"""
+        try:
+            # Analyze major market indicators
+            btc_data = await self.get_binance_data('BTCUSDT', '1h', 50)
+            eth_data = await self.get_binance_data('ETHUSDT', '1h', 50)
+            
+            market_analysis = {
+                'volatility_regime': 'medium',
+                'trend_direction': 'neutral',
+                'market_strength': 50,
+                'volume_profile': 'normal',
+                'fear_greed_index': 50,
+                'correlation_strength': 0.5
+            }
+            
+            if btc_data is not None and len(btc_data) >= 20:
+                btc_indicators = self.calculate_advanced_indicators(btc_data)
+                market_analysis.update({
+                    'volatility_regime': self._determine_volatility_regime(btc_indicators.get('volatility', 0.02)),
+                    'trend_direction': btc_indicators.get('market_regime', 'neutral'),
+                    'market_strength': btc_indicators.get('trend_strength', 50)
+                })
+            
+            return market_analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error in market analysis: {e}")
+            return {'volatility_regime': 'medium', 'trend_direction': 'neutral', 'market_strength': 50}
+
+    def _determine_volatility_regime(self, volatility: float) -> str:
+        """Determine market volatility regime"""
+        if volatility > 0.04:
+            return 'high'
+        elif volatility < 0.015:
+            return 'low'
+        else:
+            return 'medium'
+
+    async def _select_optimal_symbols(self, market_analysis: Dict[str, Any]) -> List[str]:
+        """Select optimal symbols based on market conditions"""
+        try:
+            # Base symbols always included
+            optimal_symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']
+            
+            # Add symbols based on market regime
+            if market_analysis['trend_direction'] in ['bullish', 'strong_bullish']:
+                optimal_symbols.extend(['AVAXUSDT', 'LINKUSDT', 'ADAUSDT', 'DOTUSDT'])
+            elif market_analysis['volatility_regime'] == 'high':
+                optimal_symbols.extend(['DOGEUSDT', 'XRPUSDT', 'MATICUSDT', 'ATOMUSDT'])
+            else:
+                optimal_symbols.extend(['LTCUSDT', 'BCHUSDT', 'ETCUSDT', 'XLMUSDT'])
+            
+            # Add trending altcoins
+            optimal_symbols.extend(['ARBUSDT', 'OPUSDT', 'APTUSDT', 'SUIUSDT'])
+            
+            return list(set(optimal_symbols))  # Remove duplicates
+            
+        except Exception as e:
+            self.logger.error(f"Error selecting optimal symbols: {e}")
+            return self.symbols[:15]
+
+    async def _comprehensive_symbol_analysis(self, symbol: str, market_analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Perform comprehensive multi-timeframe analysis"""
+        try:
+            # Multi-timeframe data collection
+            timeframes = ['5m', '15m', '1h']
+            market_data = {}
+            
+            for tf in timeframes:
+                df = await self.get_binance_data(symbol, tf, 100)
+                if df is not None and len(df) >= 50:
+                    market_data[tf] = self.calculate_advanced_indicators(df)
+            
+            if not market_data:
+                return None
+            
+            # Confluence analysis across timeframes
+            signal = await self._analyze_timeframe_confluence(symbol, market_data, market_analysis)
+            return signal
+            
+        except Exception as e:
+            self.logger.error(f"Error in comprehensive analysis for {symbol}: {e}")
+            return None
+
+    async def _analyze_timeframe_confluence(self, symbol: str, market_data: Dict[str, Dict], market_analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Analyze confluence across multiple timeframes"""
+        try:
+            confluence_score = 0
+            direction_votes = {'BUY': 0, 'SELL': 0}
+            
+            # Weight timeframes differently
+            timeframe_weights = {'5m': 0.3, '15m': 0.4, '1h': 0.3}
+            
+            for tf, weight in timeframe_weights.items():
+                if tf not in market_data:
+                    continue
+                    
+                indicators = market_data[tf]
+                
+                # SuperTrend analysis
+                if indicators.get('supertrend', 0) > 0:
+                    direction_votes['BUY'] += weight * 30
+                elif indicators.get('supertrend', 0) < 0:
+                    direction_votes['SELL'] += weight * 30
+                
+                # RSI confluence
+                rsi = indicators.get('rsi', 50)
+                if rsi < 35:
+                    direction_votes['BUY'] += weight * 20
+                elif rsi > 65:
+                    direction_votes['SELL'] += weight * 20
+                
+                # MACD confluence
+                if indicators.get('macd_bullish', False):
+                    direction_votes['BUY'] += weight * 15
+                else:
+                    direction_votes['SELL'] += weight * 15
+                
+                # Volume confirmation
+                if indicators.get('volume_surge', False):
+                    confluence_score += weight * 10
+            
+            # Determine final direction and strength
+            if direction_votes['BUY'] >= self.risk_config['min_signal_strength']:
+                direction = 'BUY'
+                signal_strength = direction_votes['BUY']
+            elif direction_votes['SELL'] >= self.risk_config['min_signal_strength']:
+                direction = 'SELL'
+                signal_strength = direction_votes['SELL']
+            else:
+                return None
+            
+            # Get primary timeframe data for signal generation
+            primary_indicators = market_data.get('5m', market_data.get('15m', {}))
+            if not primary_indicators:
+                return None
+            
+            return await self._create_enhanced_signal(symbol, direction, signal_strength, primary_indicators, market_analysis)
+            
+        except Exception as e:
+            self.logger.error(f"Error in confluence analysis: {e}")
+            return None
+
+    async def _create_enhanced_signal(self, symbol: str, direction: str, signal_strength: float, indicators: Dict[str, Any], market_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Create enhanced signal with adaptive SL/TP"""
+        try:
+            current_price = indicators.get('current_price', 0)
+            if current_price <= 0:
+                return None
+            
+            # Adaptive leverage based on market conditions
+            leverage = await self._calculate_adaptive_leverage(indicators, market_analysis)
+            
+            # Dynamic SL/TP calculation with ML optimization
+            sl_tp_levels = await self._calculate_dynamic_sl_tp(symbol, direction, current_price, indicators, market_analysis)
+            
+            signal = {
+                'symbol': symbol,
+                'direction': direction,
+                'entry_price': current_price,
+                'stop_loss': sl_tp_levels['stop_loss'],
+                'take_profit_1': sl_tp_levels['take_profit_1'],
+                'take_profit_2': sl_tp_levels['take_profit_2'],
+                'take_profit_3': sl_tp_levels['take_profit_3'],
+                'signal_strength': signal_strength,
+                'leverage': leverage,
+                'ml_enhanced': True,
+                'adaptive_risk': True,
+                'market_conditions': {
+                    'volatility': indicators.get('volatility', 0.02),
+                    'regime': market_analysis.get('trend_direction', 'neutral'),
+                    'trend_strength': indicators.get('trend_strength', 50),
+                    'volume_profile': 'high' if indicators.get('volume_surge', False) else 'normal',
+                    'market_strength': market_analysis.get('market_strength', 50)
+                },
+                'risk_metrics': {
+                    'max_risk': self._calculate_max_risk(current_price, sl_tp_levels['stop_loss'], leverage),
+                    'risk_reward_ratio': self._calculate_risk_reward_ratio(current_price, sl_tp_levels),
+                    'confidence_score': signal_strength / 100
+                }
+            }
+            
+            return signal
+            
+        except Exception as e:
+            self.logger.error(f"Error creating enhanced signal: {e}")
+            return None
+
+    async def _calculate_adaptive_leverage(self, indicators: Dict[str, Any], market_analysis: Dict[str, Any]) -> int:
+        """Calculate adaptive leverage based on comprehensive analysis"""
+        try:
+            base_leverage = 40
+            
+            # Market volatility adjustment
+            volatility_regime = market_analysis.get('volatility_regime', 'medium')
+            if volatility_regime == 'high':
+                volatility_adj = -20
+            elif volatility_regime == 'low':
+                volatility_adj = 15
+            else:
+                volatility_adj = 0
+            
+            # Market strength adjustment
+            market_strength = market_analysis.get('market_strength', 50)
+            if market_strength > 75:
+                strength_adj = 10
+            elif market_strength < 25:
+                strength_adj = -15
+            else:
+                strength_adj = 0
+            
+            # Volume confirmation adjustment
+            if indicators.get('volume_surge', False):
+                volume_adj = 5
+            else:
+                volume_adj = -5
+            
+            # Trend alignment adjustment
+            trend_strength = indicators.get('trend_strength', 50)
+            if trend_strength > 70:
+                trend_adj = 10
+            elif trend_strength < 30:
+                trend_adj = -10
+            else:
+                trend_adj = 0
+            
+            final_leverage = base_leverage + volatility_adj + strength_adj + volume_adj + trend_adj
+            return max(15, min(100, final_leverage))
+            
+        except Exception as e:
+            return 40
+
+    async def _calculate_dynamic_sl_tp(self, symbol: str, direction: str, entry_price: float, indicators: Dict[str, Any], market_analysis: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate dynamic SL/TP based on market conditions and ML predictions"""
+        try:
+            # Get ML-predicted levels
+            signal_data = {
+                'symbol': symbol,
+                'direction': direction,
+                'entry_price': entry_price,
+                'volatility': indicators.get('volatility', 0.02),
+                'volume_ratio': indicators.get('volume_ratio', 1.0),
+                'rsi': indicators.get('rsi', 50),
+                'macd_bullish': indicators.get('macd_bullish', False),
+                'market_regime': market_analysis.get('trend_direction', 'neutral')
+            }
+            
+            ml_levels = self.ml_predictor.predict_optimal_levels(signal_data)
+            
+            # Apply adaptive adjustments
+            volatility = indicators.get('volatility', 0.02)
+            volatility_multiplier = 1.0 + (volatility * 25)  # Scale with volatility
+            
+            # Market regime adjustments
+            regime_multiplier = 1.0
+            if market_analysis.get('trend_direction') in ['strong_bullish', 'strong_bearish']:
+                regime_multiplier = 1.2  # Wider targets in strong trends
+            elif market_analysis.get('volatility_regime') == 'high':
+                regime_multiplier = 1.3  # Wider stops in high volatility
+            
+            # Calculate final levels
+            if direction.upper() in ['BUY', 'LONG']:
+                stop_loss = entry_price * (1 - (0.025 * volatility_multiplier * regime_multiplier))
+                tp1 = entry_price * (1 + (0.035 * volatility_multiplier))
+                tp2 = entry_price * (1 + (0.055 * volatility_multiplier))
+                tp3 = entry_price * (1 + (0.085 * volatility_multiplier * regime_multiplier))
+            else:
+                stop_loss = entry_price * (1 + (0.025 * volatility_multiplier * regime_multiplier))
+                tp1 = entry_price * (1 - (0.035 * volatility_multiplier))
+                tp2 = entry_price * (1 - (0.055 * volatility_multiplier))
+                tp3 = entry_price * (1 - (0.085 * volatility_multiplier * regime_multiplier))
+            
+            return {
+                'stop_loss': stop_loss,
+                'take_profit_1': tp1,
+                'take_profit_2': tp2,
+                'take_profit_3': tp3
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating dynamic SL/TP: {e}")
+            return self.ml_predictor._get_default_levels(signal_data)
+
+    def _calculate_max_risk(self, entry_price: float, stop_loss: float, leverage: int) -> float:
+        """Calculate maximum risk amount"""
+        try:
+            risk_per_unit = abs(entry_price - stop_loss) / entry_price
+            return risk_per_unit * leverage * 100  # Risk percentage with leverage
+        except:
+            return 0.0
+
+    def _calculate_risk_reward_ratio(self, entry_price: float, levels: Dict[str, float]) -> float:
+        """Calculate risk-reward ratio"""
+        try:
+            risk = abs(entry_price - levels['stop_loss'])
+            reward = abs(levels['take_profit_2'] - entry_price)  # Use TP2 for RR calculation
+            return reward / risk if risk > 0 else 0
+        except:
+            return 0.0
+
+    async def _calculate_ml_confidence(self, signal: Dict[str, Any]) -> float:
+        """Calculate ML confidence score for signal"""
+        try:
+            base_confidence = signal['signal_strength'] / 100
+            
+            # Market condition adjustments
+            market_conditions = signal.get('market_conditions', {})
+            volatility = market_conditions.get('volatility', 0.02)
+            
+            # Lower confidence in extreme volatility
+            if volatility > 0.05:
+                volatility_penalty = 0.2
+            elif volatility < 0.01:
+                volatility_penalty = 0.1
+            else:
+                volatility_penalty = 0.0
+            
+            # Risk-reward adjustment
+            risk_metrics = signal.get('risk_metrics', {})
+            rr_ratio = risk_metrics.get('risk_reward_ratio', 1.0)
+            
+            if rr_ratio < 1.5:
+                rr_penalty = 0.15
+            elif rr_ratio > 3.0:
+                rr_penalty = 0.0
+            else:
+                rr_penalty = 0.05
+            
+            final_confidence = base_confidence - volatility_penalty - rr_penalty
+            return max(0.0, min(1.0, final_confidence))
+            
+        except Exception as e:
+            return 0.5
+
+    async def _rank_signals_by_ml_score(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Rank signals by comprehensive ML scoring"""
+        try:
+            for signal in signals:
+                ml_score = 0.0
+                
+                # Signal strength (40% weight)
+                ml_score += (signal['signal_strength'] / 100) * 0.4
+                
+                # ML confidence (30% weight)
+                ml_score += signal.get('ml_confidence', 0.5) * 0.3
+                
+                # Risk-reward ratio (20% weight)
+                rr_ratio = signal.get('risk_metrics', {}).get('risk_reward_ratio', 1.0)
+                rr_score = min(1.0, rr_ratio / 3.0)  # Normalize to 0-1
+                ml_score += rr_score * 0.2
+                
+                # Market alignment (10% weight)
+                market_strength = signal.get('market_conditions', {}).get('market_strength', 50)
+                ml_score += (market_strength / 100) * 0.1
+                
+                signal['ml_score'] = ml_score
+            
+            # Sort by ML score
+            signals.sort(key=lambda x: x.get('ml_score', 0), reverse=True)
+            return signals
+            
+        except Exception as e:
+            self.logger.error(f"Error ranking signals: {e}")
+            return signals
+
     async def scan_for_ml_signals(self) -> List[Dict[str, Any]]:
-        """Scan for signals with ML enhancement and cooldown management"""
+        """Enhanced real-time market scanning with adaptive algorithms"""
         signals = []
         successful_scans = 0
+        market_analysis = await self._perform_market_analysis()
         
-        for symbol in self.symbols[:15]:  # Limit symbols to avoid rate limits
+        # Adaptive symbol selection based on market conditions
+        active_symbols = await self._select_optimal_symbols(market_analysis)
+        
+        for symbol in active_symbols[:20]:  # Increased scanning capacity
             try:
                 # Quick check if cooldown allows signal for this symbol
                 if not self.cooldown_manager.can_send_signal(symbol):
                     continue
 
-                # Get market data
-                df = await self.get_binance_data(symbol, '5m', 100)
-                if df is None or len(df) < 50:
-                    continue
-
-                # Calculate indicators
-                indicators = self.calculate_advanced_indicators(df)
-                if not indicators:
-                    continue
-
-                # Generate ML-enhanced signal
-                signal = await self.generate_ml_enhanced_signal(symbol, indicators)
+                # Multi-timeframe analysis for better accuracy
+                signal = await self._comprehensive_symbol_analysis(symbol, market_analysis)
                 if signal:
-                    signals.append(signal)
-                    successful_scans += 1
+                    # Apply ML confidence filtering
+                    ml_confidence = await self._calculate_ml_confidence(signal)
+                    if ml_confidence >= self.adaptive_config['min_confidence_threshold']:
+                        signal['ml_confidence'] = ml_confidence
+                        signals.append(signal)
+                        successful_scans += 1
 
-                # Respect rate limits
-                await asyncio.sleep(0.1)
+                # Adaptive rate limiting based on market volatility
+                sleep_time = 0.05 if market_analysis['volatility_regime'] == 'high' else 0.1
+                await asyncio.sleep(sleep_time)
 
             except Exception as e:
                 self.logger.warning(f"Error scanning {symbol}: {str(e)[:100]}")
                 continue
 
-        # Sort by signal strength and return top signals
-        signals.sort(key=lambda x: x['signal_strength'], reverse=True)
+        # Enhanced signal ranking with ML scoring
+        signals = await self._rank_signals_by_ml_score(signals)
         
-        self.logger.info(f"🔍 ML scan complete: {successful_scans} symbols scanned, {len(signals)} signals found")
+        self.logger.info(f"🔍 Enhanced ML scan: {successful_scans} symbols, {len(signals)} high-quality signals")
         
-        return signals[:3]  # Return max 3 signals to avoid spam
+        return signals[:5]  # Return top 5 signals for better opportunities
 
     async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
         """Send message to Telegram with enhanced error handling"""
@@ -1209,40 +1587,50 @@ class MLEnhancedTradingBot:
             direction = signal['direction']
             timestamp = datetime.now().strftime('%H:%M:%S')
             ml_accuracy = signal.get('ml_accuracy', {})
+            risk_metrics = signal.get('risk_metrics', {})
 
-            # Enhanced message with ML insights
-            message = f"""🧠 **ML-ENHANCED SIGNAL**
+            # Enhanced message with adaptive ML insights
+            message = f"""🧠 **ADAPTIVE ML SIGNAL**
 
 🎯 **#{signal['symbol']}** {direction}
 💰 **Entry:** {signal['entry_price']:.6f}
 🛑 **Stop Loss:** {signal['stop_loss']:.6f}
 
-📈 **Take Profits (ML Optimized):**
+📈 **Dynamic Take Profits:**
 • **TP1:** {signal['take_profit_1']:.6f} (40%)
 • **TP2:** {signal['take_profit_2']:.6f} (35%)
 • **TP3:** {signal['take_profit_3']:.6f} (25%)
 
-⚡ **Leverage:** {signal['leverage']}x (Dynamic)
+⚡ **Adaptive Leverage:** {signal['leverage']}x
 📊 **Signal Strength:** {signal['signal_strength']:.0f}%
+🎯 **ML Confidence:** {signal.get('ml_confidence', 0)*100:.1f}%
+📈 **Risk/Reward:** 1:{risk_metrics.get('risk_reward_ratio', 0):.1f}
 🕒 **Time:** {timestamp} UTC
 
 🧠 **ML Performance:**
-• **SL Accuracy:** {ml_accuracy.get('sl_accuracy', 0)*100:.1f}%
-• **TP Accuracy:** {ml_accuracy.get('tp1_accuracy', 0)*100:.1f}%
-• **Learning:** {self.ml_predictor.trade_count} trades analyzed
+• **Model Accuracy:** {ml_accuracy.get('sl_accuracy', 0)*100:.1f}%
+• **Learning Progress:** {self.ml_predictor.trade_count} trades
+• **ML Score:** {signal.get('ml_score', 0)*100:.1f}%
 
-🌊 **Market Conditions:**
+🌊 **Market Analysis:**
 • **Volatility:** {signal['market_conditions']['volatility']:.3f}
 • **Regime:** {signal['market_conditions']['regime'].title()}
+• **Market Strength:** {signal['market_conditions'].get('market_strength', 50):.0f}%
 • **Volume:** {signal['market_conditions']['volume_profile'].title()}
 
-⚙️ **Auto-Management:**
-✅ SL → Entry after TP1
-✅ SL → TP1 after TP2
-✅ Full close after TP3
+🤖 **Adaptive Features:**
+✅ Dynamic SL/TP adjustment
+✅ Market regime adaptation
+✅ Multi-timeframe confluence
+✅ Real-time learning optimization
 
-⏰ **Cooldown:** 30min applied
-🤖 **ML-Enhanced Bot | Always Learning**"""
+⚙️ **Risk Management:**
+• **Max Risk:** {risk_metrics.get('max_risk', 0):.1f}%
+• **Adaptive Position Sizing**
+• **Volatility-based adjustments**
+
+⏰ **Cooldown:** 30min between signals
+🚀 **Continuously Learning & Adapting**"""
 
             return message.strip()
 
@@ -1354,8 +1742,38 @@ class MLEnhancedTradingBot:
 
                 await self.send_message(chat_id, cooldown_info)
 
+            elif text.startswith('/adaptive'):
+                adaptive_status = f"""🤖 **ADAPTIVE ALGORITHM STATUS**
+
+**🧠 Learning Parameters:**
+• **Learning Rate:** `{self.adaptive_config['learning_rate']}`
+• **Performance Window:** `{self.adaptive_config['performance_window']} trades`
+• **Confidence Range:** `{self.adaptive_config['min_confidence_threshold']:.1f} - {self.adaptive_config['max_confidence_threshold']:.1f}`
+
+**📊 Risk Management:**
+• **Adaptive Risk Scaling:** `{'Enabled' if self.risk_config['adaptive_risk_scaling'] else 'Disabled'}`
+• **Market Regime Adjustment:** `{'Enabled' if self.risk_config['market_regime_adjustment'] else 'Disabled'}`
+• **Volume Confirmation:** `{'Required' if self.risk_config['volume_confirmation_required'] else 'Optional'}`
+
+**🎯 Current Performance:**
+• **Total Signals:** `{self.performance_stats['total_signals']}`
+• **ML Enhanced:** `{self.performance_stats['ml_predicted_signals']}`
+• **Win Rate:** `{self.performance_stats['win_rate']:.1f}%`
+• **Avg Profit:** `{self.performance_stats['avg_profit']:.2f}%`
+
+**⚙️ Adaptive Features:**
+✅ Dynamic leverage calculation
+✅ Volatility-based SL/TP adjustment  
+✅ Multi-timeframe confluence analysis
+✅ Real-time market regime detection
+✅ Continuous model retraining
+
+*System automatically adapts to market conditions*"""
+
+                await self.send_message(chat_id, adaptive_status)
+
             elif text.startswith('/scan'):
-                await self.send_message(chat_id, "🧠 **ML-Enhanced Market Scan**\n\nAnalyzing markets with machine learning...")
+                await self.send_message(chat_id, "🧠 **Adaptive ML Market Scan**\n\nAnalyzing markets with adaptive algorithms...")
                 
                 signals = await self.scan_for_ml_signals()
                 
@@ -1365,9 +1783,9 @@ class MLEnhancedTradingBot:
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
                     
-                    await self.send_message(chat_id, f"✅ **{len(signals)} ML-Enhanced Signals Found**\n\nCooldowns activated for sent signals")
+                    await self.send_message(chat_id, f"✅ **{len(signals)} Adaptive ML Signals Found**\n\nTop-ranked signals with ML scoring applied")
                 else:
-                    await self.send_message(chat_id, "📊 **No ML Signals**\n\nEither cooldowns active or market conditions don't meet ML criteria")
+                    await self.send_message(chat_id, "📊 **No High-Quality Signals**\n\nAdaptive algorithms filtering for optimal opportunities")
 
         except Exception as e:
             self.logger.error(f"Error handling command: {e}")

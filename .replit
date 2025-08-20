@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "ML-Enhanced Trading Bot"
+runButton = "Adaptive ML Trading Bot"
 
 [[workflows.workflow]]
 name = "Project"
@@ -118,6 +118,15 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_ml_enhanced_bot.py"
+
+[[workflows.workflow]]
+name = "Adaptive ML Trading Bot"
+author = 34160275
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_adaptive_ml_bot.py"
 
 [[ports]]
 localPort = 5000

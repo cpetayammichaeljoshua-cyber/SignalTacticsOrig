@@ -1065,91 +1065,107 @@ class MLEnhancedTradingBot:
             return 'uncertain'
 
     def _calculate_support_resistance(self, high: np.array, low: np.array) -> Dict[str, float]:
-        """Enhanced multi-method support and resistance calculation with fractal analysis"""
+        """Advanced Fibonacci-based support and resistance calculation with enhanced accuracy"""
         try:
-            if len(high) < 10 or len(low) < 10:
-                # Fallback for minimal data
-                return {
-                    'resistance': float(np.max(high)) if len(high) > 0 else 0,
-                    'support': float(np.min(low)) if len(low) > 0 else 0,
-                    'pivot': float((np.max(high) + np.min(low)) / 2) if len(high) > 0 and len(low) > 0 else 0
-                }
+            if len(high) < 5 or len(low) < 5:
+                # Minimal fallback for insufficient data
+                try:
+                    safe_high = float(high[-1]) if len(high) > 0 else 0.0
+                    safe_low = float(low[-1]) if len(low) > 0 else 0.0
+                    safe_pivot = (safe_high + safe_low) / 2 if safe_high > 0 and safe_low > 0 else 0.0
+                    
+                    return {
+                        'resistance': safe_high,
+                        'support': safe_low,
+                        'pivot': safe_pivot,
+                        'resistance_strength': 0.5,
+                        'support_strength': 0.5,
+                        'key_levels': []
+                    }
+                except:
+                    return {'resistance': 0.0, 'support': 0.0, 'pivot': 0.0, 'resistance_strength': 0.0, 'support_strength': 0.0, 'key_levels': []}
 
-            # Enhanced multi-method approach
+            # Calculate current price and range
             current_price = float((high[-1] + low[-1]) / 2)
             
-            # Method 1: Fractal-based support/resistance
-            resistance_levels = self._find_fractal_resistance(high)
-            support_levels = self._find_fractal_support(low)
+            # Find significant swing points for Fibonacci analysis
+            swing_high, swing_low = self._find_fibonacci_swing_points(high, low)
             
-            # Method 2: Statistical approach using percentiles
-            lookback_period = min(50, len(high))
-            recent_high = float(np.percentile(high[-lookback_period:], 95))
-            recent_low = float(np.percentile(low[-lookback_period:], 5))
+            if swing_high == 0 or swing_low == 0:
+                # Fallback to simple calculation
+                recent_period = min(20, len(high))
+                swing_high = float(np.max(high[-recent_period:]))
+                swing_low = float(np.min(low[-recent_period:]))
             
-            # Method 3: Volume-weighted levels (if available)
-            volume_weighted_high = float(np.max(high[-20:]))
-            volume_weighted_low = float(np.min(low[-20:]))
+            # Calculate Fibonacci retracement levels
+            fibonacci_levels = self._calculate_fibonacci_levels(swing_high, swing_low, current_price)
             
-            # Combine methods for optimal levels
-            if resistance_levels:
-                # Find resistance closest above current price
-                valid_resistance = [r for r in resistance_levels if r > current_price]
-                if valid_resistance:
-                    nearest_resistance = float(min(valid_resistance))
-                else:
-                    nearest_resistance = max(recent_high, volume_weighted_high)
+            # Find optimal support and resistance from Fibonacci levels
+            support_candidates = [level for level in fibonacci_levels['retracements'] if level < current_price]
+            resistance_candidates = [level for level in fibonacci_levels['retracements'] if level > current_price]
+            
+            # Add Fibonacci extension levels for additional targets
+            extension_levels = fibonacci_levels['extensions']
+            resistance_candidates.extend([level for level in extension_levels if level > current_price])
+            
+            # Select the nearest and most significant levels
+            if support_candidates:
+                nearest_support = max(support_candidates)  # Closest support below current price
             else:
-                nearest_resistance = max(recent_high, volume_weighted_high)
+                nearest_support = swing_low
                 
-            if support_levels:
-                # Find support closest below current price
-                valid_support = [s for s in support_levels if s < current_price]
-                if valid_support:
-                    nearest_support = float(max(valid_support))
-                else:
-                    nearest_support = min(recent_low, volume_weighted_low)
+            if resistance_candidates:
+                nearest_resistance = min(resistance_candidates)  # Closest resistance above current price
             else:
-                nearest_support = min(recent_low, volume_weighted_low)
+                nearest_resistance = swing_high
             
-            # Enhanced pivot calculation with multiple timeframe consideration
-            pivot_traditional = (nearest_resistance + nearest_support + current_price) / 3
-            pivot_fibonacci = current_price + (nearest_resistance - nearest_support) * 0.382
-            pivot_camarilla = current_price + (nearest_resistance - nearest_support) * 0.1094
+            # Enhanced pivot point calculation using Fibonacci ratios
+            fibonacci_pivot = self._calculate_fibonacci_pivot(swing_high, swing_low, current_price)
             
-            # Weighted average of pivot methods
-            final_pivot = (pivot_traditional * 0.5 + pivot_fibonacci * 0.3 + pivot_camarilla * 0.2)
+            # Calculate level strength based on Fibonacci significance
+            support_strength = self._calculate_fibonacci_strength(nearest_support, fibonacci_levels['retracements'])
+            resistance_strength = self._calculate_fibonacci_strength(nearest_resistance, fibonacci_levels['retracements'])
             
-            # Ensure logical ordering
+            # Ensure logical price ordering
             if nearest_resistance <= current_price:
-                nearest_resistance = current_price * 1.02
+                nearest_resistance = current_price * 1.015  # 1.5% above current price
             if nearest_support >= current_price:
-                nearest_support = current_price * 0.98
+                nearest_support = current_price * 0.985  # 1.5% below current price
+                
+            # Compile all significant levels for additional analysis
+            key_levels = fibonacci_levels['retracements'] + extension_levels[:3]  # Top 3 extensions
+            key_levels = sorted(list(set([round(level, 6) for level in key_levels if level > 0])))
                 
             return {
                 'resistance': float(nearest_resistance),
                 'support': float(nearest_support),
-                'pivot': float(final_pivot),
-                'resistance_strength': self._calculate_level_strength(high, nearest_resistance),
-                'support_strength': self._calculate_level_strength(low, nearest_support),
-                'key_levels': resistance_levels + support_levels
+                'pivot': float(fibonacci_pivot),
+                'resistance_strength': float(resistance_strength),
+                'support_strength': float(support_strength),
+                'key_levels': key_levels,
+                'fibonacci_data': {
+                    'swing_high': float(swing_high),
+                    'swing_low': float(swing_low),
+                    'retracement_levels': fibonacci_levels['retracements'],
+                    'extension_levels': extension_levels
+                }
             }
 
         except Exception as e:
-            # Robust fallback with error logging
-            self.logger.debug(f"Support/Resistance calculation fallback triggered: {e}")
+            # Ultra-safe fallback
+            self.logger.debug(f"Advanced Fibonacci S/R calculation fallback: {e}")
             try:
-                safe_high = float(np.max(high[-5:]) if len(high) >= 5 else high[-1])
-                safe_low = float(np.min(low[-5:]) if len(low) >= 5 else low[-1])
-                safe_pivot = (safe_high + safe_low + current_price) / 3 if 'current_price' in locals() else (safe_high + safe_low) / 2
+                fallback_high = float(np.max(high[-3:]) if len(high) >= 3 else high[-1])
+                fallback_low = float(np.min(low[-3:]) if len(low) >= 3 else low[-1])
+                fallback_pivot = (fallback_high + fallback_low) / 2
                 
                 return {
-                    'resistance': safe_high,
-                    'support': safe_low,
-                    'pivot': float(safe_pivot),
+                    'resistance': fallback_high,
+                    'support': fallback_low,
+                    'pivot': fallback_pivot,
                     'resistance_strength': 0.5,
                     'support_strength': 0.5,
-                    'key_levels': []
+                    'key_levels': [fallback_support, fallback_resistance] if 'fallback_support' in locals() else []
                 }
             except:
                 return {
@@ -1157,87 +1173,128 @@ class MLEnhancedTradingBot:
                     'resistance_strength': 0.0, 'support_strength': 0.0, 'key_levels': []
                 }
 
-    def _find_fractal_resistance(self, high: np.array) -> List[float]:
-        """Find fractal resistance levels using advanced pattern recognition"""
+    def _find_fibonacci_swing_points(self, high: np.array, low: np.array, lookback: int = 50) -> tuple:
+        """Find significant swing high and low for Fibonacci analysis"""
         try:
-            resistance_levels = []
-            min_periods = 3
+            lookback_period = min(lookback, len(high))
             
-            if len(high) < min_periods * 2 + 1:
-                return resistance_levels
-                
-            for i in range(min_periods, len(high) - min_periods):
-                is_fractal_high = True
-                
-                # Check if current point is higher than surrounding points
-                for j in range(1, min_periods + 1):
-                    if high[i] <= high[i-j] or high[i] <= high[i+j]:
-                        is_fractal_high = False
-                        break
-                
-                if is_fractal_high:
-                    resistance_levels.append(float(high[i]))
+            # Find the highest high and lowest low in the lookback period
+            swing_high = float(np.max(high[-lookback_period:]))
+            swing_low = float(np.min(low[-lookback_period:]))
             
-            # Remove duplicates and sort
-            resistance_levels = sorted(list(set([round(level, 6) for level in resistance_levels])), reverse=True)
+            # Enhance swing point detection with volatility consideration
+            price_range = swing_high - swing_low
+            if price_range > 0:
+                # Look for more recent significant swings if the range is substantial
+                recent_period = min(20, len(high))
+                recent_high = float(np.max(high[-recent_period:]))
+                recent_low = float(np.min(low[-recent_period:]))
+                
+                # Use recent swings if they represent significant portion of total range
+                recent_range = recent_high - recent_low
+                if recent_range >= price_range * 0.618:  # Golden ratio threshold
+                    swing_high = recent_high
+                    swing_low = recent_low
             
-            # Return top 5 most significant levels
-            return resistance_levels[:5]
+            return swing_high, swing_low
             
         except Exception as e:
-            return []
+            # Fallback to simple high/low
+            try:
+                return float(np.max(high)), float(np.min(low))
+            except:
+                return 0.0, 0.0
 
-    def _find_fractal_support(self, low: np.array) -> List[float]:
-        """Find fractal support levels using advanced pattern recognition"""
+    def _calculate_fibonacci_levels(self, swing_high: float, swing_low: float, current_price: float) -> Dict[str, List[float]]:
+        """Calculate Fibonacci retracement and extension levels"""
         try:
-            support_levels = []
-            min_periods = 3
+            if swing_high <= swing_low or swing_high == 0 or swing_low == 0:
+                return {'retracements': [], 'extensions': []}
             
-            if len(low) < min_periods * 2 + 1:
-                return support_levels
-                
-            for i in range(min_periods, len(low) - min_periods):
-                is_fractal_low = True
-                
-                # Check if current point is lower than surrounding points
-                for j in range(1, min_periods + 1):
-                    if low[i] >= low[i-j] or low[i] >= low[i+j]:
-                        is_fractal_low = False
-                        break
-                
-                if is_fractal_low:
-                    support_levels.append(float(low[i]))
+            price_range = swing_high - swing_low
             
-            # Remove duplicates and sort
-            support_levels = sorted(list(set([round(level, 6) for level in support_levels])))
+            # Standard Fibonacci retracement levels
+            fib_ratios = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
             
-            # Return top 5 most significant levels
-            return support_levels[-5:] if len(support_levels) > 5 else support_levels
+            # Calculate retracement levels (from swing high down to swing low)
+            retracement_levels = []
+            for ratio in fib_ratios:
+                level = swing_high - (price_range * ratio)
+                if level > 0:
+                    retracement_levels.append(float(level))
+            
+            # Calculate Fibonacci extension levels (beyond the swing range)
+            extension_ratios = [1.272, 1.414, 1.618, 2.0, 2.618, 3.618]
+            extension_levels = []
+            
+            # Determine trend direction for extensions
+            if current_price > (swing_high + swing_low) / 2:  # Uptrend
+                # Extensions above swing high
+                for ratio in extension_ratios:
+                    level = swing_high + (price_range * (ratio - 1.0))
+                    if level > swing_high:
+                        extension_levels.append(float(level))
+            else:  # Downtrend
+                # Extensions below swing low
+                for ratio in extension_ratios:
+                    level = swing_low - (price_range * (ratio - 1.0))
+                    if level < swing_low and level > 0:
+                        extension_levels.append(float(level))
+            
+            return {
+                'retracements': retracement_levels,
+                'extensions': extension_levels[:5]  # Limit to 5 most relevant extensions
+            }
             
         except Exception as e:
-            return []
+            return {'retracements': [], 'extensions': []}
 
-    def _calculate_level_strength(self, price_array: np.array, level: float, tolerance: float = 0.001) -> float:
-        """Calculate the strength of a support/resistance level based on historical touches"""
+    def _calculate_fibonacci_pivot(self, swing_high: float, swing_low: float, current_price: float) -> float:
+        """Calculate enhanced pivot point using Fibonacci ratios"""
         try:
-            if len(price_array) == 0 or level == 0:
-                return 0.0
-                
-            touches = 0
-            level_range = level * tolerance
+            if swing_high <= 0 or swing_low <= 0:
+                return current_price
             
-            for price in price_array:
-                if abs(price - level) <= level_range:
-                    touches += 1
+            # Traditional pivot
+            traditional_pivot = (swing_high + swing_low + current_price) / 3
             
-            # Normalize strength (more touches = stronger level)
-            max_possible_touches = len(price_array) * 0.1  # Max 10% of data points
-            strength = min(touches / max_possible_touches, 1.0) if max_possible_touches > 0 else 0.0
+            # Fibonacci-based pivot using golden ratio
+            price_range = swing_high - swing_low
+            fibonacci_pivot = swing_low + (price_range * 0.618)  # Golden ratio
             
-            return float(strength)
+            # Weighted combination favoring Fibonacci approach
+            final_pivot = (fibonacci_pivot * 0.7) + (traditional_pivot * 0.3)
+            
+            return float(final_pivot)
             
         except Exception as e:
-            return 0.5  # Default moderate strength
+            return float(current_price)
+
+    def _calculate_fibonacci_strength(self, level: float, fibonacci_levels: List[float]) -> float:
+        """Calculate the strength/significance of a support/resistance level based on Fibonacci alignment"""
+        try:
+            if not fibonacci_levels or level <= 0:
+                return 0.5
+            
+            # Check how close the level is to key Fibonacci ratios
+            min_distance = float('inf')
+            for fib_level in fibonacci_levels:
+                if fib_level > 0:
+                    distance = abs(level - fib_level) / fib_level
+                    min_distance = min(min_distance, distance)
+            
+            # Convert distance to strength score (closer = stronger)
+            if min_distance == float('inf'):
+                return 0.5
+            
+            # Strength decreases exponentially with distance
+            strength = max(0.1, 1.0 - (min_distance * 10))
+            return min(1.0, strength)
+            
+        except Exception as e:
+            return 0.5
+
+    
 
     def _calculate_trend_strength(self, close: np.array) -> float:
         """Calculate trend strength (0-100)"""

@@ -291,9 +291,18 @@ class MLTradePredictor:
             try:
                 # Handle timestamp conversion safely
                 if 'timestamp' in df.columns:
-                    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-                    features['hour'] = df['timestamp'].dt.hour
-                    features['day_of_week'] = df['timestamp'].dt.dayofweek
+                    # Convert timestamp strings to datetime objects
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+                    # Extract time features safely
+                    valid_timestamps = df['timestamp'].dropna()
+                    if len(valid_timestamps) > 0:
+                        features['hour'] = valid_timestamps.dt.hour.iloc[0] if len(valid_timestamps) == 1 else valid_timestamps.dt.hour.mode().iloc[0]
+                        features['day_of_week'] = valid_timestamps.dt.dayofweek.iloc[0] if len(valid_timestamps) == 1 else valid_timestamps.dt.dayofweek.mode().iloc[0]
+                    else:
+                        # Use current time as fallback
+                        current_time = datetime.now()
+                        features['hour'] = current_time.hour
+                        features['day_of_week'] = current_time.weekday()
                 else:
                     # Use current time as fallback
                     current_time = datetime.now()
@@ -776,7 +785,8 @@ class MLEnhancedTradingBot:
                         try:
                             # Ensure timestamp is numeric and convert to datetime
                             df['timestamp'] = pd.to_numeric(df['timestamp'], errors='coerce')
-                            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce')
+                            # Convert milliseconds to datetime using explicit unit parameter
+                            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce', utc=True)
                             # Remove any rows with invalid timestamps
                             df = df.dropna(subset=['timestamp'])
                         except (ValueError, TypeError) as e:

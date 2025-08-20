@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Perfect Scalping Daemon"
+runButton = "Ultimate Trading Bot"
 
 [[workflows.workflow]]
 name = "Project"
@@ -101,6 +101,15 @@ mode = "sequential"
 task = "shell.exec"
 args = "python start_daemon.py"
 
+[[workflows.workflow]]
+name = "Ultimate Trading Bot"
+author = 34160275
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_ultimate_bot.py"
+
 [[ports]]
 localPort = 5000
 externalPort = 80
@@ -110,4 +119,4 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["sh", "-c", "python start_daemon.py"]
+run = ["sh", "-c", "python start_ultimate_bot.py"]

@@ -1,0 +1,27 @@
+{
+  "status": "monitoring",
+  "timestamp": "2025-08-19T23:49:11.992245",
+  "daemon_pid": 801,
+  "bot_pid": 813,
+  "restart_count": 1,
+  "uptime_seconds": 245.430678,
+  "stats": {
+    "start_time": "2025-08-19T23:45:06.561575",
+    "total_restarts": 1,
+    "last_restart": "2025-08-19T23:45:11.766307",
+    "uptime_total": 0,
+    "health_checks": 5,
+    "last_health_check": "2025-08-19T23:49:11.992045"
+  },
+  "replit_optimized": true,
+  "health": {
+    "healthy": true,
+    "checks": {
+      "bot_running": true,
+      "memory_mb": 199.8046875,
+      "memory_ok": true
+    },
+    "issues": [],
+    "replit_optimized": true
+  }
+}

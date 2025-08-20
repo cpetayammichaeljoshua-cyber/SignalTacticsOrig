@@ -37,6 +37,23 @@ try:
 except ImportError:
     TALIB_AVAILABLE = False
 
+# Add custom technical analysis functions for missing indicators
+def calculate_sma(values, period):
+    """Calculate Simple Moving Average"""
+    if len(values) < period:
+        return None
+    return sum(values[-period:]) / period
+
+def calculate_ema(values, period):
+    """Calculate Exponential Moving Average"""
+    if len(values) < period:
+        return None
+    multiplier = 2 / (period + 1)
+    ema = values[0]
+    for value in values[1:]:
+        ema = (value * multiplier) + (ema * (1 - multiplier))
+    return ema
+
 try:
     import matplotlib
     matplotlib.use('Agg')
@@ -760,6 +777,8 @@ class MLEnhancedTradingBot:
                             # Ensure timestamp is numeric and convert to datetime
                             df['timestamp'] = pd.to_numeric(df['timestamp'], errors='coerce')
                             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce')
+                            # Remove any rows with invalid timestamps
+                            df = df.dropna(subset=['timestamp'])
                         except (ValueError, TypeError) as e:
                             self.logger.error(f"Timestamp conversion error for {symbol}: {e}")
                             return None
@@ -777,48 +796,97 @@ class MLEnhancedTradingBot:
     def calculate_advanced_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate comprehensive technical indicators with ML features"""
         try:
-            if df.empty or len(df) < 50:
+            if df.empty or len(df) < 20:  # Reduced minimum requirement
                 return {}
 
             indicators = {}
             
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            volume = df['volume'].values
+            # Ensure we have valid numeric data
+            df = df.dropna()
+            if len(df) < 20:
+                return {}
+            
+            high = df['high'].values.astype(float)
+            low = df['low'].values.astype(float)
+            close = df['close'].values.astype(float)
+            volume = df['volume'].values.astype(float)
 
             # 1. Market volatility (key for ML models)
-            returns = np.diff(np.log(close))
-            indicators['volatility'] = np.std(returns) * np.sqrt(len(returns))
-            indicators['volatility_percentile'] = self._calculate_volatility_percentile(indicators['volatility'])
+            try:
+                returns = np.diff(np.log(close))
+                if len(returns) > 0:
+                    indicators['volatility'] = np.std(returns) * np.sqrt(len(returns))
+                else:
+                    indicators['volatility'] = 0.02
+                indicators['volatility_percentile'] = self._calculate_volatility_percentile(indicators['volatility'])
+            except (ValueError, ZeroDivisionError):
+                indicators['volatility'] = 0.02
+                indicators['volatility_percentile'] = 0.5
 
             # 2. Enhanced SuperTrend with volatility adjustment
-            atr = self._calculate_atr(high, low, close, 14)
-            multiplier = 2.0 + (indicators['volatility'] * 20)  # Dynamic multiplier
-            indicators['supertrend'] = self._calculate_supertrend(high, low, close, atr, multiplier)
+            try:
+                atr = self._calculate_atr(high, low, close, 14)
+                multiplier = 2.0 + (indicators['volatility'] * 20)  # Dynamic multiplier
+                indicators['supertrend'] = self._calculate_supertrend(high, low, close, atr, multiplier)
+            except Exception as e:
+                self.logger.warning(f"SuperTrend calculation error: {e}")
+                indicators['supertrend'] = 0
 
             # 3. Volume analysis for ML
-            volume_sma = np.mean(volume[-20:])
-            indicators['volume_ratio'] = volume[-1] / volume_sma if volume_sma > 0 else 1.0
-            indicators['volume_surge'] = indicators['volume_ratio'] > 1.5
+            try:
+                if len(volume) >= 20:
+                    volume_sma = np.mean(volume[-20:])
+                    indicators['volume_ratio'] = volume[-1] / volume_sma if volume_sma > 0 else 1.0
+                else:
+                    indicators['volume_ratio'] = 1.0
+                indicators['volume_surge'] = indicators['volume_ratio'] > 1.5
+            except (IndexError, ZeroDivisionError):
+                indicators['volume_ratio'] = 1.0
+                indicators['volume_surge'] = False
 
             # 4. RSI with divergence detection
-            indicators['rsi'] = self._calculate_rsi(close, 14)
-            indicators['rsi_divergence'] = self._detect_rsi_divergence(close, indicators['rsi'])
+            try:
+                indicators['rsi'] = self._calculate_rsi(close, 14)
+                indicators['rsi_divergence'] = self._detect_rsi_divergence(close, indicators['rsi'])
+            except Exception as e:
+                self.logger.warning(f"RSI calculation error: {e}")
+                indicators['rsi'] = 50.0
+                indicators['rsi_divergence'] = False
 
             # 5. MACD analysis
-            macd_line, signal_line, histogram = self._calculate_macd(close)
-            indicators['macd_bullish'] = macd_line[-1] > signal_line[-1]
-            indicators['macd_momentum'] = histogram[-1] - histogram[-2] if len(histogram) > 1 else 0
+            try:
+                macd_line, signal_line, histogram = self._calculate_macd(close)
+                if len(macd_line) > 0 and len(signal_line) > 0:
+                    indicators['macd_bullish'] = macd_line[-1] > signal_line[-1]
+                    indicators['macd_momentum'] = histogram[-1] - histogram[-2] if len(histogram) > 1 else 0
+                else:
+                    indicators['macd_bullish'] = False
+                    indicators['macd_momentum'] = 0
+            except Exception as e:
+                self.logger.warning(f"MACD calculation error: {e}")
+                indicators['macd_bullish'] = False
+                indicators['macd_momentum'] = 0
 
             # 6. Market regime detection
-            indicators['market_regime'] = self._detect_market_regime(close, volume)
+            try:
+                indicators['market_regime'] = self._detect_market_regime(close, volume)
+            except Exception as e:
+                self.logger.warning(f"Market regime detection error: {e}")
+                indicators['market_regime'] = 'uncertain'
 
             # 7. Support/Resistance levels
-            indicators['support_resistance'] = self._calculate_support_resistance(high, low)
+            try:
+                indicators['support_resistance'] = self._calculate_support_resistance(high, low)
+            except Exception as e:
+                self.logger.warning(f"Support/Resistance calculation error: {e}")
+                indicators['support_resistance'] = {'resistance': close[-1], 'support': close[-1], 'pivot': close[-1]}
 
             # 8. Trend strength
-            indicators['trend_strength'] = self._calculate_trend_strength(close)
+            try:
+                indicators['trend_strength'] = self._calculate_trend_strength(close)
+            except Exception as e:
+                self.logger.warning(f"Trend strength calculation error: {e}")
+                indicators['trend_strength'] = 50.0
 
             # 9. Current price info
             indicators['current_price'] = close[-1]

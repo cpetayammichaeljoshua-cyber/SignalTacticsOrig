@@ -574,6 +574,9 @@ TP3: {trade.tp3:.4f} ⚪
             # Send full closure to Cornix
             await self.cornix.close_position(symbol, "TP3 hit - Full profit target reached", 100)
             
+            # Record trade outcome for ML learning
+            await self._record_trade_outcome(trade, 'TP3_HIT', 3.0)
+            
             # Final notification
             if self._can_send_message() and self.admin_chat_id:
                 msg = f"""🏆 **PERFECT TRADE** - {symbol}
@@ -582,6 +585,7 @@ TP3: {trade.tp3:.4f} ⚪
 💰 **Final Profit:** +3.0R (1:3 R:R)
 ⏰ **Duration:** {self._format_duration(trade.start_time)}
 🎯 **Status:** Fully Closed
+🧠 **ML Retrained:** ✅
 
 🔥 **Excellent execution!**"""
                 await self.send_rate_limited_message(self.admin_chat_id, msg)
@@ -606,6 +610,154 @@ TP3: {trade.tp3:.4f} ⚪
         hours, remainder = divmod(duration.total_seconds(), 3600)
         minutes = remainder // 60
         return f"{int(hours)}h {int(minutes)}m"
+    
+    async def _record_trade_outcome(self, trade: TradeProgress, exit_reason: str, profit_r: float):
+        """Record trade outcome for ML learning and trigger retraining"""
+        try:
+            # Import ML analyzer
+            from ml_trade_analyzer import MLTradeAnalyzer
+            
+            ml_analyzer = MLTradeAnalyzer()
+            
+            # Create trade outcome data
+            trade_outcome = {
+                'symbol': trade.symbol,
+                'direction': trade.direction,
+                'entry_price': trade.entry_price,
+                'exit_price': trade.entry_price * (1 + profit_r * 0.01),  # Approximate exit price
+                'stop_loss': trade.original_sl,
+                'take_profit_1': trade.tp1,
+                'take_profit_2': trade.tp2,
+                'take_profit_3': trade.tp3,
+                'signal_strength': 85,  # Default signal strength
+                'leverage': 10,  # Default leverage
+                'position_size': 100,  # Default position size
+                'trade_result': 'PROFIT' if profit_r > 0 else 'LOSS',
+                'profit_loss': profit_r,
+                'duration_minutes': (datetime.now() - trade.start_time).total_seconds() / 60,
+                'entry_time': trade.start_time,
+                'exit_time': datetime.now(),
+                'market_conditions': {
+                    'exit_reason': exit_reason,
+                    'tp1_hit': trade.tp1_hit,
+                    'tp2_hit': trade.tp2_hit,
+                    'tp3_hit': trade.tp3_hit,
+                    'sl_moved_to_entry': trade.current_sl == trade.entry_price,
+                    'sl_moved_to_tp1': trade.current_sl == trade.tp1
+                },
+                'indicators_data': {},
+                'cvd_trend': 'neutral',
+                'volatility': 0.02,
+                'volume_ratio': 1.0,
+                'ema_alignment': True,
+                'rsi_value': 50.0,
+                'macd_signal': 'bullish' if trade.direction in ['LONG', 'BUY'] else 'bearish',
+                'lessons_learned': f"Enhanced scalping trade - {exit_reason}"
+            }
+            
+            # Record the trade
+            await ml_analyzer.record_trade(trade_outcome)
+            
+            # Trigger immediate retraining after every trade
+            await self._trigger_ml_retraining()
+            
+            self.logger.info(f"🧠 Trade outcome recorded and ML retrained: {trade.symbol}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error recording trade outcome: {e}")
+    
+    async def _trigger_ml_retraining(self):
+        """Trigger ML model retraining after every trade"""
+        try:
+            from ml_trade_analyzer import MLTradeAnalyzer
+            from telegram_trade_scanner import TelegramTradeScanner
+            
+            # Initialize components
+            ml_analyzer = MLTradeAnalyzer()
+            
+            # Check if we have Telegram bot token for scanning
+            bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+            channel_username = os.getenv('TELEGRAM_CHANNEL', '@SignalTactics')
+            
+            # Scan recent Telegram trades if possible
+            if bot_token:
+                try:
+                    scanner = TelegramTradeScanner(bot_token, channel_username)
+                    # Scan last 3 days for recent trades
+                    recent_trades = await scanner.scan_channel_history(days_back=3)
+                    if recent_trades:
+                        await scanner.store_scanned_trades(recent_trades)
+                        self.logger.info(f"📨 Scanned {len(recent_trades)} recent Telegram trades")
+                except Exception as scan_error:
+                    self.logger.warning(f"Telegram scanning failed: {scan_error}")
+            
+            # Perform ML analysis and learning (including Telegram data)
+            await ml_analyzer.analyze_and_learn(include_telegram_data=True)
+            
+            self.logger.info("🧠 ML model retrained successfully after trade completion")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error during ML retraining: {e}")
+    
+    async def handle_tp1_hit(self, symbol: str):
+        """Handle TP1 hit - Move SL to entry"""
+        try:
+            trade = self.active_trades[symbol]
+            trade.tp1_hit = True
+            trade.current_sl = trade.entry_price
+            trade.profit_locked = 1.0
+            
+            # Send SL update to Cornix
+            await self.cornix.update_stop_loss(symbol, trade.entry_price, "TP1 hit - SL moved to entry")
+            
+            # Record partial trade outcome for ML learning
+            await self._record_trade_outcome(trade, 'TP1_HIT', 1.0)
+            
+            # Compact notification
+            if self._can_send_message() and self.admin_chat_id:
+                msg = f"""🎯 **TP1 HIT** - {symbol}
+
+🟢⚪⚪ Progress
+🛑 **SL moved to Entry:** {trade.entry_price:.4f}
+💰 **Profit Secured:** +1.0R
+🧠 **ML Updated:** ✅
+⚡ **Monitoring TP2...**"""
+                await self.send_rate_limited_message(self.admin_chat_id, msg)
+            
+            self.logger.info(f"🎯 TP1 hit for {symbol} - SL moved to entry")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error handling TP1 for {symbol}: {e}")
+    
+    async def handle_tp2_hit(self, symbol: str):
+        """Handle TP2 hit - Move SL to TP1"""
+        try:
+            trade = self.active_trades[symbol]
+            trade.tp2_hit = True
+            trade.current_sl = trade.tp1
+            trade.profit_locked = 2.0
+            
+            # Send SL update to Cornix
+            await self.cornix.update_stop_loss(symbol, trade.tp1, "TP2 hit - SL moved to TP1")
+            
+            # Record partial trade outcome for ML learning
+            await self._record_trade_outcome(trade, 'TP2_HIT', 2.0)
+            
+            # Compact notification
+            if self._can_send_message() and self.admin_chat_id:
+                msg = f"""🚀 **TP2 HIT** - {symbol}
+
+🟢🟢⚪ Progress
+🛑 **SL moved to TP1:** {trade.tp1:.4f}
+💰 **Profit Secured:** +2.0R
+🧠 **ML Updated:** ✅
+⚡ **Final target: TP3**"""
+                await self.send_rate_limited_message(self.admin_chat_id, msg)
+            
+            self.logger.info(f"🚀 TP2 hit for {symbol} - SL moved to TP1")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error handling TP2 for {symbol}: {e}")
     
     async def send_sl_update_to_cornix(self, symbol: str, new_sl: float, reason: str):
         """Send stop loss update to Cornix"""

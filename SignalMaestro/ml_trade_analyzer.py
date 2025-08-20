@@ -183,13 +183,22 @@ class MLTradeAnalyzer:
             self.logger.error(f"Error getting trade count: {e}")
             return 0
     
-    async def analyze_and_learn(self):
+    async def analyze_and_learn(self, include_telegram_data: bool = True):
         """Main learning function that analyzes trades and updates models"""
         try:
             self.logger.info("🧠 Starting ML analysis and learning process...")
             
-            # Get trade data
+            # Get trade data from database
             trades_df = self._get_trades_dataframe()
+            
+            # Integrate Telegram channel data if available
+            if include_telegram_data:
+                telegram_data = await self._get_telegram_training_data()
+                if len(telegram_data) > 0:
+                    telegram_df = pd.DataFrame(telegram_data)
+                    trades_df = pd.concat([trades_df, telegram_df], ignore_index=True)
+                    self.logger.info(f"📨 Integrated {len(telegram_data)} Telegram trades")
+            
             if len(trades_df) < self.min_trades_for_learning:
                 self.logger.warning(f"Not enough trades for learning: {len(trades_df)}")
                 return
@@ -216,6 +225,69 @@ class MLTradeAnalyzer:
             
         except Exception as e:
             self.logger.error(f"Error in ML analysis: {e}")
+    
+    async def _get_telegram_training_data(self) -> List[Dict[str, Any]]:
+        """Get training data from Telegram scanner"""
+        try:
+            # Import here to avoid circular imports
+            from telegram_trade_scanner import TelegramTradeScanner
+            
+            # Initialize scanner (you'll need to configure these)
+            bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+            channel_username = os.getenv('TELEGRAM_CHANNEL', '@SignalTactics')
+            
+            if not bot_token:
+                self.logger.warning("No Telegram bot token configured")
+                return []
+            
+            scanner = TelegramTradeScanner(bot_token, channel_username)
+            
+            # Get training data from scanner
+            training_data = await scanner.get_training_data()
+            
+            # Convert to format compatible with ML analyzer
+            formatted_data = []
+            for trade in training_data:
+                formatted_trade = {
+                    'symbol': trade['symbol'],
+                    'direction': trade['direction'],
+                    'entry_price': trade['entry_price'],
+                    'exit_price': trade['entry_price'] * (1 + trade['profit_loss']/100) if trade['profit_loss'] else trade['entry_price'],
+                    'stop_loss': trade['stop_loss'],
+                    'take_profit_1': trade['tp1'],
+                    'take_profit_2': trade['tp2'],
+                    'take_profit_3': trade['tp3'],
+                    'signal_strength': trade.get('signal_strength', 85),
+                    'leverage': trade.get('leverage', 10),
+                    'position_size': 100,  # Default position size
+                    'trade_result': 'PROFIT' if trade['outcome'] == 'profit' else 'LOSS',
+                    'profit_loss': trade['profit_loss'],
+                    'duration_minutes': trade['duration_minutes'],
+                    'entry_time': trade['timestamp'],
+                    'exit_time': trade['timestamp'],  # Simplified
+                    'market_conditions': {
+                        'source': 'telegram_channel',
+                        'tp1_hit': trade['tp1_hit'],
+                        'tp2_hit': trade['tp2_hit'],
+                        'tp3_hit': trade['tp3_hit'],
+                        'sl_hit': trade['sl_hit']
+                    },
+                    'indicators_data': {},
+                    'cvd_trend': 'neutral',
+                    'volatility': 0.02,
+                    'volume_ratio': 1.0,
+                    'ema_alignment': True,
+                    'rsi_value': 50.0,
+                    'macd_signal': 'neutral',
+                    'lessons_learned': f"Telegram channel trade: {trade['outcome']}"
+                }
+                formatted_data.append(formatted_trade)
+            
+            return formatted_data
+            
+        except Exception as e:
+            self.logger.error(f"Error getting Telegram training data: {e}")
+            return []
     
     def _get_trades_dataframe(self) -> pd.DataFrame:
         """Get trades data as pandas DataFrame"""

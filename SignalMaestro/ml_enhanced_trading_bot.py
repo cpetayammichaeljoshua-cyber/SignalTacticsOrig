@@ -757,7 +757,9 @@ class MLEnhancedTradingBot:
 
                         # Convert timestamp from milliseconds to datetime with proper handling
                         try:
-                            df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
+                            # Ensure timestamp is numeric and convert to datetime
+                            df['timestamp'] = pd.to_numeric(df['timestamp'], errors='coerce')
+                            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce')
                         except (ValueError, TypeError) as e:
                             self.logger.error(f"Timestamp conversion error for {symbol}: {e}")
                             return None

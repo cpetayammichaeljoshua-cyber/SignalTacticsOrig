@@ -884,9 +884,7 @@ class MLEnhancedTradingBot:
 
             # 7. Support/Resistance levels
             try:
-                # Pass year for potential historical context if needed by the function
-                current_year = datetime.now().year
-                indicators['support_resistance'] = self._calculate_support_resistance(high, low, current_year)
+                indicators['support_resistance'] = self._calculate_support_resistance(high, low)
             except Exception as e:
                 self.logger.warning(f"Support/Resistance calculation error: {e}")
                 indicators['support_resistance'] = {'resistance': close[-1], 'support': close[-1], 'pivot': close[-1]}
@@ -1052,15 +1050,12 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 'uncertain'
 
-    def _calculate_support_resistance(self, high: np.array, low: np.array, year: int) -> Dict[str, float]:
+    def _calculate_support_resistance(self, high: np.array, low: np.array) -> Dict[str, float]:
         """Calculate support and resistance levels"""
         try:
             # Simple pivot point calculation
             recent_high = np.max(high[-20:])
             recent_low = np.min(low[-20:])
-
-            # The 'year' argument is now present, though not explicitly used in this simple implementation.
-            # It's here to fulfill the requirement of the fix.
 
             return {
                 'resistance': recent_high,

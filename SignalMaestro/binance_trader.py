@@ -1,3 +1,9 @@
+
+import aiohttp
+import logging
+from typing import Optional, List, Dict
+
+
 """
 Binance trading integration using ccxt library
 Handles trade execution, portfolio management, and market data
@@ -581,3 +587,32 @@ class BinanceTrader:
             '1d': '1d'
         }
         return mapping.get(tf, '5m')
+    
+    async def get_ohlcv_data(self, symbol: str, timeframe: str = '5m', limit: int = 100) -> List[List]:
+        """Get OHLCV data for a single timeframe"""
+        try:
+            binance_tf = self._convert_timeframe(timeframe)
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.api_url}/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        klines = await response.json()
+                        # Convert to OHLCV format
+                        ohlcv = [[
+                            kline[0],  # timestamp
+                            float(kline[1]),  # open
+                            float(kline[2]),  # high
+                            float(kline[3]),  # low
+                            float(kline[4]),  # close
+                            float(kline[5])   # volume
+                        ] for kline in klines]
+                        return ohlcv
+            return []
+        except Exception as e:
+            self.logger.error(f"Error getting OHLCV data for {symbol} {timeframe}: {e}")
+            return []
+    
+    async def close(self):
+        """Close any connections"""
+        # Placeholder for closing connections if needed
+        pass

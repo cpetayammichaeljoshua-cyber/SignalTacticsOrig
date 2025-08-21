@@ -161,8 +161,8 @@ class EnhancedPerfectScalpingBotV3:
             'LINKUSDT', 'UNIUSDT', 'LTCUSDT', 'BCHUSDT', 'ATOMUSDT'
         ]
 
-        # Rate limiting
-        self.max_signals_per_hour = 2
+        # Rate limiting disabled per user request
+        self.max_signals_per_hour = 999  # Effectively unlimited
         self.signals_sent_times = []
         self.last_signal_time = {} # To track last signal per symbol
 
@@ -234,8 +234,15 @@ class EnhancedPerfectScalpingBotV3:
             self.logger.info("✅ Cornix integration ready")
 
             # Initialize database
-            self.database.initialize()
-            self.logger.info("✅ Database initialized")
+            try:
+                if hasattr(self.database, 'initialize'):
+                    if asyncio.iscoroutinefunction(self.database.initialize):
+                        await self.database.initialize()
+                    else:
+                        self.database.initialize()
+                self.logger.info("✅ Database initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Database initialization skipped: {e}")
 
         except Exception as e:
             self.logger.error(f"Error initializing components: {e}")
@@ -244,10 +251,6 @@ class EnhancedPerfectScalpingBotV3:
     async def trading_cycle(self):
         """Main trading cycle with advanced analysis"""
         try:
-            # Check rate limits before scanning
-            if not self._can_send_signal():
-                return
-
             self.logger.info("🔍 Scanning markets with Advanced Time-Fibonacci Strategy...")
 
             # Get current time analysis
@@ -486,37 +489,8 @@ TP3: `${signal.tp3:.4f}` (34%)
             self.logger.error(f"Error recording trade for ML: {e}")
 
     def _can_send_signal(self) -> bool:
-        """Check if we can send a signal based on rate limits
-        - Max 2 signals per hour
-        - Min 30 minutes between signals per symbol
-        """
-        now = datetime.now()
-
-        # Remove signals older than 1 hour from the global sent times
-        self.signals_sent_times = [
-            t for t in self.signals_sent_times
-            if (now - t).total_seconds() < 3600
-        ]
-
-        # Check global hourly limit
-        if len(self.signals_sent_times) >= self.max_signals_per_hour:
-            self.logger.warning("Rate limit reached: Max 2 signals per hour.")
-            return False
-
-        # Check minimum interval between any signals (15 minutes equivalent to 900 seconds)
-        # The prompt says 1 trade per 30 minutes, so 1800 seconds
-        if self.signals_sent_times and (now - self.signals_sent_times[-1]).total_seconds() < 1800:
-            self.logger.warning("Rate limit reached: Minimum 30 minutes between signals.")
-            return False
-
-        # Optional: Check per-symbol rate limit if implemented
-        # for symbol in self.symbols:
-        #     if symbol in self.last_signal_time:
-        #         if (now - self.last_signal_time[symbol]).total_seconds() < 1800:
-        #             self.logger.warning(f"Rate limit for {symbol}: Minimum 30 minutes between signals.")
-        #             return False
-
-        return True
+        """Check if we can send a signal - rate limiting disabled"""
+        return True  # Rate limiting removed per user request
 
     def signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""

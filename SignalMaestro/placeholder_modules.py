@@ -62,6 +62,24 @@ class EnhancedCornixIntegration:
         """Close position placeholder"""
         return True
 
+class Database:
+    """Placeholder for Database"""
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def initialize(self):
+        """Initialize database placeholder"""
+        pass
+    
+    def save_signal_data(self, data):
+        """Save signal data placeholder"""
+        pass
+
+class Config:
+    """Placeholder for Config"""
+    def __init__(self):
+        pass
+
 class BinanceTrader:
     """Placeholder for Binance trader"""
     def __init__(self):

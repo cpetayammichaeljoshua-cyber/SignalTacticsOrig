@@ -28,7 +28,7 @@ class AdvancedScalpingSignal:
     tp2: float
     tp3: float
     signal_strength: float
-    leverage: int = 50
+    leverage: int = 35  # Default in 25x-50x range
     time_session: str = "UNKNOWN"
     fibonacci_level: float = 0.0
     time_confluence: float = 0.0
@@ -416,20 +416,33 @@ class AdvancedTimeFibonacciStrategy:
                 tp2 = current_price - (sl_distance * 2.618)
                 tp3 = current_price - (sl_distance * 4.236)
 
-            # Calculate signal strength
-            base_strength = 70
+            # Calculate signal strength with enhanced factors
+            base_strength = 75
 
-            # Time confluence bonus
-            base_strength += time_analysis['time_strength'] * 15
+            # Enhanced time confluence bonus
+            base_strength += time_analysis['time_strength'] * 18
 
-            # Fibonacci confluence bonus
-            base_strength += fib_analysis['confluence_strength'] * 15
+            # Enhanced Fibonacci confluence bonus
+            base_strength += fib_analysis['confluence_strength'] * 17
 
-            # ML prediction bonus
+            # Enhanced ML prediction bonus
             if ml_prediction and ml_prediction.get('prediction') == 'favorable':
-                base_strength += 10
+                base_strength += 12
+                if ml_prediction.get('telegram_enhanced'):
+                    base_strength += 3  # Telegram learning bonus
 
             signal_strength = min(base_strength, 100)
+
+            # Dynamic leverage based on signal strength and confluence
+            leverage = 25  # Minimum leverage
+            if signal_strength >= 90:
+                leverage = min(50, 25 + int((signal_strength - 90) * 2.5))  # Up to 50x for strongest signals
+            elif signal_strength >= 85:
+                leverage = min(45, 25 + int((signal_strength - 85) * 4))     # Up to 45x
+            elif signal_strength >= 80:
+                leverage = min(40, 25 + int((signal_strength - 80) * 3))     # Up to 40x
+            else:
+                leverage = min(35, 25 + int((signal_strength - 75) * 2))     # Up to 35x
 
             # Create advanced signal
             signal = AdvancedScalpingSignal(
@@ -441,7 +454,7 @@ class AdvancedTimeFibonacciStrategy:
                 tp2=tp2,
                 tp3=tp3,
                 signal_strength=signal_strength,
-                leverage=50,
+                leverage=leverage,
                 time_session=time_analysis['session'],
                 fibonacci_level=closest_fib['price'] if closest_fib else 0.0,
                 time_confluence=time_analysis['time_strength'],

@@ -199,7 +199,7 @@ class Config:
     def __init__(self):
         # Telegram Configuration
         self.TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv('TELEGRAM_BOT_TOKEN')
-        self.TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID', '@TradeTactics_bot')
+        self.TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID') or '@TradeTactics_bot'
         
         # Trading Configuration
         self.BINANCE_API_KEY: Optional[str] = os.getenv('BINANCE_API_KEY')

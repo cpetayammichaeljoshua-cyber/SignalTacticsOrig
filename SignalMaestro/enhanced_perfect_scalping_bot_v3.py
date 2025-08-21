@@ -20,6 +20,19 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 import time
+from io import BytesIO
+import base64
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend for server
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    import pandas as pd
+    import numpy as np
+    CHART_AVAILABLE = True
+except ImportError:
+    CHART_AVAILABLE = False
 
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -110,9 +123,10 @@ class EnhancedPerfectScalpingBotV3:
         self.active_trades: Dict[str, TradeProgress] = {}
         self.running = False
         
-        # Telegram bot
-        self.bot_token = self.config.TELEGRAM_BOT_TOKEN
-        self.admin_chat_id = self.config.TELEGRAM_CHAT_ID
+        # Telegram bot configuration
+        self.bot_token = self.config.TELEGRAM_BOT_TOKEN or os.getenv('TELEGRAM_BOT_TOKEN')
+        self.admin_chat_id = self.config.TELEGRAM_CHAT_ID or os.getenv('TELEGRAM_CHAT_ID') or "@TradeTactics_bot"
+        self.channel_id = "@SignalTactics"
         self.application = None
         
         # Performance tracking
@@ -124,11 +138,38 @@ class EnhancedPerfectScalpingBotV3:
             'ml_learning_active': False
         }
         
-        # Supported trading pairs for scanning
+        # Comprehensive Binance trading pairs (all major ones)
         self.trading_pairs = [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 
-            'SOLUSDT', 'DOGEUSDT', 'MATICUSDT', 'LINKUSDT', 'AVAXUSDT',
-            'DOTUSDT', 'LTCUSDT', 'UNIUSDT', 'ATOMUSDT', 'NEARUSDT'
+            # Top Market Cap
+            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT',
+            'ADAUSDT', 'DOGEUSDT', 'TRXUSDT', 'AVAXUSDT', 'SHIBUSDT',
+            
+            # DeFi & Layer 1
+            'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'UNIUSDT', 'LTCUSDT',
+            'BCHUSDT', 'XLMUSDT', 'VETUSDT', 'FILUSDT', 'ETCUSDT',
+            
+            # Popular Alts
+            'ATOMUSDT', 'MANAUSDT', 'SANDUSDT', 'AXSUSDT', 'ICPUSDT',
+            'THETAUSDT', 'FTMUSDT', 'ALGOUSDT', 'EOSUSDT', 'AAVEUSDT',
+            
+            # Gaming & NFT
+            'ENJUSDT', 'CHZUSDT', 'GALAUSDT', 'FLOWUSDT', 'IMXUSDT',
+            
+            # Layer 2 & Scaling
+            'OPUSDT', 'ARBUSDT', 'LDOUSDT', 'APTUSDT', 'SUIUSDT',
+            
+            # Meme Coins
+            'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT', 'WIFUSDT',
+            
+            # AI & Tech
+            'FETUSDT', 'AGIXUSDT', 'RNDRУСDT', 'OCEANUSDT',
+            
+            # Traditional Crypto
+            'XMRUSDT', 'DASHUSDT', 'ZECUSDT', 'XTZUSDT',
+            
+            # Recent Popular
+            'NEARUSDT', 'ROSEUSDT', 'ONEUSDT', 'HARMONYUSDT',
+            'ZILAUSDT', 'IOTAUSDT', 'HBARUSDT', 'EGLDUSDT'
         ]
     
     def _setup_logging(self) -> logging.Logger:
@@ -331,6 +372,9 @@ class EnhancedPerfectScalpingBotV3:
             # Store active trade
             self.active_trades[signal.symbol] = trade
             
+            # Generate chart
+            chart_b64 = await self._generate_signal_chart(signal, ohlcv_data)
+            
             # Forward to Cornix
             cornix_success = await self.forward_to_cornix(signal)
             
@@ -338,10 +382,15 @@ class EnhancedPerfectScalpingBotV3:
             self.rate_limiter.record_trade()
             self.stats['total_signals'] += 1
             
-            # Send compact notification
+            # Send signal to channel with chart
             if self.rate_limiter.can_send_message():
                 notification = self._create_signal_notification(signal, trade, cornix_success, ml_prediction)
+                
+                # Send to admin chat
                 await self.send_telegram_message(notification)
+                
+                # Send to channel with chart
+                await self.send_signal_to_channel(notification, signal, chart_b64)
             
             # Record trade data for ML
             await self._record_trade_for_ml(signal, trade, ml_prediction)
@@ -353,6 +402,81 @@ class EnhancedPerfectScalpingBotV3:
             
         except Exception as e:
             self.logger.error(f"❌ Error processing ultimate signal: {e}")
+    
+    async def _generate_signal_chart(self, signal: UltimateSignal, ohlcv_data: Dict[str, List]) -> Optional[str]:
+        """Generate trading chart for the signal"""
+        if not CHART_AVAILABLE:
+            return None
+            
+        try:
+            # Use 1h data for chart
+            if '1h' not in ohlcv_data or len(ohlcv_data['1h']) < 50:
+                return None
+            
+            # Prepare data
+            data = ohlcv_data['1h'][-100:]  # Last 100 candles
+            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            
+            # Create chart
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[3, 1])
+            
+            # Price chart
+            ax1.plot(df.index, df['close'], color='#2E86AB', linewidth=1.5, label='Price')
+            
+            # Entry point
+            current_time = df.index[-1]
+            ax1.axhline(y=signal.entry_price, color='#F24236', linestyle='-', linewidth=2, label=f'Entry: ${signal.entry_price:.4f}')
+            ax1.axhline(y=signal.stop_loss, color='#FF6B6B', linestyle='--', linewidth=1.5, label=f'SL: ${signal.stop_loss:.4f}')
+            ax1.axhline(y=signal.tp1, color='#4ECDC4', linestyle='--', linewidth=1.5, label=f'TP1: ${signal.tp1:.4f}')
+            ax1.axhline(y=signal.tp2, color='#45B7D1', linestyle='--', linewidth=1.5, label=f'TP2: ${signal.tp2:.4f}')
+            ax1.axhline(y=signal.tp3, color='#96CEB4', linestyle='--', linewidth=1.5, label=f'TP3: ${signal.tp3:.4f}')
+            
+            # Signal arrow
+            direction_emoji = "🔥LONG🔥" if signal.direction == 'LONG' else "❄️SHORT❄️"
+            ax1.annotate(f'{direction_emoji}\n{signal.signal_strength:.1f}%', 
+                        xy=(current_time, signal.entry_price),
+                        xytext=(10, 10 if signal.direction == 'LONG' else -10),
+                        textcoords='offset points',
+                        bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.8),
+                        fontsize=10, fontweight='bold')
+            
+            ax1.set_title(f'{signal.symbol} - Ultimate Scalping Signal ({signal.direction})', 
+                         fontsize=16, fontweight='bold', color='#2E86AB')
+            ax1.set_ylabel('Price (USDT)', fontsize=12)
+            ax1.legend(loc='upper left', fontsize=9)
+            ax1.grid(True, alpha=0.3)
+            
+            # Volume chart
+            ax2.bar(df.index, df['volume'], color='#A8DADC', alpha=0.7)
+            ax2.set_ylabel('Volume', fontsize=12)
+            ax2.set_xlabel('Time', fontsize=12)
+            ax2.grid(True, alpha=0.3)
+            
+            # Format x-axis
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight', 
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            
+            # Encode to base64
+            chart_b64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            plt.close(fig)
+            buffer.close()
+            
+            return chart_b64
+            
+        except Exception as e:
+            self.logger.error(f"Chart generation error: {e}")
+            return None
     
     def _create_signal_notification(self, signal: UltimateSignal, trade: TradeProgress, cornix_success: bool, ml_prediction: Dict) -> str:
         """Create compact signal notification"""
@@ -636,15 +760,17 @@ class EnhancedPerfectScalpingBotV3:
         except Exception as e:
             self.logger.error(f"Cleanup error: {e}")
     
-    async def send_telegram_message(self, message: str, parse_mode: str = 'Markdown'):
+    async def send_telegram_message(self, message: str, parse_mode: str = 'Markdown', chat_id: str = None):
         """Send rate-limited message to Telegram"""
         try:
             if not self.rate_limiter.can_send_message():
                 return False
             
+            target_chat = chat_id or self.admin_chat_id
+            
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             payload = {
-                'chat_id': self.admin_chat_id,
+                'chat_id': target_chat,
                 'text': message,
                 'parse_mode': parse_mode
             }
@@ -661,6 +787,64 @@ class EnhancedPerfectScalpingBotV3:
                         
         except Exception as e:
             self.logger.error(f"Message send error: {e}")
+            return False
+    
+    async def send_signal_to_channel(self, message: str, signal: UltimateSignal, chart_b64: Optional[str]):
+        """Send signal with chart to Telegram channel"""
+        try:
+            if not self.bot_token:
+                self.logger.warning("No bot token available for channel posting")
+                return False
+            
+            # Enhanced channel message format
+            channel_message = f"""🔥 **ULTIMATE SCALPING SIGNAL** 🔥
+
+{message}
+
+📊 **Strategy:** Ultimate V3 - Most Profitable Indicators
+⚡ **Auto-Management:** SL moves automatically on TP hits
+🌐 **Cornix:** Connected | 🧠 **ML Filtered:** ✅
+
+*Follow @TradeTactics_bot for more signals*"""
+            
+            # Send text message first
+            await self.send_telegram_message(channel_message, chat_id=self.channel_id)
+            
+            # Send chart if available
+            if chart_b64 and CHART_AVAILABLE:
+                await self.send_chart_to_channel(chart_b64, signal)
+                
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error sending to channel: {e}")
+            return False
+    
+    async def send_chart_to_channel(self, chart_b64: str, signal: UltimateSignal):
+        """Send chart image to channel"""
+        try:
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+            
+            chart_bytes = base64.b64decode(chart_b64)
+            
+            # Create form data
+            data = aiohttp.FormData()
+            data.add_field('chat_id', self.channel_id)
+            data.add_field('caption', f'📈 {signal.symbol} Chart Analysis - {signal.direction} Signal')
+            data.add_field('photo', chart_bytes, filename=f'{signal.symbol}_chart.png', content_type='image/png')
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=data, timeout=30) as response:
+                    if response.status == 200:
+                        self.logger.info(f"Chart sent to channel for {signal.symbol}")
+                        return True
+                    else:
+                        error = await response.text()
+                        self.logger.warning(f"Chart send error: {error}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"Chart send error: {e}")
             return False
     
     def _create_startup_message(self) -> str:

@@ -199,7 +199,7 @@ class Config:
     def __init__(self):
         # Telegram Configuration
         self.TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv('TELEGRAM_BOT_TOKEN')
-        self.TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID')
+        self.TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID', '@TradeTactics_bot')
         
         # Trading Configuration
         self.BINANCE_API_KEY: Optional[str] = os.getenv('BINANCE_API_KEY')
@@ -221,19 +221,14 @@ class Config:
         
     def validate(self) -> bool:
         """Validate required configuration"""
-        required_vars = [
-            self.TELEGRAM_BOT_TOKEN,
-            self.TELEGRAM_CHAT_ID
-        ]
-        
-        missing_vars = [var for var in required_vars if not var]
-        
-        if missing_vars:
+        if not self.TELEGRAM_BOT_TOKEN:
             print("Missing required environment variables:")
-            if not self.TELEGRAM_BOT_TOKEN:
-                print("- TELEGRAM_BOT_TOKEN")
-            if not self.TELEGRAM_CHAT_ID:
-                print("- TELEGRAM_CHAT_ID")
+            print("- TELEGRAM_BOT_TOKEN (Required)")
+            print("Please set TELEGRAM_BOT_TOKEN in the Secrets tab")
             return False
+            
+        # TELEGRAM_CHAT_ID is optional, will default to @TradeTactics_bot
+        if not self.TELEGRAM_CHAT_ID:
+            self.TELEGRAM_CHAT_ID = '@TradeTactics_bot'
             
         return True

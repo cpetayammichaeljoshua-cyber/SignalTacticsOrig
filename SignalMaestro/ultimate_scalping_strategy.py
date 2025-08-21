@@ -16,7 +16,12 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple
-import talib
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    TALIB_AVAILABLE = False
+    
 from dataclasses import dataclass
 import time
 
@@ -169,7 +174,14 @@ class UltimateScalpingStrategy:
             indicators['market_structure'] = self._calculate_market_structure(high, low, close)
             
             # 11. ATR for volatility
-            indicators['atr'] = talib.ATR(high, low, close, timeperiod=14)[-1]
+            if TALIB_AVAILABLE:
+                indicators['atr'] = talib.ATR(high, low, close, timeperiod=14)[-1]
+            else:
+                # Simple ATR calculation
+                tr = np.maximum(high[1:] - low[1:], 
+                               np.maximum(np.abs(high[1:] - close[:-1]), 
+                                         np.abs(low[1:] - close[:-1])))
+                indicators['atr'] = np.mean(tr[-14:]) if len(tr) >= 14 else (high[-1] - low[-1])
             
             # 12. Current price info
             indicators['current_price'] = close[-1]
@@ -187,7 +199,20 @@ class UltimateScalpingStrategy:
             period = 10
             multiplier = 3.0
             
-            atr = talib.ATR(high, low, close, timeperiod=period)
+            if TALIB_AVAILABLE:
+                atr = talib.ATR(high, low, close, timeperiod=period)
+            else:
+                # Simple ATR fallback
+                tr = np.maximum(high[1:] - low[1:], 
+                               np.maximum(np.abs(high[1:] - close[:-1]), 
+                                         np.abs(low[1:] - close[:-1])))
+                atr_values = []
+                for i in range(len(close)):
+                    if i < period:
+                        atr_values.append(high[i] - low[i])
+                    else:
+                        atr_values.append(np.mean(tr[i-period:i]))
+                atr = np.array(atr_values)
             hl2 = (high + low) / 2
             
             upper_band = hl2 + (multiplier * atr)
@@ -222,9 +247,22 @@ class UltimateScalpingStrategy:
     def _calculate_ema_confluence(self, close: np.array) -> Dict[str, Any]:
         """Calculate EMA confluence (21, 55, 200)"""
         try:
-            ema21 = talib.EMA(close, timeperiod=21)
-            ema55 = talib.EMA(close, timeperiod=55)
-            ema200 = talib.EMA(close, timeperiod=200)
+            if TALIB_AVAILABLE:
+                ema21 = talib.EMA(close, timeperiod=21)
+                ema55 = talib.EMA(close, timeperiod=55)
+                ema200 = talib.EMA(close, timeperiod=200)
+            else:
+                # Simple EMA fallback
+                def simple_ema(data, period):
+                    alpha = 2 / (period + 1)
+                    ema = [data[0]]
+                    for price in data[1:]:
+                        ema.append(alpha * price + (1 - alpha) * ema[-1])
+                    return np.array(ema)
+                
+                ema21 = simple_ema(close, 21)
+                ema55 = simple_ema(close, 55)
+                ema200 = simple_ema(close, 200)
             
             current_price = close[-1]
             
@@ -261,7 +299,25 @@ class UltimateScalpingStrategy:
     def _calculate_rsi_with_divergence(self, close: np.array, high: np.array, low: np.array) -> Dict[str, Any]:
         """Calculate RSI with divergence detection"""
         try:
-            rsi = talib.RSI(close, timeperiod=14)
+            if TALIB_AVAILABLE:
+                rsi = talib.RSI(close, timeperiod=14)
+            else:
+                # Simple RSI fallback
+                def simple_rsi(prices, period=14):
+                    deltas = np.diff(prices)
+                    gains = np.where(deltas > 0, deltas, 0)
+                    losses = np.where(deltas < 0, -deltas, 0)
+                    
+                    avg_gains = np.convolve(gains, np.ones(period)/period, mode='valid')
+                    avg_losses = np.convolve(losses, np.ones(period)/period, mode='valid')
+                    
+                    rs = avg_gains / (avg_losses + 1e-10)
+                    rsi_vals = 100 - (100 / (1 + rs))
+                    
+                    # Pad to match original length
+                    return np.concatenate([np.full(period, 50), rsi_vals])
+                
+                rsi = simple_rsi(close)
             current_rsi = rsi[-1]
             
             # RSI levels
@@ -319,7 +375,22 @@ class UltimateScalpingStrategy:
     def _calculate_macd_momentum(self, close: np.array) -> Dict[str, Any]:
         """Calculate MACD with momentum analysis"""
         try:
-            macd, macdsignal, macdhist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+            if TALIB_AVAILABLE:
+                macd, macdsignal, macdhist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+            else:
+                # Simple MACD fallback
+                def simple_ema(data, period):
+                    alpha = 2 / (period + 1)
+                    ema = [data[0]]
+                    for price in data[1:]:
+                        ema.append(alpha * price + (1 - alpha) * ema[-1])
+                    return np.array(ema)
+                
+                ema12 = simple_ema(close, 12)
+                ema26 = simple_ema(close, 26)
+                macd = ema12 - ema26
+                macdsignal = simple_ema(macd, 9)
+                macdhist = macd - macdsignal
             
             current_macd = macd[-1]
             current_signal = macdsignal[-1]
@@ -379,7 +450,16 @@ class UltimateScalpingStrategy:
         """Calculate Bollinger Bands squeeze"""
         try:
             # Bollinger Bands
-            upper, middle, lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+            if TALIB_AVAILABLE:
+                upper, middle, lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+            else:
+                # Simple Bollinger Bands fallback
+                period = 20
+                std_dev = 2
+                middle = np.convolve(close, np.ones(period)/period, mode='same')
+                std = np.array([np.std(close[max(0,i-period):i+1]) for i in range(len(close))])
+                upper = middle + (std * std_dev)
+                lower = middle - (std * std_dev)
             
             # Band width
             band_width = (upper[-1] - lower[-1]) / middle[-1] * 100
@@ -411,7 +491,24 @@ class UltimateScalpingStrategy:
     def _calculate_stochastic_analysis(self, high: np.array, low: np.array, close: np.array) -> Dict[str, Any]:
         """Calculate Stochastic oscillator analysis"""
         try:
-            slowk, slowd = talib.STOCH(high, low, close, fastk_period=14, slowk_period=3, slowk_matype=0, slowd_period=3, slowd_matype=0)
+            if TALIB_AVAILABLE:
+                slowk, slowd = talib.STOCH(high, low, close, fastk_period=14, slowk_period=3, slowk_matype=0, slowd_period=3, slowd_matype=0)
+            else:
+                # Simple Stochastic fallback
+                period = 14
+                k_values = []
+                for i in range(len(close)):
+                    if i < period - 1:
+                        k_values.append(50)
+                    else:
+                        lowest_low = np.min(low[i-period+1:i+1])
+                        highest_high = np.max(high[i-period+1:i+1])
+                        k = 100 * ((close[i] - lowest_low) / (highest_high - lowest_low + 1e-10))
+                        k_values.append(k)
+                
+                slowk = np.array(k_values)
+                # Simple moving average for %D
+                slowd = np.convolve(slowk, np.ones(3)/3, mode='same')
             
             current_k = slowk[-1]
             current_d = slowd[-1]

@@ -25,11 +25,11 @@ from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 from config import Config
-from ultimate_scalping_strategy import UltimateScalpingStrategy, UltimateSignal
-from enhanced_cornix_integration import EnhancedCornixIntegration
-from binance_trader import BinanceTrader
-from ml_trade_analyzer import MLTradeAnalyzer
-from database import Database
+from .ultimate_scalping_strategy import UltimateScalpingStrategy, UltimateSignal
+from .enhanced_cornix_integration import EnhancedCornixIntegration
+from .binance_trader import BinanceTrader
+from .ml_trade_analyzer import MLTradeAnalyzer
+from .database import Database
 
 @dataclass
 class TradeProgress:

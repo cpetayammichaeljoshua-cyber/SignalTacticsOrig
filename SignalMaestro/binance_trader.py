@@ -497,3 +497,87 @@ class BinanceTrader:
         except Exception as e:
             self.logger.error(f"Error getting market summary: {e}")
             return {}
+#!/usr/bin/env python3
+"""
+Binance Trading Integration
+"""
+
+import asyncio
+import logging
+import aiohttp
+import json
+from typing import Dict, Any, Optional, List
+
+class BinanceTrader:
+    """Binance trading interface"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.api_url = "https://api.binance.com"
+        self.api_key = None
+        self.api_secret = None
+        
+    async def test_connection(self) -> bool:
+        """Test Binance API connection"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.api_url}/api/v3/ping") as response:
+                    return response.status == 200
+        except:
+            return False
+    
+    async def get_current_price(self, symbol: str) -> Optional[float]:
+        """Get current price for symbol"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.api_url}/api/v3/ticker/price?symbol={symbol}") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return float(data['price'])
+        except Exception as e:
+            self.logger.error(f"Error getting price for {symbol}: {e}")
+        return None
+    
+    async def get_multi_timeframe_data(self, symbol: str, timeframes: List[str], limit: int = 100) -> Dict[str, List]:
+        """Get OHLCV data for multiple timeframes"""
+        try:
+            data = {}
+            
+            for tf in timeframes:
+                # Convert timeframe format
+                binance_tf = self._convert_timeframe(tf)
+                
+                async with aiohttp.ClientSession() as session:
+                    url = f"{self.api_url}/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            klines = await response.json()
+                            # Convert to OHLCV format
+                            ohlcv = [[
+                                kline[0],  # timestamp
+                                float(kline[1]),  # open
+                                float(kline[2]),  # high
+                                float(kline[3]),  # low
+                                float(kline[4]),  # close
+                                float(kline[5])   # volume
+                            ] for kline in klines]
+                            data[tf] = ohlcv
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error getting multi-timeframe data: {e}")
+            return {}
+    
+    def _convert_timeframe(self, tf: str) -> str:
+        """Convert timeframe to Binance format"""
+        mapping = {
+            '1m': '1m',
+            '3m': '3m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1d'
+        }
+        return mapping.get(tf, '5m')

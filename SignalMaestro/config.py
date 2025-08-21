@@ -185,3 +185,55 @@ class Config:
             'log_level': cls.LOG_LEVEL,
             'testnet_mode': cls.BINANCE_TESTNET
         }
+#!/usr/bin/env python3
+"""
+Configuration Module
+"""
+
+import os
+from typing import Optional
+
+class Config:
+    """Configuration class for trading bot"""
+    
+    def __init__(self):
+        # Telegram Configuration
+        self.TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv('TELEGRAM_BOT_TOKEN')
+        self.TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID')
+        
+        # Trading Configuration
+        self.BINANCE_API_KEY: Optional[str] = os.getenv('BINANCE_API_KEY')
+        self.BINANCE_API_SECRET: Optional[str] = os.getenv('BINANCE_API_SECRET')
+        
+        # Cornix Configuration
+        self.CORNIX_API_KEY: Optional[str] = os.getenv('CORNIX_API_KEY')
+        self.CORNIX_WEBHOOK_URL: Optional[str] = os.getenv('CORNIX_WEBHOOK_URL')
+        
+        # Bot Settings
+        self.MAX_CONCURRENT_TRADES: int = 3
+        self.DEFAULT_RISK_PERCENTAGE: float = 2.0
+        self.DEFAULT_LEVERAGE: int = 50
+        self.MARGIN_TYPE: str = "cross"
+        
+        # Rate Limiting
+        self.MAX_MESSAGES_PER_HOUR: int = 3
+        self.MIN_TRADE_INTERVAL_SECONDS: int = 900  # 15 minutes
+        
+    def validate(self) -> bool:
+        """Validate required configuration"""
+        required_vars = [
+            self.TELEGRAM_BOT_TOKEN,
+            self.TELEGRAM_CHAT_ID
+        ]
+        
+        missing_vars = [var for var in required_vars if not var]
+        
+        if missing_vars:
+            print("Missing required environment variables:")
+            if not self.TELEGRAM_BOT_TOKEN:
+                print("- TELEGRAM_BOT_TOKEN")
+            if not self.TELEGRAM_CHAT_ID:
+                print("- TELEGRAM_CHAT_ID")
+            return False
+            
+        return True

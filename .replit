@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Adaptive ML Trading Bot"
+runButton = "Enhanced Perfect Scalping Bot V2"
 
 [[workflows.workflow]]
 name = "Project"
@@ -155,6 +155,15 @@ mode = "sequential"
 task = "shell.exec"
 args = "python setup_uptime_monitoring.py"
 
+[[workflows.workflow]]
+name = "Enhanced Perfect Scalping Bot V2"
+author = 46695900
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_enhanced_bot_v2.py"
+
 [[ports]]
 localPort = 5000
 externalPort = 80
@@ -164,4 +173,4 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["sh", "-c", "python start_ultimate_bot.py"]
+run = ["sh", "-c", "python start_enhanced_bot_v2.py"]

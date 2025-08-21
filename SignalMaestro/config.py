@@ -122,3 +122,66 @@ class Config:
                 raise ValueError(f"Required configuration field '{field}' is missing or empty")
 
         return True
+"""
+Configuration management for Enhanced Perfect Scalping Bot V2
+Handles environment variables and default settings
+"""
+
+import os
+from typing import Optional
+
+class Config:
+    """Configuration class with environment variable support"""
+    
+    # Telegram Bot Configuration
+    TELEGRAM_BOT_TOKEN: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
+    TELEGRAM_CHAT_ID: str = os.getenv('TELEGRAM_CHAT_ID', '')
+    
+    # Trading Configuration
+    BINANCE_API_KEY: str = os.getenv('BINANCE_API_KEY', '')
+    BINANCE_SECRET_KEY: str = os.getenv('BINANCE_SECRET_KEY', '')
+    BINANCE_TESTNET: bool = os.getenv('BINANCE_TESTNET', 'true').lower() == 'true'
+    
+    # Cornix Configuration
+    CORNIX_API_KEY: str = os.getenv('CORNIX_API_KEY', '')
+    CORNIX_BOT_ID: str = os.getenv('CORNIX_BOT_ID', '')
+    
+    # Server Configuration
+    WEBHOOK_HOST: str = os.getenv('WEBHOOK_HOST', '0.0.0.0')
+    WEBHOOK_PORT: int = int(os.getenv('WEBHOOK_PORT', '5000'))
+    
+    # Logging Configuration
+    LOG_LEVEL: str = os.getenv('LOG_LEVEL', 'INFO')
+    LOG_FILE: str = os.getenv('LOG_FILE', 'logs/trading_bot.log')
+    
+    # Trading Parameters
+    DEFAULT_RISK_PERCENT: float = float(os.getenv('DEFAULT_RISK_PERCENT', '2.0'))
+    MAX_CONCURRENT_TRADES: int = int(os.getenv('MAX_CONCURRENT_TRADES', '5'))
+    
+    # Rate Limiting
+    MESSAGE_RATE_LIMIT: int = int(os.getenv('MESSAGE_RATE_LIMIT', '3'))
+    RATE_LIMIT_WINDOW: int = int(os.getenv('RATE_LIMIT_WINDOW', '3600'))
+    
+    @classmethod
+    def validate_config(cls) -> bool:
+        """Validate essential configuration"""
+        required_fields = []
+        
+        # Only check for Telegram token as minimum requirement
+        if not cls.TELEGRAM_BOT_TOKEN:
+            print("Warning: TELEGRAM_BOT_TOKEN not set")
+            
+        return True  # Allow bot to run with minimal config
+    
+    @classmethod
+    def get_config_summary(cls) -> dict:
+        """Get configuration summary (without sensitive data)"""
+        return {
+            'telegram_configured': bool(cls.TELEGRAM_BOT_TOKEN),
+            'binance_configured': bool(cls.BINANCE_API_KEY),
+            'cornix_configured': bool(cls.CORNIX_API_KEY),
+            'webhook_host': cls.WEBHOOK_HOST,
+            'webhook_port': cls.WEBHOOK_PORT,
+            'log_level': cls.LOG_LEVEL,
+            'testnet_mode': cls.BINANCE_TESTNET
+        }

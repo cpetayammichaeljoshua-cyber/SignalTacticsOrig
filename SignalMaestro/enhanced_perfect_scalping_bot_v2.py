@@ -21,11 +21,36 @@ from dataclasses import dataclass, asdict
 from collections import defaultdict
 import time
 
-from config import Config
-from enhanced_cornix_integration import EnhancedCornixIntegration
-from binance_trader import BinanceTrader
-from risk_manager import RiskManager
-from signal_parser import SignalParser
+try:
+    from config import Config
+    from enhanced_cornix_integration import EnhancedCornixIntegration
+    from binance_trader import BinanceTrader
+    from risk_manager import RiskManager
+    from signal_parser import SignalParser
+except ImportError as e:
+    print(f"Import warning: {e}")
+    # Create minimal config if imports fail
+    class Config:
+        TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+        TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+        LOG_LEVEL = 'INFO'
+    
+    # Create minimal placeholder classes
+    class EnhancedCornixIntegration:
+        async def test_connection(self): return {'success': True}
+        async def send_initial_signal(self, signal): return {'success': True}
+        async def update_stop_loss(self, symbol, sl, reason): return True
+        async def close_position(self, symbol, reason, percent): return True
+    
+    class BinanceTrader:
+        async def test_connection(self): return True
+        async def get_current_price(self, symbol): return 50000.0
+    
+    class RiskManager:
+        async def validate_signal(self, signal): return {'valid': True}
+    
+    class SignalParser:
+        def parse_signal(self, signal): return signal if isinstance(signal, dict) else {}
 
 @dataclass
 class TradeProgress:

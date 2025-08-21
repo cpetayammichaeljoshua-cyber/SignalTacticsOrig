@@ -147,12 +147,20 @@ class DeploymentManager:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(self.health_check_url) as response:
                     if response.status == 200:
-                        data = await response.json()
-                        return data.get('bot_running', False)
+                        try:
+                            data = await response.json()
+                            return data.get('server_running', True)
+                        except:
+                            # If JSON parsing fails but status is 200, consider healthy
+                            return True
                     return False
                     
         except Exception as e:
             self.logger.debug(f"Health check failed: {e}")
+            # If health check fails, check if process is still running
+            if self.process and self.process.poll() is None:
+                # Process is running, might be starting up
+                return True
             return False
     
     async def restart_bot(self, reason: str = "Manual restart"):

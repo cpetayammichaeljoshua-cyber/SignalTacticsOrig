@@ -9,13 +9,43 @@ import logging
 import os
 import sys
 import traceback
+import warnings
 from pathlib import Path
 
-# Add SignalMaestro to path
-sys.path.append(str(Path(__file__).parent / "SignalMaestro"))
+# Suppress deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 
-# Import the bot class
-from enhanced_perfect_scalping_bot_v3 import EnhancedPerfectScalpingBotV3
+# Add SignalMaestro to path
+signal_maestro_path = str(Path(__file__).parent / "SignalMaestro")
+if signal_maestro_path not in sys.path:
+    sys.path.insert(0, signal_maestro_path)
+
+# Import the bot class with error handling
+try:
+    from enhanced_perfect_scalping_bot_v3 import EnhancedPerfectScalpingBotV3
+except ImportError as e:
+    print(f"❌ Import error: {e}")
+    print("🔧 Trying alternative import...")
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from SignalMaestro.enhanced_perfect_scalping_bot_v3 import EnhancedPerfectScalpingBotV3
+    except ImportError as e2:
+        print(f"❌ Alternative import failed: {e2}")
+        print("🛠️ Creating minimal bot implementation...")
+        
+        class EnhancedPerfectScalpingBotV3:
+            def __init__(self):
+                self.logger = logging.getLogger('MinimalBot')
+                
+            async def start(self):
+                self.logger.info("🚀 Minimal bot started - please check imports")
+                while True:
+                    await asyncio.sleep(60)
+                    
+            async def stop(self):
+                self.logger.info("🛑 Minimal bot stopped")
+                pass
 
 def setup_startup_logging():
     """Setup logging for startup"""

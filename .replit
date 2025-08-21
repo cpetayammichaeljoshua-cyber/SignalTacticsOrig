@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Enhanced Perfect Scalping Bot V2"
+runButton = "Ultimate Scalping Bot V3"
 
 [[workflows.workflow]]
 name = "Project"
@@ -164,9 +164,18 @@ mode = "sequential"
 task = "shell.exec"
 args = "python start_enhanced_bot_v2.py"
 
+[[workflows.workflow]]
+name = "Ultimate Scalping Bot V3"
+author = 46695900
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_enhanced_bot_v3.py"
+
 [[ports]]
 localPort = 5000
-externalPort = 80
+externalPort = 5173
 
 [[ports]]
 localPort = 8080

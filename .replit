@@ -171,7 +171,7 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_enhanced_bot_v3.py"
+args = "python start_ultimate_bot.py"
 
 [[ports]]
 localPort = 3000

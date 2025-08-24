@@ -789,15 +789,26 @@ class UltimateTradingBot:
             'cvd_strength': 0
         }
 
-        # Dynamic leverage settings
+        # Adaptive leverage settings with cross margin
         self.leverage_config = {
             'min_leverage': 20,
-            'max_leverage': 50,
+            'max_leverage': 75,
             'base_leverage': 35,
             'volatility_threshold_low': 0.01,
             'volatility_threshold_high': 0.04,
             'volume_threshold_low': 0.8,
-            'volume_threshold_high': 1.5
+            'volume_threshold_high': 1.5,
+            'margin_type': 'CROSSED'  # Always use cross margin
+        }
+
+        # Adaptive leveraging based on market conditions and past performance
+        self.adaptive_leverage = {
+            'recent_wins': 0,
+            'recent_losses': 0,
+            'consecutive_wins': 0,
+            'consecutive_losses': 0,
+            'performance_window': 20,
+            'leverage_adjustment_factor': 0.1
         }
 
         # Risk management - optimized for maximum profitability
@@ -1178,12 +1189,15 @@ class UltimateTradingBot:
         histogram = macd_line - signal_line
         return macd_line, signal_line, histogram
 
-    def calculate_dynamic_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
-        """Calculate optimal leverage based on market conditions"""
+    def calculate_adaptive_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
+        """Calculate adaptive leverage based on market conditions and past performance"""
         try:
             base_leverage = self.leverage_config['base_leverage']
             min_leverage = self.leverage_config['min_leverage']
             max_leverage = self.leverage_config['max_leverage']
+
+            # Load recent performance for adaptive adjustments
+            performance_factor = self._get_adaptive_performance_factor()
 
             volatility_factor = 0
             volume_factor = 0
@@ -1227,22 +1241,107 @@ class UltimateTradingBot:
             else:
                 signal_strength_factor = -5
 
+            # Adaptive performance adjustment
+            adaptive_factor = performance_factor * 10  # Scale performance impact
+
             leverage_adjustment = (
-                volatility_factor * 0.4 +
-                volume_factor * 0.25 +
-                trend_factor * 0.2 +
-                signal_strength_factor * 0.15
+                volatility_factor * 0.3 +
+                volume_factor * 0.2 +
+                trend_factor * 0.15 +
+                signal_strength_factor * 0.15 +
+                adaptive_factor * 0.2  # 20% weight for adaptive learning
             )
 
             final_leverage = base_leverage + leverage_adjustment
             final_leverage = max(min_leverage, min(max_leverage, final_leverage))
             final_leverage = round(final_leverage / 5) * 5
 
+            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f})")
             return int(final_leverage)
 
         except Exception as e:
-            self.logger.error(f"Error calculating dynamic leverage: {e}")
+            self.logger.error(f"Error calculating adaptive leverage: {e}")
             return self.leverage_config['base_leverage']
+
+    def _get_adaptive_performance_factor(self) -> float:
+        """Get performance factor for adaptive leverage adjustment"""
+        try:
+            # Load recent trades from ML database
+            conn = sqlite3.connect(self.ml_analyzer.db_path)
+            cursor = conn.cursor()
+            
+            # Get recent trades for performance analysis
+            cursor.execute("""
+                SELECT profit_loss, trade_result 
+                FROM ml_trades 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            """, (self.adaptive_leverage['performance_window'],))
+            
+            recent_trades = cursor.fetchall()
+            conn.close()
+
+            if not recent_trades:
+                return 0.0  # No performance adjustment if no data
+
+            # Calculate performance metrics
+            wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
+            losses = len(recent_trades) - wins
+            
+            if len(recent_trades) == 0:
+                return 0.0
+                
+            win_rate = wins / len(recent_trades)
+            
+            # Calculate consecutive performance
+            consecutive_wins = 0
+            consecutive_losses = 0
+            
+            for trade in recent_trades:
+                if trade[0] and trade[0] > 0:  # Winning trade
+                    consecutive_wins += 1
+                    consecutive_losses = 0
+                else:  # Losing trade
+                    consecutive_losses += 1
+                    consecutive_wins = 0
+                    
+                # Only count the current streak
+                if consecutive_wins > 0 and consecutive_losses == 0:
+                    break
+                elif consecutive_losses > 0 and consecutive_wins == 0:
+                    break
+
+            # Update adaptive leverage tracking
+            self.adaptive_leverage.update({
+                'recent_wins': wins,
+                'recent_losses': losses,
+                'consecutive_wins': consecutive_wins,
+                'consecutive_losses': consecutive_losses
+            })
+
+            # Calculate performance factor (-1 to +1)
+            performance_factor = 0.0
+            
+            # Win rate adjustment
+            if win_rate >= 0.7:  # High win rate - increase leverage
+                performance_factor += 0.5
+            elif win_rate <= 0.4:  # Low win rate - decrease leverage
+                performance_factor -= 0.5
+                
+            # Consecutive performance adjustment
+            if consecutive_wins >= 3:
+                performance_factor += 0.3
+            elif consecutive_losses >= 3:
+                performance_factor -= 0.5
+                
+            # Limit performance factor
+            performance_factor = max(-1.0, min(1.0, performance_factor))
+            
+            return performance_factor
+
+        except Exception as e:
+            self.logger.error(f"Error calculating performance factor: {e}")
+            return 0.0
 
     def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
         """Generate ML-enhanced scalping signal"""
@@ -1350,9 +1449,9 @@ class UltimateTradingBot:
             if risk_percentage > 3.0:
                 return None
 
-            # Calculate dynamic leverage
+            # Calculate adaptive leverage with cross margin
             placeholder_df = pd.DataFrame({'close': [current_price] * 20}) if df is None or len(df) < 20 else df
-            optimal_leverage = self.calculate_dynamic_leverage(indicators, placeholder_df)
+            optimal_leverage = self.calculate_adaptive_leverage(indicators, placeholder_df)
 
             # ML prediction
             ml_signal_data = {
@@ -1398,6 +1497,7 @@ class UltimateTradingBot:
                 'risk_percentage': risk_percentage,
                 'risk_reward_ratio': self.risk_reward_ratio,
                 'optimal_leverage': optimal_leverage,
+                'margin_type': 'CROSSED',
                 'ml_prediction': ml_prediction,
                 'indicators_used': [
                     'ML-Enhanced SuperTrend', 'EMA Confluence', 'CVD Analysis',
@@ -1406,6 +1506,7 @@ class UltimateTradingBot:
                 'timeframe': 'Multi-TF (1m-4h)',
                 'strategy': 'Ultimate ML-Enhanced Scalping',
                 'ml_enhanced': True,
+                'adaptive_leverage': True,
                 'entry_time': current_time
             }
 
@@ -1572,6 +1673,11 @@ class UltimateTradingBot:
 • Time: {timestamp} UTC | R/R: 1:{signal['risk_reward_ratio']:.1f}
 • CVD: {self.cvd_data['cvd_trend'].title()} | ML Acc: {ml_prediction.get('model_accuracy', 0):.1f}%
 
+⚙️ **ADAPTIVE FEATURES:**
+• Leverage: {optimal_leverage}x (Adaptive)
+• Margin: Cross | Win Streak: {self.adaptive_leverage['consecutive_wins']}
+• Recent Performance: {self.adaptive_leverage['recent_wins']}/{self.adaptive_leverage['recent_wins'] + self.adaptive_leverage['recent_losses']}
+
 🔧 **AUTO MANAGEMENT:**
 ✅ TP1 Hit → SL to Entry (Risk-Free)
 ✅ TP2 Hit → SL to TP1 (Profit Lock)
@@ -1579,7 +1685,7 @@ class UltimateTradingBot:
 
 🧠 **ML REC:** {ml_prediction.get('recommendation', 'Trade with caution')}
 
-*TradeTactics ML Bot | Learning & Adapting*"""
+*TradeTactics ML Bot | Cross Margin • Adaptive Learning*"""
 
         return message.strip()
 
@@ -1606,6 +1712,7 @@ TP2: {tp2:.6f} (35%)
 TP3: {tp3:.6f} (25%)
 
 Leverage: {optimal_leverage}x
+Margin Type: Cross
 Exchange: Binance Futures
 
 Management:
@@ -1907,18 +2014,27 @@ Use `/help` for all commands"""
 **🛡️ Enhanced Features Active:**
 • Advanced multi-indicator analysis
 • CVD confluence detection
-• Dynamic leverage calculation
+• **Adaptive leverage calculation** (20x-75x)
+• **Cross margin trading** (all positions)
 • Machine learning predictions
+• Persistent trade learning
 • Cornix-compatible Telegram formatting
 • Real-time performance tracking
 • Continuous learning system
 
+**⚙️ Adaptive Learning:**
+• Performance-based leverage adjustment
+• Win/loss streak tracking
+• Persistent trade database
+• Cross-session learning continuity
+
 **📤 Delivery Method:**
 • Signals sent only to @SignalTactics channel
 • Cornix-readable format for automation
+• Cross margin configuration included
 • TradeTactics_bot integration
 
-*Ultimate ML bot ready for Telegram-based trading signals*"""
+*Ultimate ML bot with Adaptive Cross-Margin Trading*"""
                 await self.send_message(self.admin_chat_id, startup_msg)
 
             auto_scan_task = asyncio.create_task(self.auto_scan_loop())

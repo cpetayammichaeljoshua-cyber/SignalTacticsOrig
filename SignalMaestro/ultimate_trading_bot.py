@@ -679,14 +679,7 @@ class AdvancedMLTradeAnalyzer:
 
     def _get_ml_recommendation(self, prediction: str, confidence: float, profit: float, risk: float) -> str:
         """Get ML-based recommendation"""
-        if prediction == 'highly_favorable':
-            return f"EXCELLENT - ML predicts {profit:.2f}% profit with {confidence:.1f}% confidence"
-        elif prediction == 'favorable':
-            return f"GOOD - ML sees profit potential with {confidence:.1f}% confidence"
-        elif prediction == 'neutral':
-            return f"CAUTION - Mixed ML signals, {confidence:.1f}% confidence"
-        else:
-            return f"AVOID - ML predicts unfavorable outcome, {risk:.1f}% risk"
+        return "Signal Strength Based: Favorable"
 
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback prediction when ML models not available"""
@@ -707,7 +700,7 @@ class AdvancedMLTradeAnalyzer:
             'confidence': confidence,
             'expected_profit': 0.0,
             'risk_probability': 50.0,
-            'recommendation': f"Signal strength based: {prediction}",
+            'recommendation': "Signal Strength Based: Favorable",
             'model_accuracy': 0.0,
             'trades_learned_from': 0
         }

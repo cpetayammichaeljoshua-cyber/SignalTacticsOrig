@@ -98,9 +98,6 @@ class AdvancedMLTradeAnalyzer:
         }
         
         self.logger.info("🧠 Advanced ML Trade Analyzer initialized")
-        
-        # Bootstrap with some initial performance data if database is empty
-        asyncio.create_task(self._bootstrap_initial_data())
 
     def _initialize_database(self):
         """Initialize comprehensive ML database"""
@@ -720,44 +717,6 @@ class AdvancedMLTradeAnalyzer:
             'trades_learned_from': 0
         }
 
-    async def _bootstrap_initial_data(self):
-        """Bootstrap initial performance data if database is empty"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Check if we have any trades
-            cursor.execute("SELECT COUNT(*) FROM ml_trades")
-            count = cursor.fetchone()[0]
-            
-            if count == 0:
-                # Add some sample historical trades for bootstrapping
-                sample_trades = [
-                    # Some winning trades
-                    ('BTCUSDT', 'BUY', 65000, 65500, 1.2, 'WIN', 85, 35, datetime.now() - timedelta(days=5)),
-                    ('ETHUSDT', 'SELL', 3500, 3450, 1.4, 'WIN', 90, 35, datetime.now() - timedelta(days=4)),
-                    ('BNBUSDT', 'BUY', 580, 590, 1.7, 'WIN', 88, 35, datetime.now() - timedelta(days=3)),
-                    # Some losing trades
-                    ('ADAUSDT', 'BUY', 0.45, 0.44, -2.2, 'LOSS', 82, 35, datetime.now() - timedelta(days=2)),
-                    ('XRPUSDT', 'SELL', 0.52, 0.53, -1.9, 'LOSS', 80, 35, datetime.now() - timedelta(days=1)),
-                ]
-                
-                for trade in sample_trades:
-                    cursor.execute('''
-                        INSERT INTO ml_trades (
-                            symbol, direction, entry_price, exit_price, profit_loss, 
-                            trade_result, signal_strength, leverage, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', trade)
-                
-                conn.commit()
-                self.logger.info("📊 Bootstrap: Added sample performance data")
-            
-            conn.close()
-            
-        except Exception as e:
-            self.logger.error(f"Error bootstrapping initial data: {e}")
-
     def get_ml_summary(self) -> Dict[str, Any]:
         """Get comprehensive ML summary"""
         return {
@@ -1056,7 +1015,7 @@ class UltimateTradingBot:
             return None
 
     def calculate_advanced_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate comprehensive technical indicators with institutional order flow analysis"""
+        """Calculate comprehensive technical indicators"""
         try:
             indicators = {}
 
@@ -1067,14 +1026,9 @@ class UltimateTradingBot:
             low = df['low'].values
             close = df['close'].values
             volume = df['volume'].values
-            open_prices = df['open'].values
 
             if len(high) == 0 or len(low) == 0 or len(close) == 0:
                 return {}
-
-            # INSTITUTIONAL ORDER FLOW ANALYSIS
-            order_flow = self._calculate_institutional_order_flow(df)
-            indicators.update(order_flow)
 
             # 1. Enhanced SuperTrend
             hl2 = (high + low) / 2
@@ -1240,456 +1194,6 @@ class UltimateTradingBot:
         histogram = macd_line - signal_line
         return macd_line, signal_line, histogram
 
-    def _calculate_institutional_order_flow(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate institutional order flow and smart money indicators"""
-        try:
-            order_flow = {}
-            
-            if len(df) < 20:
-                return {}
-            
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            open_prices = df['open'].values
-            volume = df['volume'].values
-            
-            # 1. Liquidity Detection (Support/Resistance with volume)
-            liquidity_levels = self._detect_liquidity_levels(df)
-            order_flow['liquidity_sweep'] = liquidity_levels['sweep_detected']
-            order_flow['liquidity_strength'] = liquidity_levels['strength']
-            order_flow['nearest_liquidity'] = liquidity_levels['nearest_level']
-            
-            # 2. Market Structure Analysis
-            market_structure = self._analyze_market_structure(df)
-            order_flow['market_structure'] = market_structure['structure']
-            order_flow['structure_break'] = market_structure['break_detected']
-            order_flow['structure_strength'] = market_structure['strength']
-            
-            # 3. Order Block Detection
-            order_blocks = self._detect_order_blocks(df)
-            order_flow['bullish_order_block'] = order_blocks['bullish_ob']
-            order_flow['bearish_order_block'] = order_blocks['bearish_ob']
-            order_flow['order_block_strength'] = order_blocks['strength']
-            
-            # 4. Fair Value Gap (FVG) Analysis
-            fvg_analysis = self._detect_fair_value_gaps(df)
-            order_flow['bullish_fvg'] = fvg_analysis['bullish_fvg']
-            order_flow['bearish_fvg'] = fvg_analysis['bearish_fvg']
-            order_flow['fvg_probability'] = fvg_analysis['fill_probability']
-            
-            # 5. Imbalance Detection
-            imbalance = self._detect_price_imbalances(df)
-            order_flow['imbalance_direction'] = imbalance['direction']
-            order_flow['imbalance_strength'] = imbalance['strength']
-            
-            # 6. Volume Profile Analysis
-            volume_profile = self._analyze_volume_profile(df)
-            order_flow['volume_poc'] = volume_profile['point_of_control']
-            order_flow['volume_imbalance'] = volume_profile['imbalance']
-            order_flow['high_volume_node'] = volume_profile['hvn']
-            
-            # 7. Institutional Candle Patterns
-            institutional_patterns = self._detect_institutional_patterns(df)
-            order_flow['institutional_pattern'] = institutional_patterns['pattern']
-            order_flow['pattern_reliability'] = institutional_patterns['reliability']
-            
-            # 8. Smart Money Concepts
-            smc = self._calculate_smart_money_concepts(df)
-            order_flow['choch'] = smc['change_of_character']
-            order_flow['bos'] = smc['break_of_structure']
-            order_flow['displacement'] = smc['displacement']
-            order_flow['smc_bias'] = smc['bias']
-            
-            return order_flow
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating institutional order flow: {e}")
-            return {}
-
-    def _detect_liquidity_levels(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Detect liquidity levels and sweeps"""
-        try:
-            high = df['high'].values
-            low = df['low'].values
-            volume = df['volume'].values
-            
-            # Find swing highs and lows with volume confirmation
-            swing_highs = []
-            swing_lows = []
-            
-            for i in range(2, len(df) - 2):
-                # Swing high: higher than 2 bars on each side + high volume
-                if (high[i] > high[i-1] and high[i] > high[i-2] and 
-                    high[i] > high[i+1] and high[i] > high[i+2] and
-                    volume[i] > np.mean(volume[max(0, i-10):i+1])):
-                    swing_highs.append((i, high[i], volume[i]))
-                
-                # Swing low: lower than 2 bars on each side + high volume
-                if (low[i] < low[i-1] and low[i] < low[i-2] and 
-                    low[i] < low[i+1] and low[i] < low[i+2] and
-                    volume[i] > np.mean(volume[max(0, i-10):i+1])):
-                    swing_lows.append((i, low[i], volume[i]))
-            
-            current_price = df['close'].iloc[-1]
-            
-            # Check for liquidity sweeps
-            sweep_detected = False
-            strength = 0
-            nearest_level = current_price
-            
-            if swing_highs:
-                recent_high = max(swing_highs[-3:], key=lambda x: x[1]) if len(swing_highs) >= 3 else swing_highs[-1]
-                if current_price > recent_high[1] * 1.001:  # 0.1% above high
-                    sweep_detected = True
-                    mean_volume = np.mean(volume[-20:])
-                    if mean_volume != 0 and not np.isnan(mean_volume) and not np.isinf(mean_volume):
-                        strength = min(recent_high[2] / mean_volume * 50, 100)
-                    else:
-                        strength = 50  # Default strength when volume data is invalid
-                    nearest_level = recent_high[1]
-            
-            if swing_lows and not sweep_detected:
-                recent_low = min(swing_lows[-3:], key=lambda x: x[1]) if len(swing_lows) >= 3 else swing_lows[-1]
-                if current_price < recent_low[1] * 0.999:  # 0.1% below low
-                    sweep_detected = True
-                    mean_volume = np.mean(volume[-20:])
-                    if mean_volume != 0 and not np.isnan(mean_volume) and not np.isinf(mean_volume):
-                        strength = min(recent_low[2] / mean_volume * 50, 100)
-                    else:
-                        strength = 50  # Default strength when volume data is invalid
-                    nearest_level = recent_low[1]
-            
-            return {
-                'sweep_detected': sweep_detected,
-                'strength': strength,
-                'nearest_level': nearest_level
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error detecting liquidity levels: {e}")
-            return {'sweep_detected': False, 'strength': 0, 'nearest_level': 0}
-
-    def _analyze_market_structure(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze market structure for institutional patterns"""
-        try:
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            
-            # Calculate Higher Highs, Higher Lows, Lower Highs, Lower Lows
-            structure_points = []
-            
-            for i in range(5, len(df) - 5):
-                if high[i] == max(high[i-5:i+6]):  # Local high
-                    structure_points.append(('H', i, high[i]))
-                if low[i] == min(low[i-5:i+6]):  # Local low
-                    structure_points.append(('L', i, low[i]))
-            
-            if len(structure_points) < 4:
-                return {'structure': 'ranging', 'break_detected': False, 'strength': 0}
-            
-            # Analyze last 4 structure points
-            recent_points = structure_points[-4:]
-            
-            # Determine trend structure
-            highs = [p for p in recent_points if p[0] == 'H']
-            lows = [p for p in recent_points if p[0] == 'L']
-            
-            structure = 'ranging'
-            break_detected = False
-            strength = 0
-            
-            if len(highs) >= 2 and len(lows) >= 2:
-                # Check for Higher Highs and Higher Lows (Uptrend)
-                if (highs[-1][2] > highs[-2][2] and lows[-1][2] > lows[-2][2]):
-                    structure = 'uptrend'
-                    strength = 75
-                # Check for Lower Highs and Lower Lows (Downtrend)
-                elif (highs[-1][2] < highs[-2][2] and lows[-1][2] < lows[-2][2]):
-                    structure = 'downtrend'
-                    strength = 75
-                
-                # Check for structure break
-                current_price = close[-1]
-                if structure == 'uptrend' and current_price < min(lows[-2:], key=lambda x: x[2])[2]:
-                    break_detected = True
-                    strength = 90
-                elif structure == 'downtrend' and current_price > max(highs[-2:], key=lambda x: x[2])[2]:
-                    break_detected = True
-                    strength = 90
-            
-            return {
-                'structure': structure,
-                'break_detected': break_detected,
-                'strength': strength
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing market structure: {e}")
-            return {'structure': 'ranging', 'break_detected': False, 'strength': 0}
-
-    def _detect_order_blocks(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Detect institutional order blocks"""
-        try:
-            open_prices = df['open'].values
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            volume = df['volume'].values
-            
-            bullish_ob = False
-            bearish_ob = False
-            strength = 0
-            
-            # Look for order block patterns in last 10 candles
-            for i in range(len(df) - 10, len(df) - 1):
-                if i < 2:
-                    continue
-                
-                # Bullish Order Block: Big green candle followed by pullback
-                if (close[i] > open_prices[i] and  # Green candle
-                    (close[i] - open_prices[i]) / open_prices[i] > 0.005 and  # At least 0.5% body
-                    volume[i] > np.mean(volume[max(0, i-5):i+1]) * 1.5 and  # High volume
-                    close[i+1] < close[i]):  # Followed by pullback
-                    
-                    bullish_ob = True
-                    strength = min((close[i] - open_prices[i]) / open_prices[i] * 2000, 100)
-                    break
-                
-                # Bearish Order Block: Big red candle followed by pullback
-                if (close[i] < open_prices[i] and  # Red candle
-                    (open_prices[i] - close[i]) / open_prices[i] > 0.005 and  # At least 0.5% body
-                    volume[i] > np.mean(volume[max(0, i-5):i+1]) * 1.5 and  # High volume
-                    close[i+1] > close[i]):  # Followed by pullback
-                    
-                    bearish_ob = True
-                    strength = min((open_prices[i] - close[i]) / open_prices[i] * 2000, 100)
-                    break
-            
-            return {
-                'bullish_ob': bullish_ob,
-                'bearish_ob': bearish_ob,
-                'strength': strength
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error detecting order blocks: {e}")
-            return {'bullish_ob': False, 'bearish_ob': False, 'strength': 0}
-
-    def _detect_fair_value_gaps(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Detect Fair Value Gaps (FVGs)"""
-        try:
-            high = df['high'].values
-            low = df['low'].values
-            
-            bullish_fvg = False
-            bearish_fvg = False
-            fill_probability = 0
-            
-            # Look for FVGs in recent candles
-            for i in range(len(df) - 5, len(df) - 2):
-                if i < 1:
-                    continue
-                
-                # Bullish FVG: Gap between candle i-1 high and candle i+1 low
-                if low[i+1] > high[i-1]:
-                    gap_size = (low[i+1] - high[i-1]) / high[i-1]
-                    if gap_size > 0.001:  # At least 0.1% gap
-                        bullish_fvg = True
-                        fill_probability = min(gap_size * 5000, 85)  # Higher probability for larger gaps
-                        break
-                
-                # Bearish FVG: Gap between candle i-1 low and candle i+1 high
-                if high[i+1] < low[i-1]:
-                    gap_size = (low[i-1] - high[i+1]) / low[i-1]
-                    if gap_size > 0.001:  # At least 0.1% gap
-                        bearish_fvg = True
-                        fill_probability = min(gap_size * 5000, 85)  # Higher probability for larger gaps
-                        break
-            
-            return {
-                'bullish_fvg': bullish_fvg,
-                'bearish_fvg': bearish_fvg,
-                'fill_probability': fill_probability
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error detecting FVGs: {e}")
-            return {'bullish_fvg': False, 'bearish_fvg': False, 'fill_probability': 0}
-
-    def _detect_price_imbalances(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Detect price imbalances and inefficiencies"""
-        try:
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            volume = df['volume'].values
-            
-            # Calculate price velocity and volume confirmation
-            price_changes = np.diff(close)
-            volume_changes = np.diff(volume)
-            
-            direction = 'neutral'
-            strength = 0
-            
-            # Recent 5 candles analysis
-            recent_price_change = sum(price_changes[-5:])
-            recent_volume_avg = np.mean(volume[-5:])
-            historical_volume_avg = np.mean(volume[-20:-5])
-            
-            if recent_volume_avg > historical_volume_avg * 1.3:  # 30% more volume
-                if recent_price_change > 0:
-                    direction = 'bullish'
-                    strength = min(abs(recent_price_change) / close[-1] * 1000, 100)
-                elif recent_price_change < 0:
-                    direction = 'bearish'
-                    strength = min(abs(recent_price_change) / close[-1] * 1000, 100)
-            
-            return {
-                'direction': direction,
-                'strength': strength
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error detecting price imbalances: {e}")
-            return {'direction': 'neutral', 'strength': 0}
-
-    def _analyze_volume_profile(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze volume profile for institutional activity"""
-        try:
-            high = df['high'].values
-            low = df['low'].values
-            volume = df['volume'].values
-            
-            # Simple volume-weighted average price calculation
-            typical_prices = (high + low + df['close'].values) / 3
-            volume_weighted_prices = typical_prices * volume
-            
-            if np.sum(volume) == 0:
-                return {'point_of_control': 0, 'imbalance': 0, 'hvn': False}
-            
-            point_of_control = np.sum(volume_weighted_prices) / np.sum(volume)
-            
-            # Detect volume imbalances
-            recent_volume = np.mean(volume[-5:])
-            historical_volume = np.mean(volume[-20:-5])
-            volume_imbalance = (recent_volume - historical_volume) / historical_volume if historical_volume > 0 else 0
-            
-            # High Volume Node detection
-            hvn = recent_volume > historical_volume * 2  # 100% above average
-            
-            return {
-                'point_of_control': point_of_control,
-                'imbalance': volume_imbalance * 100,
-                'hvn': hvn
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing volume profile: {e}")
-            return {'point_of_control': 0, 'imbalance': 0, 'hvn': False}
-
-    def _detect_institutional_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Detect institutional candle patterns"""
-        try:
-            open_prices = df['open'].values
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            volume = df['volume'].values
-            
-            pattern = 'none'
-            reliability = 0
-            
-            # Check last 3 candles for patterns
-            if len(df) >= 3:
-                last_3_candles = df.tail(3)
-                
-                # Institutional absorption pattern
-                for i in range(-3, 0):
-                    candle_body = abs(close[i] - open_prices[i])
-                    candle_range = high[i] - low[i]
-                    
-                    # Large wick with small body = absorption
-                    if candle_range > 0 and candle_body / candle_range < 0.3:
-                        if volume[i] > np.mean(volume[-10:]) * 1.5:
-                            pattern = 'absorption'
-                            reliability = 75
-                            break
-                    
-                    # Large body with high volume = institutional move
-                    if candle_range > 0 and candle_body / candle_range > 0.7:
-                        if volume[i] > np.mean(volume[-10:]) * 2:
-                            pattern = 'institutional_move'
-                            reliability = 80
-                            break
-            
-            return {
-                'pattern': pattern,
-                'reliability': reliability
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error detecting institutional patterns: {e}")
-            return {'pattern': 'none', 'reliability': 0}
-
-    def _calculate_smart_money_concepts(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate Smart Money Concepts (SMC)"""
-        try:
-            high = df['high'].values
-            low = df['low'].values
-            close = df['close'].values
-            
-            choch = False  # Change of Character
-            bos = False    # Break of Structure
-            displacement = False
-            bias = 'neutral'
-            
-            if len(df) < 10:
-                return {'change_of_character': choch, 'break_of_structure': bos, 
-                       'displacement': displacement, 'bias': bias}
-            
-            # Look for significant price movements (displacement)
-            price_changes = np.diff(close[-10:])
-            max_change = max(abs(price_changes)) if len(price_changes) > 0 else 0
-            
-            if max_change / close[-1] > 0.01:  # 1% move
-                displacement = True
-                
-                # Determine bias based on recent structure
-                recent_high = max(high[-10:])
-                recent_low = min(low[-10:])
-                current_price = close[-1]
-                
-                if current_price > (recent_high + recent_low) / 2:
-                    bias = 'bullish'
-                    if current_price > recent_high * 1.001:  # Break above recent high
-                        bos = True
-                else:
-                    bias = 'bearish'
-                    if current_price < recent_low * 0.999:  # Break below recent low
-                        bos = True
-                
-                # Change of Character: reversal after strong move
-                if len(price_changes) >= 3:
-                    recent_trend = sum(price_changes[-3:])
-                    previous_trend = sum(price_changes[-6:-3])
-                    
-                    if (recent_trend > 0 and previous_trend < 0) or (recent_trend < 0 and previous_trend > 0):
-                        choch = True
-            
-            return {
-                'change_of_character': choch,
-                'break_of_structure': bos,
-                'displacement': displacement,
-                'bias': bias
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating SMC: {e}")
-            return {'change_of_character': False, 'break_of_structure': False, 
-                   'displacement': False, 'bias': 'neutral'}
-
     def calculate_adaptive_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
         """Calculate adaptive leverage based on market conditions and past performance"""
         try:
@@ -1775,7 +1279,6 @@ class UltimateTradingBot:
             cursor.execute("""
                 SELECT profit_loss, trade_result 
                 FROM ml_trades 
-                WHERE profit_loss IS NOT NULL 
                 ORDER BY created_at DESC 
                 LIMIT ?
             """, (self.adaptive_leverage['performance_window'],))
@@ -1783,38 +1286,35 @@ class UltimateTradingBot:
             recent_trades = cursor.fetchall()
             conn.close()
 
-            # If no historical data, simulate performance based on signal strength
             if not recent_trades:
-                # Return a base performance factor based on market conditions
-                base_factor = 0.15  # Slightly positive for new systems
-                return base_factor
+                return 0.0  # No performance adjustment if no data
 
             # Calculate performance metrics
-            wins = sum(1 for trade in recent_trades if trade[0] and float(trade[0]) > 0)
+            wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
             losses = len(recent_trades) - wins
             
             if len(recent_trades) == 0:
-                return 0.15  # Default positive factor
+                return 0.0
                 
             win_rate = wins / len(recent_trades)
-            
-            # Calculate average profit/loss
-            total_pnl = sum(float(trade[0]) if trade[0] else 0 for trade in recent_trades)
-            avg_pnl = total_pnl / len(recent_trades) if recent_trades else 0
             
             # Calculate consecutive performance
             consecutive_wins = 0
             consecutive_losses = 0
             
             for trade in recent_trades:
-                if trade[0] and float(trade[0]) > 0:  # Winning trade
+                if trade[0] and trade[0] > 0:  # Winning trade
                     consecutive_wins += 1
                     consecutive_losses = 0
-                    break  # Only count current streak
                 else:  # Losing trade
                     consecutive_losses += 1
                     consecutive_wins = 0
-                    break  # Only count current streak
+                    
+                # Only count the current streak
+                if consecutive_wins > 0 and consecutive_losses == 0:
+                    break
+                elif consecutive_losses > 0 and consecutive_wins == 0:
+                    break
 
             # Update adaptive leverage tracking
             self.adaptive_leverage.update({
@@ -1827,50 +1327,29 @@ class UltimateTradingBot:
             # Calculate performance factor (-1 to +1)
             performance_factor = 0.0
             
-            # Win rate adjustment (primary factor)
+            # Win rate adjustment
             if win_rate >= 0.7:  # High win rate - increase leverage
-                performance_factor += 0.4
-            elif win_rate >= 0.6:  # Good win rate
-                performance_factor += 0.2
-            elif win_rate >= 0.5:  # Break-even
-                performance_factor += 0.1
-            elif win_rate <= 0.3:  # Low win rate - decrease leverage
-                performance_factor -= 0.4
-            else:  # Below average
-                performance_factor -= 0.2
-                
-            # Average P&L adjustment
-            if avg_pnl > 1.0:  # Highly profitable
-                performance_factor += 0.3
-            elif avg_pnl > 0.5:  # Profitable
-                performance_factor += 0.15
-            elif avg_pnl < -1.0:  # Highly unprofitable
-                performance_factor -= 0.3
-            elif avg_pnl < -0.5:  # Unprofitable
-                performance_factor -= 0.15
+                performance_factor += 0.5
+            elif win_rate <= 0.4:  # Low win rate - decrease leverage
+                performance_factor -= 0.5
                 
             # Consecutive performance adjustment
             if consecutive_wins >= 3:
-                performance_factor += 0.2
-            elif consecutive_wins >= 2:
-                performance_factor += 0.1
+                performance_factor += 0.3
             elif consecutive_losses >= 3:
-                performance_factor -= 0.3
-            elif consecutive_losses >= 2:
-                performance_factor -= 0.15
+                performance_factor -= 0.5
                 
             # Limit performance factor
-            performance_factor = max(-0.8, min(0.8, performance_factor))
+            performance_factor = max(-1.0, min(1.0, performance_factor))
             
             return performance_factor
 
         except Exception as e:
             self.logger.error(f"Error calculating performance factor: {e}")
-            # Return a small positive factor to encourage trading
-            return 0.1
+            return 0.0
 
     def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
-        """Generate ML-enhanced scalping signal with institutional order flow analysis"""
+        """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
             if symbol in self.last_signal_time:
@@ -1886,87 +1365,51 @@ class UltimateTradingBot:
             if current_price <= 0:
                 return None
 
-            # INSTITUTIONAL ORDER FLOW ANALYSIS (40% weight total)
-            
-            # 1. Market Structure (10% weight)
-            if indicators.get('structure_break') and indicators.get('market_structure') == 'uptrend':
-                bullish_signals += 10
-            elif indicators.get('structure_break') and indicators.get('market_structure') == 'downtrend':
-                bearish_signals += 10
-
-            # 2. Order Blocks (8% weight)
-            if indicators.get('bullish_order_block') and indicators.get('order_block_strength', 0) > 50:
-                bullish_signals += 8
-            elif indicators.get('bearish_order_block') and indicators.get('order_block_strength', 0) > 50:
-                bearish_signals += 8
-
-            # 3. Fair Value Gaps (7% weight)
-            if indicators.get('bullish_fvg') and indicators.get('fvg_probability', 0) > 60:
-                bullish_signals += 7
-            elif indicators.get('bearish_fvg') and indicators.get('fvg_probability', 0) > 60:
-                bearish_signals += 7
-
-            # 4. Liquidity Sweeps (8% weight)
-            if indicators.get('liquidity_sweep') and indicators.get('liquidity_strength', 0) > 60:
-                # Liquidity sweep often leads to reversal
-                if indicators.get('smc_bias') == 'bullish':
-                    bullish_signals += 8
-                elif indicators.get('smc_bias') == 'bearish':
-                    bearish_signals += 8
-
-            # 5. Smart Money Concepts (7% weight)
-            if indicators.get('bos') and indicators.get('smc_bias') == 'bullish':
-                bullish_signals += 7
-            elif indicators.get('bos') and indicators.get('smc_bias') == 'bearish':
-                bearish_signals += 7
-
-            # TRADITIONAL TECHNICAL ANALYSIS (60% weight total)
-
-            # 6. Enhanced SuperTrend (15% weight)
+            # 1. Enhanced SuperTrend (25% weight)
             if indicators.get('supertrend_direction') == 1:
-                bullish_signals += 15
+                bullish_signals += 25
             elif indicators.get('supertrend_direction') == -1:
-                bearish_signals += 15
+                bearish_signals += 25
 
-            # 7. EMA Confluence (12% weight)
+            # 2. EMA Confluence (20% weight)
             if indicators.get('ema_bullish'):
-                bullish_signals += 12
+                bullish_signals += 20
             elif indicators.get('ema_bearish'):
-                bearish_signals += 12
+                bearish_signals += 20
 
-            # 8. CVD Confluence (10% weight)
+            # 3. CVD Confluence (15% weight)
             cvd_trend = indicators.get('cvd_trend', 'neutral')
             if cvd_trend == 'bullish':
-                bullish_signals += 10
+                bullish_signals += 15
             elif cvd_trend == 'bearish':
-                bearish_signals += 10
+                bearish_signals += 15
 
-            # 9. VWAP Position (8% weight)
+            # 4. VWAP Position (10% weight)
             price_vs_vwap = indicators.get('price_vs_vwap', 0)
             if not np.isnan(price_vs_vwap) and not np.isinf(price_vs_vwap):
                 if price_vs_vwap > 0.1:
-                    bullish_signals += 8
+                    bullish_signals += 10
                 elif price_vs_vwap < -0.1:
-                    bearish_signals += 8
+                    bearish_signals += 10
 
-            # 10. Volume Profile & Imbalances (8% weight)
-            if indicators.get('high_volume_node') and indicators.get('volume_imbalance', 0) > 20:
-                if indicators.get('imbalance_direction') == 'bullish':
-                    bullish_signals += 8
-                elif indicators.get('imbalance_direction') == 'bearish':
-                    bearish_signals += 8
-
-            # 11. RSI analysis (4% weight)
+            # 5. RSI analysis (10% weight)
             if indicators.get('rsi_oversold'):
-                bullish_signals += 4
+                bullish_signals += 10
             elif indicators.get('rsi_overbought'):
-                bearish_signals += 4
+                bearish_signals += 10
 
-            # 12. MACD confluence (3% weight)  
+            # 6. MACD confluence (10% weight)
             if indicators.get('macd_bullish'):
-                bullish_signals += 3
+                bullish_signals += 10
             elif indicators.get('macd_bearish'):
-                bearish_signals += 3
+                bearish_signals += 10
+
+            # 7. Volume surge (10% weight)
+            if indicators.get('volume_surge'):
+                if bullish_signals > bearish_signals:
+                    bullish_signals += 10
+                else:
+                    bearish_signals += 10
 
             # Determine signal direction and strength
             if bullish_signals >= self.min_signal_strength:
@@ -2015,7 +1458,7 @@ class UltimateTradingBot:
             placeholder_df = pd.DataFrame({'close': [current_price] * 20}) if df is None or len(df) < 20 else df
             optimal_leverage = self.calculate_adaptive_leverage(indicators, placeholder_df)
 
-            # ML prediction with institutional order flow
+            # ML prediction
             ml_signal_data = {
                 'symbol': symbol,
                 'direction': direction,
@@ -2026,17 +1469,7 @@ class UltimateTradingBot:
                 'rsi': indicators.get('rsi', 50),
                 'cvd_trend': cvd_trend,
                 'macd_signal': 'bullish' if indicators.get('macd_bullish') else 'bearish' if indicators.get('macd_bearish') else 'neutral',
-                'ema_bullish': indicators.get('ema_bullish', False),
-                # Institutional Order Flow Data
-                'market_structure': indicators.get('market_structure', 'ranging'),
-                'structure_break': indicators.get('structure_break', False),
-                'liquidity_sweep': indicators.get('liquidity_sweep', False),
-                'order_block_strength': indicators.get('order_block_strength', 0),
-                'fvg_probability': indicators.get('fvg_probability', 0),
-                'smc_bias': indicators.get('smc_bias', 'neutral'),
-                'displacement': indicators.get('displacement', False),
-                'institutional_pattern': indicators.get('institutional_pattern', 'none'),
-                'volume_imbalance': indicators.get('volume_imbalance', 0)
+                'ema_bullish': indicators.get('ema_bullish', False)
             }
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
@@ -2076,28 +1509,13 @@ class UltimateTradingBot:
                 'optimal_leverage': optimal_leverage,
                 'margin_type': 'CROSSED',
                 'ml_prediction': ml_prediction,
-                'institutional_indicators': {
-                    'market_structure': indicators.get('market_structure', 'ranging'),
-                    'structure_break': indicators.get('structure_break', False),
-                    'order_block_strength': indicators.get('order_block_strength', 0),
-                    'liquidity_sweep': indicators.get('liquidity_sweep', False),
-                    'smc_bias': indicators.get('smc_bias', 'neutral'),
-                    'displacement': indicators.get('displacement', False),
-                    'fvg_probability': indicators.get('fvg_probability', 0),
-                    'high_volume_node': indicators.get('high_volume_node', False),
-                    'institutional_pattern': indicators.get('institutional_pattern', 'none'),
-                    'volume_imbalance': indicators.get('volume_imbalance', 0)
-                },
                 'indicators_used': [
-                    'Institutional Order Flow', 'Market Structure Analysis', 'Order Blocks',
-                    'Fair Value Gaps', 'Liquidity Sweeps', 'Smart Money Concepts',
                     'ML-Enhanced SuperTrend', 'EMA Confluence', 'CVD Analysis',
-                    'VWAP Position', 'Volume Profile', 'RSI Analysis', 'MACD Signals'
+                    'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals'
                 ],
                 'timeframe': 'Multi-TF (1m-4h)',
-                'strategy': 'Ultimate Institutional ML-Enhanced Scalping',
+                'strategy': 'Ultimate ML-Enhanced Scalping',
                 'ml_enhanced': True,
-                'institutional_analysis': True,
                 'adaptive_leverage': True,
                 'entry_time': current_time
             }
@@ -2252,17 +1670,7 @@ class UltimateTradingBot:
         # Cornix-compatible format for Telegram channel
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Get institutional indicators for display
-        indicators = signal.get('institutional_indicators', {})
-        
         message = f"""{cornix_signal}
-
-🏛️ **INSTITUTIONAL ANALYSIS:**
-• Market Structure: {indicators.get('market_structure', 'Unknown').title()}
-• Structure Break: {'✅' if indicators.get('structure_break') else '❌'}
-• Order Block: {'✅ Detected' if indicators.get('order_block_strength', 0) > 50 else '❌ None'}
-• Liquidity Sweep: {'✅ Confirmed' if indicators.get('liquidity_sweep') else '❌ None'}
-• SMC Bias: {indicators.get('smc_bias', 'Neutral').title()}
 
 🧠 **ML ANALYSIS:**
 • Prediction: {ml_prediction.get('prediction', 'unknown').title()}
@@ -2273,7 +1681,7 @@ class UltimateTradingBot:
 📊 **SIGNAL DATA:**
 • Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}%
 • Time: {timestamp} UTC | R/R: 1:{signal['risk_reward_ratio']:.1f}
-• CVD: {self.cvd_data['cvd_trend'].title()} | Volume Profile: {'High' if indicators.get('high_volume_node') else 'Normal'}
+• CVD: {self.cvd_data['cvd_trend'].title()} | ML Acc: {ml_prediction.get('model_accuracy', 0):.1f}%
 
 ⚙️ **ADAPTIVE FEATURES:**
 • Leverage: {optimal_leverage}x (Adaptive)
@@ -2287,7 +1695,7 @@ class UltimateTradingBot:
 
 🧠 **ML REC:** {ml_prediction.get('recommendation', 'Trade with caution')}
 
-*TradeTactics ML Bot | Institutional Order Flow • Cross Margin • Adaptive Learning*"""
+*TradeTactics ML Bot | Cross Margin • Adaptive Learning*"""
 
         return message.strip()
 

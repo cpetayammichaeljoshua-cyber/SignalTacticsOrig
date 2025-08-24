@@ -1342,14 +1342,22 @@ class UltimateTradingBot:
                 recent_high = max(swing_highs[-3:], key=lambda x: x[1]) if len(swing_highs) >= 3 else swing_highs[-1]
                 if current_price > recent_high[1] * 1.001:  # 0.1% above high
                     sweep_detected = True
-                    strength = min(recent_high[2] / np.mean(volume[-20:]) * 50, 100)
+                    mean_volume = np.mean(volume[-20:])
+                    if mean_volume != 0 and not np.isnan(mean_volume) and not np.isinf(mean_volume):
+                        strength = min(recent_high[2] / mean_volume * 50, 100)
+                    else:
+                        strength = 50  # Default strength when volume data is invalid
                     nearest_level = recent_high[1]
             
             if swing_lows and not sweep_detected:
                 recent_low = min(swing_lows[-3:], key=lambda x: x[1]) if len(swing_lows) >= 3 else swing_lows[-1]
                 if current_price < recent_low[1] * 0.999:  # 0.1% below low
                     sweep_detected = True
-                    strength = min(recent_low[2] / np.mean(volume[-20:]) * 50, 100)
+                    mean_volume = np.mean(volume[-20:])
+                    if mean_volume != 0 and not np.isnan(mean_volume) and not np.isinf(mean_volume):
+                        strength = min(recent_low[2] / mean_volume * 50, 100)
+                    else:
+                        strength = 50  # Default strength when volume data is invalid
                     nearest_level = recent_low[1]
             
             return {

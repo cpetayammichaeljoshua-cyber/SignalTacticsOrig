@@ -1550,47 +1550,36 @@ class UltimateTradingBot:
             return False
 
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format ML-enhanced signal message"""
+        """Format ML-enhanced signal message for Cornix compatibility via Telegram"""
         direction = signal['direction']
         timestamp = datetime.now().strftime('%H:%M')
         optimal_leverage = signal.get('optimal_leverage', 35)
         ml_prediction = signal.get('ml_prediction', {})
 
-        # Enhanced Cornix-compatible format
+        # Cornix-compatible format for Telegram channel
         cornix_signal = self._format_cornix_signal(signal)
 
-        message = f"""🧠 **ML-ENHANCED ULTIMATE SIGNAL**
+        message = f"""{cornix_signal}
 
-{cornix_signal}
+🧠 **ML ANALYSIS:**
+• Prediction: {ml_prediction.get('prediction', 'unknown').title()}
+• Confidence: {ml_prediction.get('confidence', 0):.1f}%
+• Expected Profit: {ml_prediction.get('expected_profit', 0):.2f}%
+• Risk: {ml_prediction.get('risk_probability', 0):.1f}%
 
-**🤖 Machine Learning Analysis:**
-• **ML Prediction:** {ml_prediction.get('prediction', 'unknown').title()}
-• **ML Confidence:** {ml_prediction.get('confidence', 0):.1f}%
-• **Expected Profit:** {ml_prediction.get('expected_profit', 0):.2f}%
-• **Risk Assessment:** {ml_prediction.get('risk_probability', 0):.1f}%
-• **Model Accuracy:** {ml_prediction.get('model_accuracy', 0):.1f}%
-• **Trades Learned:** {ml_prediction.get('trades_learned_from', 0)}
+📊 **SIGNAL DATA:**
+• Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}%
+• Time: {timestamp} UTC | R/R: 1:{signal['risk_reward_ratio']:.1f}
+• CVD: {self.cvd_data['cvd_trend'].title()} | ML Acc: {ml_prediction.get('model_accuracy', 0):.1f}%
 
-**📊 Signal Details:**
-• **Signal #:** {self.signal_counter}
-• **Strength:** {signal['signal_strength']:.0f}%
-• **Time:** {timestamp} UTC
-• **Risk/Reward:** 1:{signal['risk_reward_ratio']:.1f}
-• **CVD Trend:** {self.cvd_data['cvd_trend'].title()}
+🔧 **AUTO MANAGEMENT:**
+✅ TP1 Hit → SL to Entry (Risk-Free)
+✅ TP2 Hit → SL to TP1 (Profit Lock)
+✅ TP3 Hit → Full Close (Complete)
 
-**🔧 Auto Management:**
-✅ **TP1 Hit:** SL moves to Entry (Risk-Free)
-✅ **TP2 Hit:** SL moves to TP1 (Profit Secured)  
-✅ **TP3 Hit:** Position fully closed (Perfect!)
+🧠 **ML REC:** {ml_prediction.get('recommendation', 'Trade with caution')}
 
-**📈 Position Distribution:**
-• **TP1:** 40% @ {signal['tp1']:.6f}
-• **TP2:** 35% @ {signal['tp2']:.6f}
-• **TP3:** 25% @ {signal['tp3']:.6f}
-
-**🧠 ML Recommendation:** {ml_prediction.get('recommendation', 'Trade with caution')}
-
-*🤖 Ultimate ML Trading Bot | Continuously Learning*"""
+*TradeTactics ML Bot | Learning & Adapting*"""
 
         return message.strip()
 
@@ -1639,80 +1628,8 @@ Leverage: {optimal_leverage}x
 Exchange: Binance Futures"""
 
     async def send_to_cornix(self, signal: Dict[str, Any]) -> bool:
-        """Send signal to Cornix for automated trading"""
-        try:
-            cornix_webhook_url = os.getenv('CORNIX_WEBHOOK_URL')
-            if not cornix_webhook_url:
-                return True
-
-            optimal_leverage = signal.get('optimal_leverage', 35)
-            
-            entry = float(signal['entry_price'])
-            stop_loss = float(signal['stop_loss'])
-            tp1 = float(signal['tp1'])
-            tp2 = float(signal['tp2'])
-            tp3 = float(signal['tp3'])
-            
-            direction = signal['direction'].upper()
-            if direction == 'BUY':
-                if not (stop_loss < entry < tp1 < tp2 < tp3):
-                    self.logger.warning(f"Skipping Cornix - Invalid BUY prices for {signal['symbol']}")
-                    return False
-            else:
-                if not (tp3 < tp2 < tp1 < entry < stop_loss):
-                    self.logger.warning(f"Skipping Cornix - Invalid SELL prices for {signal['symbol']}")
-                    return False
-
-            ml_prediction = signal.get('ml_prediction', {})
-            
-            cornix_payload = {
-                'symbol': signal['symbol'].replace('USDT', '/USDT'),
-                'action': direction.lower(),
-                'entry_price': entry,
-                'stop_loss': stop_loss,
-                'take_profit_1': tp1,
-                'take_profit_2': tp2,
-                'take_profit_3': tp3,
-                'exchange': 'binance_futures',
-                'type': 'futures',
-                'margin_type': 'cross',
-                'leverage': optimal_leverage,
-                'position_size_percentage': 100,
-                'tp_distribution': [40, 35, 25],
-                'sl_management': {
-                    'move_to_entry_on_tp1': True,
-                    'move_to_tp1_on_tp2': True,
-                    'close_all_on_tp3': True
-                },
-                'risk_reward': signal.get('risk_reward_ratio', 3.0),
-                'signal_strength': signal.get('signal_strength', 0),
-                'ml_confidence': ml_prediction.get('confidence', 0),
-                'ml_prediction': ml_prediction.get('prediction', 'unknown'),
-                'expected_profit': ml_prediction.get('expected_profit', 0),
-                'timestamp': datetime.now().isoformat(),
-                'bot_source': 'ultimate_ml_trading_bot',
-                'auto_sl_management': True,
-                'ml_enhanced': True
-            }
-
-            async with aiohttp.ClientSession() as session:
-                headers = {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'UltimateMLTradingBot/2.0'
-                }
-                
-                async with session.post(cornix_webhook_url, json=cornix_payload, headers=headers, timeout=15) as response:
-                    if response.status == 200:
-                        self.logger.info(f"✅ ML-enhanced signal sent to Cornix for {signal['symbol']}")
-                        return True
-                    else:
-                        error_text = await response.text()
-                        self.logger.warning(f"⚠️ Cornix webhook failed: {response.status} - {error_text}")
-                        return False
-
-        except Exception as e:
-            self.logger.error(f"Error sending ML signal to Cornix: {e}")
-            return False
+        """Cornix integration disabled - signals sent via Telegram only"""
+        return True
 
     async def get_updates(self, offset=None, timeout=30) -> list:
         """Get Telegram updates"""
@@ -1911,33 +1828,19 @@ Use `/help` for all commands"""
 
                             signal_msg = self.format_ml_signal_message(signal)
 
-                            # Send to Cornix first
-                            cornix_sent = await self.send_to_cornix(signal)
-                            if cornix_sent:
-                                self.logger.info(f"📤 ML signal sent to Cornix for {signal['symbol']}")
-
-                            # Send to admin
-                            admin_sent = False
-                            if self.admin_chat_id:
-                                admin_sent = await self.send_message(self.admin_chat_id, signal_msg)
-
-                            # Send to channel if accessible
+                            # Send only to Telegram channel @SignalTactics
                             channel_sent = False
-                            if self.channel_accessible and admin_sent:
-                                await asyncio.sleep(2)
+                            if self.channel_accessible:
                                 channel_sent = await self.send_message(self.target_channel, signal_msg)
 
-                            delivery_status = []
-                            if admin_sent:
-                                delivery_status.append("Admin")
                             if channel_sent:
-                                delivery_status.append("Channel")
-
-                            delivery_info = " + ".join(delivery_status) if delivery_status else "Failed"
-                            self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered to: {delivery_info}")
-
-                            ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
-                            self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
+                                delivery_info = "Channel @SignalTactics"
+                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered to: {delivery_info}")
+                                
+                                ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
+                                self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
+                            else:
+                                self.logger.warning(f"❌ Failed to send ML Signal #{self.signal_counter} to @SignalTactics")
 
                             signals_sent_count += 1
                             await asyncio.sleep(5)
@@ -2006,11 +1909,16 @@ Use `/help` for all commands"""
 • CVD confluence detection
 • Dynamic leverage calculation
 • Machine learning predictions
-• Automated Cornix integration
+• Cornix-compatible Telegram formatting
 • Real-time performance tracking
 • Continuous learning system
 
-*Ultimate ML bot initialized and ready for intelligent trading*"""
+**📤 Delivery Method:**
+• Signals sent only to @SignalTactics channel
+• Cornix-readable format for automation
+• TradeTactics_bot integration
+
+*Ultimate ML bot ready for Telegram-based trading signals*"""
                 await self.send_message(self.admin_chat_id, startup_msg)
 
             auto_scan_task = asyncio.create_task(self.auto_scan_loop())

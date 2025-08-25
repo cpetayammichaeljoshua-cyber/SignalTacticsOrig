@@ -1261,13 +1261,7 @@ class UltimateTradingBot:
             final_leverage = max(min_leverage, min(max_leverage, final_leverage))
             final_leverage = round(final_leverage / 5) * 5
 
-            # Add more detailed logging about performance factor
-            performance_details = ""
-            if self.adaptive_leverage['recent_wins'] + self.adaptive_leverage['recent_losses'] > 0:
-                win_rate = self.adaptive_leverage['recent_wins'] / (self.adaptive_leverage['recent_wins'] + self.adaptive_leverage['recent_losses'])
-                performance_details = f" | W/L: {self.adaptive_leverage['recent_wins']}/{self.adaptive_leverage['recent_losses']} ({win_rate:.1%})"
-            
-            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f}{performance_details})")
+            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f})")
             return int(final_leverage)
 
         except Exception as e:
@@ -1293,47 +1287,33 @@ class UltimateTradingBot:
             conn.close()
 
             if not recent_trades:
-                # If no trade history, return a small positive baseline factor
-                # This encourages slightly higher leverage for new bots
-                return 0.15  # 15% positive adjustment for new sessions
+                return 0.0  # No performance adjustment if no data
 
             # Calculate performance metrics
             wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
             losses = len(recent_trades) - wins
             
             if len(recent_trades) == 0:
-                return 0.15
+                return 0.0
                 
             win_rate = wins / len(recent_trades)
-            
-            # Calculate total profit/loss for additional context
-            total_pnl = sum(trade[0] for trade in recent_trades if trade[0])
-            avg_pnl_per_trade = total_pnl / len(recent_trades) if len(recent_trades) > 0 else 0
             
             # Calculate consecutive performance
             consecutive_wins = 0
             consecutive_losses = 0
             
-            for i, trade in enumerate(recent_trades):
+            for trade in recent_trades:
                 if trade[0] and trade[0] > 0:  # Winning trade
-                    if i == 0:  # Most recent trade is win
-                        consecutive_wins = 1
-                        # Count additional consecutive wins
-                        for j in range(1, min(len(recent_trades), 10)):
-                            if recent_trades[j][0] and recent_trades[j][0] > 0:
-                                consecutive_wins += 1
-                            else:
-                                break
-                    break
+                    consecutive_wins += 1
+                    consecutive_losses = 0
                 else:  # Losing trade
-                    if i == 0:  # Most recent trade is loss
-                        consecutive_losses = 1
-                        # Count additional consecutive losses
-                        for j in range(1, min(len(recent_trades), 10)):
-                            if not (recent_trades[j][0] and recent_trades[j][0] > 0):
-                                consecutive_losses += 1
-                            else:
-                                break
+                    consecutive_losses += 1
+                    consecutive_wins = 0
+                    
+                # Only count the current streak
+                if consecutive_wins > 0 and consecutive_losses == 0:
+                    break
+                elif consecutive_losses > 0 and consecutive_wins == 0:
                     break
 
             # Update adaptive leverage tracking
@@ -1347,35 +1327,17 @@ class UltimateTradingBot:
             # Calculate performance factor (-1 to +1)
             performance_factor = 0.0
             
-            # Win rate adjustment (40% weight)
-            if win_rate >= 0.75:  # Very high win rate - significant increase
-                performance_factor += 0.6
-            elif win_rate >= 0.6:  # Good win rate - moderate increase
-                performance_factor += 0.3
-            elif win_rate <= 0.3:  # Low win rate - significant decrease
-                performance_factor -= 0.6
-            elif win_rate <= 0.45:  # Below average - moderate decrease
-                performance_factor -= 0.3
-                
-            # Average PnL adjustment (30% weight)
-            if avg_pnl_per_trade > 0.5:  # High average profit
-                performance_factor += 0.4
-            elif avg_pnl_per_trade > 0:  # Positive average
-                performance_factor += 0.2
-            elif avg_pnl_per_trade < -0.5:  # High average loss
-                performance_factor -= 0.4
-            elif avg_pnl_per_trade < 0:  # Negative average
-                performance_factor -= 0.2
-                
-            # Consecutive performance adjustment (30% weight)
-            if consecutive_wins >= 5:  # Hot streak
+            # Win rate adjustment
+            if win_rate >= 0.7:  # High win rate - increase leverage
                 performance_factor += 0.5
-            elif consecutive_wins >= 3:  # Good streak
+            elif win_rate <= 0.4:  # Low win rate - decrease leverage
+                performance_factor -= 0.5
+                
+            # Consecutive performance adjustment
+            if consecutive_wins >= 3:
                 performance_factor += 0.3
-            elif consecutive_losses >= 5:  # Bad streak
-                performance_factor -= 0.7
-            elif consecutive_losses >= 3:  # Concerning streak
-                performance_factor -= 0.4
+            elif consecutive_losses >= 3:
+                performance_factor -= 0.5
                 
             # Limit performance factor
             performance_factor = max(-1.0, min(1.0, performance_factor))
@@ -1384,7 +1346,7 @@ class UltimateTradingBot:
 
         except Exception as e:
             self.logger.error(f"Error calculating performance factor: {e}")
-            return 0.1  # Small positive default instead of 0.0
+            return 0.0
 
     def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
         """Generate ML-enhanced scalping signal"""

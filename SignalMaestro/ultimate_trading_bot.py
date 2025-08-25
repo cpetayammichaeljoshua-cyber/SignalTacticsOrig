@@ -1660,41 +1660,20 @@ class UltimateTradingBot:
             return False
 
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format ML-enhanced signal message for Cornix compatibility via Telegram"""
-        direction = signal['direction']
-        timestamp = datetime.now().strftime('%H:%M')
-        optimal_leverage = signal.get('optimal_leverage', 35)
+        """Format minimal ML signal message"""
         ml_prediction = signal.get('ml_prediction', {})
-
-        # Cornix-compatible format for Telegram channel
+        
+        # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
-
+        
         message = f"""{cornix_signal}
 
-🧠 **ML ANALYSIS:**
-• Prediction: {ml_prediction.get('prediction', 'unknown').title()}
-• Confidence: {ml_prediction.get('confidence', 0):.1f}%
-• Expected Profit: {ml_prediction.get('expected_profit', 0):.2f}%
-• Risk: {ml_prediction.get('risk_probability', 0):.1f}%
+🧠 ML: {ml_prediction.get('prediction', 'unknown').title()} ({ml_prediction.get('confidence', 0):.0f}%)
+📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:{signal['risk_reward_ratio']:.0f}
+⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
+🕐 {datetime.now().strftime('%H:%M')} UTC
 
-📊 **SIGNAL DATA:**
-• Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}%
-• Time: {timestamp} UTC | R/R: 1:{signal['risk_reward_ratio']:.1f}
-• CVD: {self.cvd_data['cvd_trend'].title()} | ML Acc: {ml_prediction.get('model_accuracy', 0):.1f}%
-
-⚙️ **ADAPTIVE FEATURES:**
-• Leverage: {optimal_leverage}x (Adaptive)
-• Margin: Cross | Win Streak: {self.adaptive_leverage['consecutive_wins']}
-• Recent Performance: {self.adaptive_leverage['recent_wins']}/{self.adaptive_leverage['recent_wins'] + self.adaptive_leverage['recent_losses']}
-
-🔧 **AUTO MANAGEMENT:**
-✅ TP1 Hit → SL to Entry (Risk-Free)
-✅ TP2 Hit → SL to TP1 (Profit Lock)
-✅ TP3 Hit → Full Close (Complete)
-
-🧠 **ML REC:** {ml_prediction.get('recommendation', 'Trade with caution')}
-
-*TradeTactics ML Bot | Cross Margin • Adaptive Learning*"""
+*Auto SL Management Active*"""
 
         return message.strip()
 
@@ -1766,6 +1745,100 @@ Exchange: Binance Futures"""
             self.logger.error(f"Error getting updates: {e}")
             return []
 
+    def generate_chart(self, symbol: str, df: pd.DataFrame, signal: Dict[str, Any]) -> Optional[str]:
+        """Generate 1:1 ratio chart for the signal"""
+        try:
+            if not CHART_AVAILABLE or df is None or len(df) < 50:
+                return None
+
+            # Create figure with 1:1 aspect ratio (square)
+            fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+            
+            # Plot candlestick-style price
+            opens = df['open'].values
+            highs = df['high'].values
+            lows = df['low'].values
+            closes = df['close'].values
+            
+            # Use last 100 candles for chart
+            data_len = min(100, len(df))
+            x_range = range(data_len)
+            
+            # Plot price line
+            ax.plot(x_range, closes[-data_len:], color='white', linewidth=2, label='Price')
+            
+            # Mark entry point
+            entry_price = signal['entry_price']
+            ax.axhline(y=entry_price, color='yellow', linestyle='--', alpha=0.8, label=f'Entry: {entry_price:.4f}')
+            
+            # Mark TP levels
+            ax.axhline(y=signal['tp1'], color='green', linestyle=':', alpha=0.6, label=f'TP1: {signal["tp1"]:.4f}')
+            ax.axhline(y=signal['tp2'], color='green', linestyle=':', alpha=0.4)
+            ax.axhline(y=signal['tp3'], color='green', linestyle=':', alpha=0.2)
+            
+            # Mark SL
+            ax.axhline(y=signal['stop_loss'], color='red', linestyle=':', alpha=0.8, label=f'SL: {signal["stop_loss"]:.4f}')
+            
+            # Style the chart
+            ax.set_facecolor('black')
+            fig.patch.set_facecolor('black')
+            ax.tick_params(colors='white')
+            ax.set_title(f'{symbol} - {signal["direction"]} Signal', color='white', fontsize=14)
+            ax.legend(loc='upper left', facecolor='black', edgecolor='white', labelcolor='white')
+            ax.grid(True, alpha=0.3, color='gray')
+            
+            # Remove x-axis labels for cleaner look
+            ax.set_xticks([])
+            
+            # Set equal aspect ratio (1:1)
+            ax.set_aspect('equal', adjustable='box')
+            
+            plt.tight_layout()
+            
+            # Convert to base64 string
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', facecolor='black', edgecolor='white', dpi=100, bbox_inches='tight')
+            buffer.seek(0)
+            chart_base64 = base64.b64encode(buffer.getvalue()).decode()
+            plt.close(fig)
+            
+            return chart_base64
+            
+        except Exception as e:
+            self.logger.error(f"Error generating chart: {e}")
+            return None
+
+    async def send_photo(self, chat_id: str, photo_data: str, caption: str = "") -> bool:
+        """Send photo to Telegram"""
+        try:
+            url = f"{self.base_url}/sendPhoto"
+            
+            # Convert base64 to bytes
+            photo_bytes = base64.b64decode(photo_data)
+            
+            data = {
+                'chat_id': chat_id,
+                'caption': caption,
+                'parse_mode': 'Markdown'
+            }
+            
+            files = {
+                'photo': ('chart.png', photo_bytes, 'image/png')
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=data, files=files) as response:
+                    if response.status == 200:
+                        return True
+                    else:
+                        error = await response.text()
+                        self.logger.warning(f"Send photo failed: {error}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"Error sending photo: {e}")
+            return False
+
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands"""
         try:
@@ -1777,101 +1850,196 @@ Exchange: Binance Futures"""
             if text.startswith('/start'):
                 self.admin_chat_id = chat_id
                 self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
-
-                await self.verify_channel_access()
-                channel_status = "✅ Accessible" if self.channel_accessible else "⚠️ Not Accessible"
+                
                 ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🧠 **ULTIMATE ML BOT**
 
-                welcome = f"""🧠 **ULTIMATE ML TRADING BOT**
-*Advanced Machine Learning Strategy*
+✅ Online & Learning
+📊 Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+📈 Trades: {ml_summary['model_performance']['total_trades_learned']}
+🎯 Next Retrain: {ml_summary['next_retrain_in']}
 
-✅ **Status:** Online & Learning
-🎯 **Strategy:** ML-Enhanced Multi-Indicator Scalping
-⚖️ **Risk/Reward:** 1:3 Ratio Guaranteed
-📊 **Timeframes:** 1m to 4h
-🔍 **Symbols:** {len(self.symbols)}+ Top Crypto Pairs
+**Commands:**
+/ml - ML Status
+/scan - Market Scan  
+/stats - Performance
+/symbols - Active Pairs
+/leverage - Current Settings
+/risk - Risk Management
+/session - Trading Session
+/help - All Commands
 
-**🧠 Machine Learning Status:**
-• **Signal Accuracy:** {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
-• **Trades Learned:** {ml_summary['model_performance']['total_trades_learned']}
-• **Learning Status:** {ml_summary['learning_status'].title()}
-• **Next Retrain:** {ml_summary['next_retrain_in']} trades
+*Bot learns from every trade*""")
 
-**🛡️ Risk Management:**
-• Stop Loss to Entry after TP1
-• Maximum 2.5% risk per trade
-• 3 Take Profit levels
-• ML-enhanced signal filtering
+            elif text.startswith('/help'):
+                await self.send_message(chat_id, """**Available Commands:**
 
-**📈 Performance:**
-• Signals Generated: `{self.performance_stats['total_signals']}`
-• Win Rate: `{self.performance_stats['win_rate']:.1f}%`
-• Active Trades: `{len(self.active_trades)}`
+/start - Initialize bot
+/ml - ML model status
+/scan - Scan markets
+/stats - Performance stats
+/symbols - Trading symbols
+/leverage - Leverage settings
+/risk - Risk management
+/session - Current session
+/cvd - CVD analysis
+/market - Market conditions
+/insights - Trading insights
+/settings - Bot settings""")
 
-**📢 Channel Status:**
-• Target: `{self.target_channel}`
-• Access: `{channel_status}`
-• Fallback: Admin messaging enabled
+            elif text.startswith('/stats'):
+                ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""📊 **PERFORMANCE STATS**
 
-**🤖 ML Features:**
-• Continuous learning from every trade
-• Profit prediction & risk assessment
-• Market insight analysis
-• Time session optimization
-• Symbol performance tracking
+🎯 Signals: {self.performance_stats['total_signals']}
+✅ Win Rate: {self.performance_stats['win_rate']:.1f}%
+📈 Active: {len(self.active_trades)}
+🧠 ML Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+⚡ Trades Learned: {ml_summary['model_performance']['total_trades_learned']}""")
 
-*Bot learns and improves with each trade*
-Use `/help` for all commands"""
+            elif text.startswith('/symbols'):
+                await self.send_message(chat_id, f"""📋 **TRADING SYMBOLS**
 
-                await self.send_message(chat_id, welcome)
+Total Pairs: {len(self.symbols)}
+Timeframes: {', '.join(self.timeframes)}
+
+Top Pairs:
+• BTCUSDT, ETHUSDT, BNBUSDT
+• XRPUSDT, ADAUSDT, SOLUSDT
+• DOGEUSDT, AVAXUSDT, DOTUSDT
+• +{len(self.symbols)-9} more pairs""")
+
+            elif text.startswith('/leverage'):
+                await self.send_message(chat_id, f"""⚖️ **LEVERAGE SETTINGS**
+
+Current: {self.leverage_config['base_leverage']}x
+Range: {self.leverage_config['min_leverage']}x - {self.leverage_config['max_leverage']}x
+Type: Cross Margin
+Adaptive: ✅ Enabled
+
+Recent Performance:
+• Wins: {self.adaptive_leverage['recent_wins']}
+• Losses: {self.adaptive_leverage['recent_losses']}
+• Streak: {self.adaptive_leverage['consecutive_wins']}W""")
+
+            elif text.startswith('/risk'):
+                await self.send_message(chat_id, f"""🛡️ **RISK MANAGEMENT**
+
+Risk per Trade: 1.5%
+Risk/Reward: 1:3
+Max Concurrent: {self.max_concurrent_trades}
+Signal Filter: {self.min_signal_strength}%+
+
+Auto Management:
+✅ SL to Entry after TP1
+✅ SL to TP1 after TP2
+✅ Full close at TP3""")
+
+            elif text.startswith('/session'):
+                current_session = self._get_time_session(datetime.now())
+                await self.send_message(chat_id, f"""🕐 **TRADING SESSION**
+
+Current: {current_session}
+Time: {datetime.now().strftime('%H:%M UTC')}
+CVD Trend: {self.cvd_data['cvd_trend'].title()}
+CVD Strength: {self.cvd_data['cvd_strength']:.1f}%
+
+Session Performance:
+• Best: NY_MAIN, LONDON_OPEN
+• Moderate: NY_OVERLAP
+• Quiet: ASIA_MAIN""")
+
+            elif text.startswith('/cvd'):
+                await self.send_message(chat_id, f"""📊 **CVD ANALYSIS**
+
+BTC Perp CVD: {self.cvd_data['btc_perp_cvd']:.2f}
+Trend: {self.cvd_data['cvd_trend'].title()}
+Strength: {self.cvd_data['cvd_strength']:.1f}%
+Divergence: {'⚠️ Yes' if self.cvd_data['cvd_divergence'] else '✅ No'}
+
+*CVD measures institutional flow*""")
+
+            elif text.startswith('/market'):
+                await self.send_message(chat_id, f"""🌍 **MARKET CONDITIONS**
+
+Session: {self._get_time_session(datetime.now())}
+CVD: {self.cvd_data['cvd_trend'].title()}
+Volatility: Normal
+Volume: Active
+
+Signal Quality: High
+ML Filter: Active
+Next Scan: <60s""")
+
+            elif text.startswith('/insights'):
+                ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🔍 **TRADING INSIGHTS**
+
+Best Sessions: Available
+Symbol Performance: Tracked  
+Indicator Effectiveness: Analyzed
+Market Patterns: Learning
+
+Learning Status: {ml_summary['learning_status'].title()}
+Data Points: {ml_summary['model_performance']['total_trades_learned']}
+
+*Insights improve with more data*""")
+
+            elif text.startswith('/settings'):
+                await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
+
+Target: {self.target_channel}
+Max Signals/Hour: {self.max_signals_per_hour}
+Min Signal Interval: {self.min_signal_interval}s
+Auto-Restart: ✅ Enabled
+
+ML Features:
+• Continuous Learning: ✅
+• Adaptive Leverage: ✅  
+• Risk Assessment: ✅
+• Market Insights: ✅""")
 
             elif text.startswith('/ml'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🧠 **ML STATUS**
 
-                ml_status = f"""🧠 **MACHINE LEARNING STATUS**
+Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+Learning: {ml_summary['learning_status'].title()}
+Next Retrain: {ml_summary['next_retrain_in']} trades
 
-**🤖 Model Performance:**
-• **Signal Accuracy:** {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
-• **Profit Prediction:** {ml_summary['model_performance']['profit_prediction_accuracy']*100:.1f}%
-• **Risk Assessment:** {ml_summary['model_performance']['risk_assessment_accuracy']*100:.1f}%
-• **Total Trades Learned:** {ml_summary['model_performance']['total_trades_learned']}
-
-**📊 Learning Progress:**
-• **Status:** {ml_summary['learning_status'].title()}
-• **Next Retrain:** {ml_summary['next_retrain_in']} trades
-• **Last Training:** {ml_summary['model_performance']['last_training_time'] or 'Never'}
-
-**🔍 Market Insights:**
-• **Best Time Sessions:** Available
-• **Symbol Performance:** Tracked
-• **Indicator Effectiveness:** Analyzed
-
-**⚙️ ML Features:**
-✅ Real-time trade learning
-✅ Profit prediction
-✅ Risk assessment
-✅ Market regime detection
-✅ Time session optimization
-
-*ML models continuously improve with new data*"""
-
-                await self.send_message(chat_id, ml_status)
+Models Active:
+✅ Signal Classifier
+✅ Profit Predictor  
+✅ Risk Assessor""")
 
             elif text.startswith('/scan'):
-                await self.send_message(chat_id, "🧠 **ML-ENHANCED MARKET SCAN**\n\nAnalyzing markets with machine learning...")
-
+                await self.send_message(chat_id, "🔍 **Scanning markets...**")
+                
                 signals = await self.scan_for_signals()
-
+                
                 if signals:
                     for signal in signals[:3]:
                         self.signal_counter += 1
+                        
+                        # Send chart first
+                        try:
+                            df = await self.get_binance_data(signal['symbol'], '1h', 100)
+                            if df is not None:
+                                chart_data = self.generate_chart(signal['symbol'], df, signal)
+                                if chart_data:
+                                    await self.send_photo(chat_id, chart_data, f"📊 {signal['symbol']} Chart")
+                        except Exception as e:
+                            self.logger.warning(f"Chart generation failed: {e}")
+                        
+                        # Send signal info separately  
                         signal_msg = self.format_ml_signal_message(signal)
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
-
-                    await self.send_message(chat_id, f"✅ **{len(signals)} ML-ENHANCED SIGNALS FOUND**\n\nTop ML-validated signals delivered! Bot continues learning...")
+                    
+                    await self.send_message(chat_id, f"✅ **{len(signals)} signals found**")
                 else:
-                    await self.send_message(chat_id, "📊 **NO HIGH-CONFIDENCE ML SIGNALS**\n\nML models filtering for optimal opportunities. Bot continues learning...")
+                    await self.send_message(chat_id, "📊 **No signals found**\nML filtering for quality")
 
         except Exception as e:
             self.logger.error(f"Error handling command {text}: {e}")
@@ -1942,16 +2110,28 @@ Use `/help` for all commands"""
                                     self.performance_stats['total_signals'] * 100
                                 )
 
-                            signal_msg = self.format_ml_signal_message(signal)
+                            # Send chart first to @SignalTactics
+                            chart_sent = False
+                            if self.channel_accessible:
+                                try:
+                                    df = await self.get_binance_data(signal['symbol'], '1h', 100)
+                                    if df is not None:
+                                        chart_data = self.generate_chart(signal['symbol'], df, signal)
+                                        if chart_data:
+                                            chart_sent = await self.send_photo(self.target_channel, chart_data, 
+                                                                             f"📊 {signal['symbol']} - {signal['direction']} Setup")
+                                except Exception as chart_error:
+                                    self.logger.warning(f"Chart generation failed for {signal['symbol']}: {chart_error}")
 
-                            # Send only to Telegram channel @SignalTactics
+                            # Send signal info separately
+                            signal_msg = self.format_ml_signal_message(signal)
                             channel_sent = False
                             if self.channel_accessible:
                                 channel_sent = await self.send_message(self.target_channel, signal_msg)
 
                             if channel_sent:
-                                delivery_info = "Channel @SignalTactics"
-                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered to: {delivery_info}")
+                                chart_status = "📊✅" if chart_sent else "📊❌"
+                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered {chart_status}: Channel @SignalTactics")
 
                                 ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
                                 self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")

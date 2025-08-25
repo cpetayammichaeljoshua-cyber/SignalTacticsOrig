@@ -1769,64 +1769,75 @@ Exchange: Binance Futures"""
     def generate_chart(self, symbol: str, df: pd.DataFrame, signal: Dict[str, Any]) -> Optional[str]:
         """Generate 1:1 ratio chart for the signal"""
         try:
-            if not CHART_AVAILABLE or df is None or len(df) < 50:
+            if not CHART_AVAILABLE or df is None or len(df) < 10:
+                self.logger.warning(f"Chart generation skipped for {symbol}: insufficient data or libraries")
                 return None
 
             # Create figure with 1:1 aspect ratio (square)
-            fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+            fig, ax = plt.subplots(1, 1, figsize=(6, 6))
             
-            # Plot candlestick-style price
-            opens = df['open'].values
-            highs = df['high'].values
-            lows = df['low'].values
+            # Validate data
+            if 'close' not in df.columns or len(df) == 0:
+                plt.close(fig)
+                return None
+                
             closes = df['close'].values
+            if len(closes) == 0:
+                plt.close(fig)
+                return None
             
-            # Use last 100 candles for chart
-            data_len = min(100, len(df))
+            # Use available data
+            data_len = min(50, len(df))
             x_range = range(data_len)
             
             # Plot price line
-            ax.plot(x_range, closes[-data_len:], color='white', linewidth=2, label='Price')
+            ax.plot(x_range, closes[-data_len:], color='#00ff00', linewidth=2, label='Price')
             
             # Mark entry point
-            entry_price = signal['entry_price']
+            entry_price = signal.get('entry_price', closes[-1])
             ax.axhline(y=entry_price, color='yellow', linestyle='--', alpha=0.8, label=f'Entry: {entry_price:.4f}')
             
             # Mark TP levels
-            ax.axhline(y=signal['tp1'], color='green', linestyle=':', alpha=0.6, label=f'TP1: {signal["tp1"]:.4f}')
-            ax.axhline(y=signal['tp2'], color='green', linestyle=':', alpha=0.4)
-            ax.axhline(y=signal['tp3'], color='green', linestyle=':', alpha=0.2)
+            if 'tp1' in signal and signal['tp1'] > 0:
+                ax.axhline(y=signal['tp1'], color='green', linestyle=':', alpha=0.6, label=f'TP1: {signal["tp1"]:.4f}')
+            if 'tp2' in signal and signal['tp2'] > 0:
+                ax.axhline(y=signal['tp2'], color='green', linestyle=':', alpha=0.4)
+            if 'tp3' in signal and signal['tp3'] > 0:
+                ax.axhline(y=signal['tp3'], color='green', linestyle=':', alpha=0.2)
             
             # Mark SL
-            ax.axhline(y=signal['stop_loss'], color='red', linestyle=':', alpha=0.8, label=f'SL: {signal["stop_loss"]:.4f}')
+            if 'stop_loss' in signal and signal['stop_loss'] > 0:
+                ax.axhline(y=signal['stop_loss'], color='red', linestyle=':', alpha=0.8, label=f'SL: {signal["stop_loss"]:.4f}')
             
             # Style the chart
             ax.set_facecolor('black')
             fig.patch.set_facecolor('black')
             ax.tick_params(colors='white')
-            ax.set_title(f'{symbol} - {signal["direction"]} Signal', color='white', fontsize=14)
+            ax.set_title(f'{symbol} - {signal.get("direction", "BUY")} Signal', color='white', fontsize=12)
             ax.legend(loc='upper left', facecolor='black', edgecolor='white', labelcolor='white')
             ax.grid(True, alpha=0.3, color='gray')
             
             # Remove x-axis labels for cleaner look
             ax.set_xticks([])
             
-            # Set equal aspect ratio (1:1)
-            ax.set_aspect('equal', adjustable='box')
-            
             plt.tight_layout()
             
             # Convert to base64 string
             buffer = BytesIO()
-            plt.savefig(buffer, format='png', facecolor='black', edgecolor='white', dpi=100, bbox_inches='tight')
+            plt.savefig(buffer, format='png', facecolor='black', edgecolor='white', dpi=80, bbox_inches='tight')
             buffer.seek(0)
             chart_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            # Clean up
             plt.close(fig)
+            buffer.close()
             
             return chart_base64
             
         except Exception as e:
-            self.logger.error(f"Error generating chart: {e}")
+            self.logger.error(f"Error generating chart for {symbol}: {e}")
+            if 'fig' in locals():
+                plt.close(fig)
             return None
 
     async def send_photo(self, chat_id: str, photo_data: str, caption: str = "") -> bool:
@@ -1837,19 +1848,17 @@ Exchange: Binance Futures"""
             # Convert base64 to bytes
             photo_bytes = base64.b64decode(photo_data)
             
-            data = {
-                'chat_id': chat_id,
-                'caption': caption,
-                'parse_mode': 'Markdown'
-            }
-            
-            files = {
-                'photo': ('chart.png', photo_bytes, 'image/png')
-            }
+            # Create form data properly for aiohttp
+            form_data = aiohttp.FormData()
+            form_data.add_field('chat_id', chat_id)
+            form_data.add_field('caption', caption)
+            form_data.add_field('parse_mode', 'Markdown')
+            form_data.add_field('photo', photo_bytes, filename='chart.png', content_type='image/png')
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data, files=files) as response:
+                async with session.post(url, data=form_data) as response:
                     if response.status == 200:
+                        self.logger.info(f"✅ Photo sent successfully to {chat_id}")
                         return True
                     else:
                         error = await response.text()
@@ -2187,13 +2196,18 @@ Models Active:
                             if self.channel_accessible:
                                 try:
                                     df = await self.get_binance_data(signal['symbol'], '1h', 100)
-                                    if df is not None:
+                                    if df is not None and len(df) > 10:
                                         chart_data = self.generate_chart(signal['symbol'], df, signal)
-                                        if chart_data:
+                                        if chart_data and len(chart_data) > 100:  # Valid base64 should be longer
                                             chart_sent = await self.send_photo(self.target_channel, chart_data, 
                                                                              f"📊 {signal['symbol']} - {signal['direction']} Setup")
+                                        else:
+                                            self.logger.info(f"📊 Chart generation skipped for {signal['symbol']} - no valid chart data")
+                                    else:
+                                        self.logger.info(f"📊 Chart generation skipped for {signal['symbol']} - insufficient market data")
                                 except Exception as chart_error:
-                                    self.logger.warning(f"Chart generation failed for {signal['symbol']}: {chart_error}")
+                                    self.logger.warning(f"Chart error for {signal['symbol']}: {str(chart_error)[:100]}")
+                                    chart_sent = False
 
                             # Send signal info separately
                             signal_msg = self.format_ml_signal_message(signal)

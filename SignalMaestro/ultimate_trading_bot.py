@@ -814,7 +814,7 @@ class UltimateTradingBot:
         }
 
         # Risk management - optimized for maximum profitability
-        self.risk_reward_ratio = 3.0
+        self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 80
         self.max_signals_per_hour = 5
         self.capital_allocation = 0.025  # 2.5% per trade
@@ -1329,12 +1329,21 @@ class UltimateTradingBot:
                 performance_factor += 0.5
             elif win_rate <= 0.4:  # Low win rate - decrease leverage
                 performance_factor -= 0.5
+            else:
+                # Moderate performance gets a small boost
+                performance_factor += (win_rate - 0.5) * 0.4
 
             # Consecutive performance adjustment
             if consecutive_wins >= 3:
                 performance_factor += 0.3
             elif consecutive_losses >= 3:
                 performance_factor -= 0.5
+            elif consecutive_wins >= 1:
+                performance_factor += 0.1
+
+            # Add base performance factor to avoid 0.0
+            if performance_factor == 0.0:
+                performance_factor = 0.25  # Default positive factor
 
             # Limit performance factor
             performance_factor = max(-1.0, min(1.0, performance_factor))
@@ -1425,26 +1434,26 @@ class UltimateTradingBot:
 
             if direction == 'BUY':
                 stop_loss = entry_price - risk_amount
-                tp1 = entry_price + (risk_amount * 1.0)
-                tp2 = entry_price + (risk_amount * 2.0)
-                tp3 = entry_price + (risk_amount * 3.0)
+                tp1 = entry_price + (risk_amount * 0.33)  # 33% of profit for 1:1 ratio
+                tp2 = entry_price + (risk_amount * 0.67)  # 67% of profit for 1:1 ratio
+                tp3 = entry_price + (risk_amount * 1.0)   # Full 1:1 profit
 
                 if not (stop_loss < entry_price < tp1 < tp2 < tp3):
                     stop_loss = entry_price * 0.985
-                    tp1 = entry_price * 1.015
-                    tp2 = entry_price * 1.030
-                    tp3 = entry_price * 1.045
+                    tp1 = entry_price * 1.005
+                    tp2 = entry_price * 1.010
+                    tp3 = entry_price * 1.015
             else:
                 stop_loss = entry_price + risk_amount
-                tp1 = entry_price - (risk_amount * 1.0)
-                tp2 = entry_price - (risk_amount * 2.0)
-                tp3 = entry_price - (risk_amount * 3.0)
+                tp1 = entry_price - (risk_amount * 0.33)  # 33% of profit for 1:1 ratio
+                tp2 = entry_price - (risk_amount * 0.67)  # 67% of profit for 1:1 ratio
+                tp3 = entry_price - (risk_amount * 1.0)   # Full 1:1 profit
 
                 if not (tp3 < tp2 < tp1 < entry_price < stop_loss):
                     stop_loss = entry_price * 1.015
-                    tp1 = entry_price * 0.985
-                    tp2 = entry_price * 0.970
-                    tp3 = entry_price * 0.955
+                    tp1 = entry_price * 0.995
+                    tp2 = entry_price * 0.990
+                    tp3 = entry_price * 0.985
 
             # Risk validation
             risk_percentage = abs(entry_price - stop_loss) / entry_price * 100
@@ -1669,7 +1678,7 @@ class UltimateTradingBot:
         message = f"""{cornix_signal}
 
 🧠 ML: {ml_prediction.get('prediction', 'unknown').title()} ({ml_prediction.get('confidence', 0):.0f}%)
-📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:{signal['risk_reward_ratio']:.0f}
+📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:1
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
 🕐 {datetime.now().strftime('%H:%M')} UTC
 

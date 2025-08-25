@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Ultimate Perfect Trading Bot - Complete Automated System with Advanced ML
@@ -63,18 +62,18 @@ class AdvancedMLTradeAnalyzer:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        
+
         # ML Models
         self.signal_classifier = None
         self.profit_predictor = None
         self.risk_assessor = None
         self.market_regime_detector = None
         self.scaler = StandardScaler()
-        
+
         # Learning database
         self.db_path = "advanced_ml_trading.db"
         self._initialize_database()
-        
+
         # Performance tracking
         self.model_performance = {
             'signal_accuracy': 0.0,
@@ -84,11 +83,11 @@ class AdvancedMLTradeAnalyzer:
             'last_training_time': None,
             'win_rate_improvement': 0.0
         }
-        
+
         # Learning parameters
         self.retrain_threshold = 25  # Retrain after 25 new trades
         self.trades_since_retrain = 0
-        
+
         # Market insights
         self.market_insights = {
             'best_time_sessions': {},
@@ -96,7 +95,7 @@ class AdvancedMLTradeAnalyzer:
             'indicator_effectiveness': {},
             'risk_patterns': {}
         }
-        
+
         self.logger.info("🧠 Advanced ML Trade Analyzer initialized")
 
     def _initialize_database(self):
@@ -104,7 +103,7 @@ class AdvancedMLTradeAnalyzer:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             # Trade outcomes table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ml_trades (
@@ -139,7 +138,7 @@ class AdvancedMLTradeAnalyzer:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
             # ML insights table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ml_insights (
@@ -151,12 +150,12 @@ class AdvancedMLTradeAnalyzer:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
             conn.commit()
             conn.close()
-            
+
             self.logger.info("📊 Advanced ML database initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing ML database: {e}")
 
@@ -165,14 +164,14 @@ class AdvancedMLTradeAnalyzer:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             # Extract time features
             entry_time = trade_data.get('entry_time', datetime.now())
             if isinstance(entry_time, str):
                 entry_time = datetime.fromisoformat(entry_time)
-            
+
             time_session = self._get_time_session(entry_time)
-            
+
             cursor.execute('''
                 INSERT INTO ml_trades (
                     symbol, direction, entry_price, exit_price, stop_loss,
@@ -212,26 +211,26 @@ class AdvancedMLTradeAnalyzer:
                 entry_time.isoformat(),
                 trade_data.get('exit_time', entry_time).isoformat() if trade_data.get('exit_time') else entry_time.isoformat()
             ))
-            
+
             conn.commit()
             conn.close()
-            
+
             self.trades_since_retrain += 1
             self.model_performance['total_trades_learned'] += 1
-            
+
             self.logger.info(f"📝 ML Trade recorded: {trade_data.get('symbol')} - {trade_data.get('trade_result')}")
-            
+
             # Auto-retrain if threshold reached
             if self.trades_since_retrain >= self.retrain_threshold:
                 await self.retrain_models()
-                
+
         except Exception as e:
             self.logger.error(f"Error recording ML trade: {e}")
 
     def _get_time_session(self, timestamp: datetime) -> str:
         """Determine trading session"""
         hour = timestamp.hour
-        
+
         if 8 <= hour < 10:
             return 'LONDON_OPEN'
         elif 10 <= hour < 13:
@@ -253,42 +252,42 @@ class AdvancedMLTradeAnalyzer:
             if not ML_AVAILABLE:
                 self.logger.warning("ML libraries not available")
                 return
-                
+
             self.logger.info("🧠 Retraining ML models with new data...")
-            
+
             # Get training data
             training_data = self._get_training_data()
-            
+
             if len(training_data) < 50:
                 self.logger.warning(f"Insufficient training data: {len(training_data)} trades")
                 return
-            
+
             # Prepare features and targets
             features, targets = self._prepare_ml_features(training_data)
-            
+
             if features is None or len(features) == 0:
                 return
-            
+
             # Train signal classifier
             await self._train_signal_classifier(features, targets)
-            
+
             # Train profit predictor
             await self._train_profit_predictor(features, targets)
-            
+
             # Train risk assessor
             await self._train_risk_assessor(features, targets)
-            
+
             # Analyze market insights
             await self._analyze_market_insights(training_data)
-            
+
             # Save models
             self._save_ml_models()
-            
+
             self.trades_since_retrain = 0
             self.model_performance['last_training_time'] = datetime.now().isoformat()
-            
+
             self.logger.info(f"✅ ML models retrained with {len(training_data)} trades")
-            
+
         except Exception as e:
             self.logger.error(f"Error retraining ML models: {e}")
 
@@ -304,15 +303,15 @@ class AdvancedMLTradeAnalyzer:
             """
             df = pd.read_sql_query(query, conn)
             conn.close()
-            
+
             # Parse JSON fields
             if 'indicators_data' in df.columns:
                 df['indicators_data'] = df['indicators_data'].apply(
                     lambda x: json.loads(x) if x else {}
                 )
-            
+
             return df
-            
+
         except Exception as e:
             self.logger.error(f"Error getting training data: {e}")
             return pd.DataFrame()
@@ -322,33 +321,33 @@ class AdvancedMLTradeAnalyzer:
         try:
             if len(df) == 0:
                 return None, None
-            
+
             # Create feature matrix
             features = pd.DataFrame()
-            
+
             # Basic features
             features['signal_strength'] = df['signal_strength'].fillna(0)
             features['leverage'] = df['leverage'].fillna(35)
             features['market_volatility'] = df['market_volatility'].fillna(0.02)
             features['volume_ratio'] = df['volume_ratio'].fillna(1.0)
             features['rsi_value'] = df['rsi_value'].fillna(50)
-            
+
             # Encode categorical features
             le_direction = LabelEncoder()
             le_macd = LabelEncoder()
             le_cvd = LabelEncoder()
             le_session = LabelEncoder()
-            
+
             features['direction_encoded'] = le_direction.fit_transform(df['direction'].fillna('BUY'))
             features['macd_signal_encoded'] = le_macd.fit_transform(df['macd_signal'].fillna('neutral'))
             features['cvd_trend_encoded'] = le_cvd.fit_transform(df['cvd_trend'].fillna('neutral'))
             features['time_session_encoded'] = le_session.fit_transform(df['time_session'].fillna('NY_MAIN'))
             features['ema_alignment'] = df['ema_alignment'].fillna(False).astype(int)
-            
+
             # Time features
             features['hour_of_day'] = df['hour_of_day'].fillna(12)
             features['day_of_week'] = df['day_of_week'].fillna(1)
-            
+
             # Targets
             targets = {
                 'profitable': (df['profit_loss'] > 0).astype(int),
@@ -356,12 +355,12 @@ class AdvancedMLTradeAnalyzer:
                 'high_risk': (abs(df['profit_loss']) > 2.0).astype(int),
                 'quick_profit': ((df['profit_loss'] > 0) & (df['duration_minutes'] < 30)).astype(int)
             }
-            
+
             # Remove NaN values
             features = features.fillna(0)
-            
+
             return features, targets
-            
+
         except Exception as e:
             self.logger.error(f"Error preparing ML features: {e}")
             return None, None
@@ -371,17 +370,17 @@ class AdvancedMLTradeAnalyzer:
         try:
             X = features
             y = targets['profitable']
-            
+
             if len(X) < 20:
                 return
-            
+
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-            
+
             # Scale features
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
-            
+
             # Train model
             self.signal_classifier = RandomForestClassifier(
                 n_estimators=100,
@@ -390,14 +389,14 @@ class AdvancedMLTradeAnalyzer:
                 class_weight='balanced'
             )
             self.signal_classifier.fit(X_train_scaled, y_train)
-            
+
             # Evaluate
             y_pred = self.signal_classifier.predict(X_test_scaled)
             accuracy = accuracy_score(y_test, y_pred)
-            
+
             self.model_performance['signal_accuracy'] = accuracy
             self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f}")
-            
+
         except Exception as e:
             self.logger.error(f"Error training signal classifier: {e}")
 
@@ -406,17 +405,17 @@ class AdvancedMLTradeAnalyzer:
         try:
             X = features
             y = targets['profit_amount']
-            
+
             if len(X) < 20:
                 return
-            
+
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-            
+
             # Scale features
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
-            
+
             # Train model
             from sklearn.ensemble import GradientBoostingRegressor
             self.profit_predictor = GradientBoostingRegressor(
@@ -426,15 +425,15 @@ class AdvancedMLTradeAnalyzer:
                 random_state=42
             )
             self.profit_predictor.fit(X_train_scaled, y_train)
-            
+
             # Evaluate
             y_pred = self.profit_predictor.predict(X_test_scaled)
             from sklearn.metrics import r2_score
             r2 = r2_score(y_test, y_pred)
-            
+
             self.model_performance['profit_prediction_accuracy'] = max(0, r2)
             self.logger.info(f"💰 Profit predictor R²: {r2:.3f}")
-            
+
         except Exception as e:
             self.logger.error(f"Error training profit predictor: {e}")
 
@@ -443,31 +442,31 @@ class AdvancedMLTradeAnalyzer:
         try:
             X = features
             y = targets['high_risk']
-            
+
             if len(X) < 20:
                 return
-            
+
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-            
+
             # Scale features
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
-            
+
             # Train model
             self.risk_assessor = LogisticRegression(
                 random_state=42,
                 class_weight='balanced'
             )
             self.risk_assessor.fit(X_train_scaled, y_train)
-            
+
             # Evaluate
             y_pred = self.risk_assessor.predict(X_test_scaled)
             accuracy = accuracy_score(y_test, y_pred)
-            
+
             self.model_performance['risk_assessment_accuracy'] = accuracy
             self.logger.info(f"⚠️ Risk assessor accuracy: {accuracy:.3f}")
-            
+
         except Exception as e:
             self.logger.error(f"Error training risk assessor: {e}")
 
@@ -477,17 +476,17 @@ class AdvancedMLTradeAnalyzer:
             # Time session analysis
             session_performance = df.groupby('time_session')['profit_loss'].agg(['mean', 'count', 'std'])
             self.market_insights['best_time_sessions'] = session_performance.to_dict()
-            
+
             # Symbol performance
             symbol_performance = df.groupby('symbol')['profit_loss'].agg(['mean', 'count', 'std'])
             self.market_insights['symbol_performance'] = symbol_performance.to_dict()
-            
+
             # Indicator effectiveness
             indicator_corr = df[['signal_strength', 'rsi_value', 'volume_ratio', 'profit_loss']].corr()['profit_loss']
             self.market_insights['indicator_effectiveness'] = indicator_corr.to_dict()
-            
+
             self.logger.info("🔍 Market insights updated")
-            
+
         except Exception as e:
             self.logger.error(f"Error analyzing market insights: {e}")
 
@@ -496,27 +495,27 @@ class AdvancedMLTradeAnalyzer:
         try:
             model_dir = Path("ml_models")
             model_dir.mkdir(exist_ok=True)
-            
+
             models = {
                 'signal_classifier.pkl': self.signal_classifier,
                 'profit_predictor.pkl': self.profit_predictor,
                 'risk_assessor.pkl': self.risk_assessor,
                 'scaler.pkl': self.scaler
             }
-            
+
             for filename, model in models.items():
                 if model is not None:
                     with open(model_dir / filename, 'wb') as f:
                         pickle.dump(model, f)
-            
+
             # Save performance metrics
             with open(model_dir / 'performance_metrics.json', 'w') as f:
                 json.dump(self.model_performance, f, indent=2)
-            
+
             # Save market insights
             with open(model_dir / 'market_insights.json', 'w') as f:
                 json.dump(self.market_insights, f, indent=2, default=str)
-            
+
         except Exception as e:
             self.logger.error(f"Error saving ML models: {e}")
 
@@ -524,37 +523,37 @@ class AdvancedMLTradeAnalyzer:
         """Load ML models from disk"""
         try:
             model_dir = Path("ml_models")
-            
+
             if not model_dir.exists():
                 return
-            
+
             models = {
                 'signal_classifier.pkl': 'signal_classifier',
                 'profit_predictor.pkl': 'profit_predictor',
                 'risk_assessor.pkl': 'risk_assessor',
                 'scaler.pkl': 'scaler'
             }
-            
+
             for filename, attr_name in models.items():
                 filepath = model_dir / filename
                 if filepath.exists():
                     with open(filepath, 'rb') as f:
                         setattr(self, attr_name, pickle.load(f))
-            
+
             # Load performance metrics
             metrics_file = model_dir / 'performance_metrics.json'
             if metrics_file.exists():
                 with open(metrics_file, 'r') as f:
                     self.model_performance.update(json.load(f))
-            
+
             # Load market insights
             insights_file = model_dir / 'market_insights.json'
             if insights_file.exists():
                 with open(insights_file, 'r') as f:
                     self.market_insights.update(json.load(f))
-            
+
             self.logger.info("🤖 Advanced ML models loaded successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error loading ML models: {e}")
 
@@ -563,36 +562,34 @@ class AdvancedMLTradeAnalyzer:
         try:
             if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
                 return self._fallback_prediction(signal_data)
-            
+
             # Prepare features
             features = self._prepare_prediction_features(signal_data)
             if features is None:
                 return self._fallback_prediction(signal_data)
-            
+
             # Scale features
             features_scaled = self.scaler.transform([features])
-            
+
             # Get predictions
             profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
             profit_amount = self.profit_predictor.predict(features_scaled)[0]
             risk_prob = self.risk_assessor.predict_proba(features_scaled)[0][1]
-            
+
             # Calculate overall confidence
             confidence = profit_prob * 100
-            
+
             # Adjust based on market insights
             confidence = self._adjust_confidence_with_insights(signal_data, confidence)
-            
+
             # Determine prediction
             if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3:
                 prediction = 'highly_favorable'
             elif confidence >= 65 and profit_amount > 0:
                 prediction = 'favorable'
-            elif confidence >= 45:
-                prediction = 'neutral'
             else:
-                prediction = 'unfavorable'
-            
+                prediction = 'neutral' # Default to neutral if not meeting specific criteria
+
             return {
                 'prediction': prediction,
                 'confidence': confidence,
@@ -602,7 +599,7 @@ class AdvancedMLTradeAnalyzer:
                 'model_accuracy': self.model_performance['signal_accuracy'] * 100,
                 'trades_learned_from': self.model_performance['total_trades_learned']
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error in ML prediction: {e}")
             return self._fallback_prediction(signal_data)
@@ -613,7 +610,7 @@ class AdvancedMLTradeAnalyzer:
             # Get current time for session
             current_time = datetime.now()
             time_session = self._get_time_session(current_time)
-            
+
             # Map categorical values
             direction_map = {'BUY': 1, 'SELL': 0}
             session_map = {
@@ -622,7 +619,7 @@ class AdvancedMLTradeAnalyzer:
             }
             cvd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
             macd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
-            
+
             features = [
                 signal_data.get('signal_strength', 85),
                 signal_data.get('leverage', 35),
@@ -637,9 +634,9 @@ class AdvancedMLTradeAnalyzer:
                 current_time.hour,
                 current_time.weekday()
             ]
-            
+
             return features
-            
+
         except Exception as e:
             self.logger.error(f"Error preparing prediction features: {e}")
             return None
@@ -648,7 +645,7 @@ class AdvancedMLTradeAnalyzer:
         """Adjust confidence based on market insights"""
         try:
             adjusted_confidence = base_confidence
-            
+
             # Time session adjustment
             current_session = self._get_time_session(datetime.now())
             if 'best_time_sessions' in self.market_insights:
@@ -659,7 +656,7 @@ class AdvancedMLTradeAnalyzer:
                         adjusted_confidence *= 1.1
                     elif session_performance < -0.5:
                         adjusted_confidence *= 0.9
-            
+
             # Symbol performance adjustment
             symbol = signal_data.get('symbol', '')
             if 'symbol_performance' in self.market_insights:
@@ -670,9 +667,9 @@ class AdvancedMLTradeAnalyzer:
                         adjusted_confidence *= 1.05
                     elif symbol_performance < -0.5:
                         adjusted_confidence *= 0.95
-            
+
             return min(95, max(5, adjusted_confidence))
-            
+
         except Exception as e:
             self.logger.error(f"Error adjusting confidence: {e}")
             return base_confidence
@@ -684,7 +681,7 @@ class AdvancedMLTradeAnalyzer:
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback prediction when ML models not available"""
         signal_strength = signal_data.get('signal_strength', 50)
-        
+
         if signal_strength >= 85:
             prediction = 'favorable'
             confidence = 75
@@ -694,7 +691,7 @@ class AdvancedMLTradeAnalyzer:
         else:
             prediction = 'unfavorable'
             confidence = 40
-        
+
         # Only return favorable predictions in fallback
         if signal_strength < 85:  # Only favorable signals
             return {
@@ -706,7 +703,7 @@ class AdvancedMLTradeAnalyzer:
                 'model_accuracy': 0.0,
                 'trades_learned_from': 0
             }
-        
+
         return {
             'prediction': 'favorable',
             'confidence': confidence,
@@ -732,7 +729,7 @@ class UltimateTradingBot:
 
     def __init__(self):
         self.logger = self._setup_logging()
-        
+
         # Process management
         self.pid_file = Path("ultimate_trading_bot.pid")
         self.shutdown_requested = False
@@ -760,24 +757,24 @@ class UltimateTradingBot:
             'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT', 'DOGEUSDT',
             'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'ETCUSDT',
             'ATOMUSDT', 'ALGOUSDT', 'XLMUSDT', 'VETUSDT', 'TRXUSDT', 'EOSUSDT', 'THETAUSDT',
-            
+
             # DeFi tokens
             'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
             'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT',
-            
+
             # Layer 2 & Scaling
             'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
-            
+
             # Gaming & Metaverse
             'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
             'FLOWUSDT', 'IMXUSDT', 'GMTUSDT', 'STEPNUSDT',
-            
+
             # AI & Data
             'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT',
-            
+
             # Meme coins
             'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT',
-            
+
             # New & Trending
             'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'WLDUSDT',
             'JUPUSDT', 'WIFUSDT', 'BOMEUSDT', 'NOTUSDT', 'REZUSDT'
@@ -840,7 +837,7 @@ class UltimateTradingBot:
         # Advanced ML Trade Analyzer
         self.ml_analyzer = AdvancedMLTradeAnalyzer()
         self.ml_analyzer.load_ml_models()
-        
+
         # Bot status
         self.running = True
         self.last_heartbeat = datetime.now()
@@ -1274,7 +1271,7 @@ class UltimateTradingBot:
             # Load recent trades from ML database
             conn = sqlite3.connect(self.ml_analyzer.db_path)
             cursor = conn.cursor()
-            
+
             # Get recent trades for performance analysis
             cursor.execute("""
                 SELECT profit_loss, trade_result 
@@ -1282,7 +1279,7 @@ class UltimateTradingBot:
                 ORDER BY created_at DESC 
                 LIMIT ?
             """, (self.adaptive_leverage['performance_window'],))
-            
+
             recent_trades = cursor.fetchall()
             conn.close()
 
@@ -1292,16 +1289,16 @@ class UltimateTradingBot:
             # Calculate performance metrics
             wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
             losses = len(recent_trades) - wins
-            
+
             if len(recent_trades) == 0:
                 return 0.0
-                
+
             win_rate = wins / len(recent_trades)
-            
+
             # Calculate consecutive performance
             consecutive_wins = 0
             consecutive_losses = 0
-            
+
             for trade in recent_trades:
                 if trade[0] and trade[0] > 0:  # Winning trade
                     consecutive_wins += 1
@@ -1309,7 +1306,7 @@ class UltimateTradingBot:
                 else:  # Losing trade
                     consecutive_losses += 1
                     consecutive_wins = 0
-                    
+
                 # Only count the current streak
                 if consecutive_wins > 0 and consecutive_losses == 0:
                     break
@@ -1326,22 +1323,22 @@ class UltimateTradingBot:
 
             # Calculate performance factor (-1 to +1)
             performance_factor = 0.0
-            
+
             # Win rate adjustment
             if win_rate >= 0.7:  # High win rate - increase leverage
                 performance_factor += 0.5
             elif win_rate <= 0.4:  # Low win rate - decrease leverage
                 performance_factor -= 0.5
-                
+
             # Consecutive performance adjustment
             if consecutive_wins >= 3:
                 performance_factor += 0.3
             elif consecutive_losses >= 3:
                 performance_factor -= 0.5
-                
+
             # Limit performance factor
             performance_factor = max(-1.0, min(1.0, performance_factor))
-            
+
             return performance_factor
 
         except Exception as e:
@@ -1474,19 +1471,21 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # Only proceed with favorable predictions
+            # Only proceed with favorable predictions - Optimized thresholds
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
-            
-            # Filter: Only allow favorable or highly favorable predictions
-            if prediction_type not in ['favorable', 'highly_favorable']:
+
+            # Filter: Allow favorable, highly favorable, and high-confidence neutral predictions
+            if prediction_type not in ['favorable', 'highly_favorable'] and not (prediction_type == 'neutral' and ml_confidence > 70):
                 return None
-            
+
             # Adjust signal strength for favorable predictions
             if prediction_type == 'highly_favorable':
                 signal_strength *= 1.2
             elif prediction_type == 'favorable':
                 signal_strength *= 1.1
+            elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
+                signal_strength *= 1.05
 
             # Final signal strength check
             if signal_strength < self.min_signal_strength:
@@ -1828,7 +1827,7 @@ Use `/help` for all commands"""
 
             elif text.startswith('/ml'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
-                
+
                 ml_status = f"""🧠 **MACHINE LEARNING STATUS**
 
 **🤖 Model Performance:**
@@ -1906,9 +1905,9 @@ Use `/help` for all commands"""
                 'entry_time': signal.get('entry_time', datetime.now()),
                 'exit_time': trade_result.get('exit_time', datetime.now())
             }
-            
+
             await self.ml_analyzer.record_trade_outcome(trade_data)
-            
+
         except Exception as e:
             self.logger.error(f"Error recording trade completion: {e}")
 
@@ -1939,7 +1938,7 @@ Use `/help` for all commands"""
 
                             if self.performance_stats['total_signals'] > 0:
                                 self.performance_stats['win_rate'] = (
-                                    self.performance_stats['profitable_signals'] / 
+                                    self.performance_stats['profitable_signals'] /
                                     self.performance_stats['total_signals'] * 100
                                 )
 
@@ -1953,7 +1952,7 @@ Use `/help` for all commands"""
                             if channel_sent:
                                 delivery_info = "Channel @SignalTactics"
                                 self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered to: {delivery_info}")
-                                
+
                                 ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
                                 self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
                             else:

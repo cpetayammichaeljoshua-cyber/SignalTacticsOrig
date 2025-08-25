@@ -1931,14 +1931,28 @@ Exchange: Binance Futures"""
             elif text.startswith('/stats'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
                 active_symbols_list = ', '.join(sorted(self.active_symbols)) if self.active_symbols else 'None'
+                
+                # Check persistent log status
+                log_file = Path("persistent_trade_logs.json")
+                persistent_logs_count = 0
+                if log_file.exists():
+                    try:
+                        with open(log_file, 'r') as f:
+                            logs = json.load(f)
+                            persistent_logs_count = len(logs)
+                    except:
+                        pass
+                
                 await self.send_message(chat_id, f"""📊 **PERFORMANCE STATS**
 
 🎯 Signals: {self.performance_stats['total_signals']}
 ✅ Win Rate: {self.performance_stats['win_rate']:.1f}%
+💰 Total Profit: {self.performance_stats['total_profit']:.2f}%
 📈 Active: {len(self.active_trades)}
 🔒 Active Symbols: {len(self.active_symbols)}
 🧠 ML Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
 ⚡ Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+💾 Persistent Logs: {persistent_logs_count}
 
 **Active Pairs:** {active_symbols_list}""")
 
@@ -2047,6 +2061,42 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
                     self.symbol_trade_lock.clear()
                     await self.send_message(chat_id, f"🔓 **Unlocked {unlocked_count} symbols**")
 
+            elif text.startswith('/history'):
+                # Show recent trade history from persistent logs
+                try:
+                    log_file = Path("persistent_trade_logs.json")
+                    if not log_file.exists():
+                        await self.send_message(chat_id, "📭 **No trade history found**")
+                        return
+                    
+                    with open(log_file, 'r') as f:
+                        logs = json.load(f)
+                    
+                    if not logs:
+                        await self.send_message(chat_id, "📭 **No trades in history**")
+                        return
+                    
+                    # Show last 5 trades
+                    recent_trades = logs[-5:]
+                    history_msg = "📈 **RECENT TRADE HISTORY**\n\n"
+                    
+                    for trade in reversed(recent_trades):
+                        symbol = trade.get('symbol', 'UNKNOWN')
+                        direction = trade.get('direction', 'UNKNOWN')
+                        result = trade.get('trade_result', 'UNKNOWN')
+                        pnl = trade.get('profit_loss', 0)
+                        leverage = trade.get('leverage', 0)
+                        
+                        status_emoji = "✅" if pnl > 0 else "❌"
+                        history_msg += f"{status_emoji} **{symbol}** {direction} - {result}\n"
+                        history_msg += f"   P/L: {pnl:.2f}% | Leverage: {leverage}x\n\n"
+                    
+                    history_msg += f"💾 Total Logged Trades: {len(logs)}"
+                    await self.send_message(chat_id, history_msg)
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Error loading history:** {str(e)}")
+
             elif text.startswith('/settings'):
                 await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
 
@@ -2121,7 +2171,7 @@ Models Active:
             self.logger.error(f"Error releasing symbol lock for {symbol}: {e}")
 
     async def record_trade_completion(self, signal: Dict[str, Any], trade_result: Dict[str, Any]):
-        """Record completed trade for ML learning"""
+        """Record completed trade for ML learning with comprehensive logging"""
         try:
             symbol = signal['symbol']
             
@@ -2152,13 +2202,129 @@ Models Active:
                 'exit_time': trade_result.get('exit_time', datetime.now())
             }
 
+            # Record in ML analyzer database for learning
             await self.ml_analyzer.record_trade_outcome(trade_data)
+            
+            # Also save to persistent trade logs for backup and analysis
+            await self._save_trade_to_persistent_log(trade_data)
+            
+            # Update performance tracking
+            self._update_performance_stats(trade_data)
             
             # Release symbol lock after trade completion
             self.release_symbol_lock(symbol)
 
+            self.logger.info(f"📊 Trade logged for ML learning: {symbol} - {trade_data['trade_result']} - P/L: {trade_data['profit_loss']:.2f}%")
+
         except Exception as e:
             self.logger.error(f"Error recording trade completion: {e}")
+
+    async def _save_trade_to_persistent_log(self, trade_data: Dict[str, Any]):
+        """Save trade to persistent JSON log file for backup"""
+        try:
+            log_file = Path("persistent_trade_logs.json")
+            
+            # Load existing logs
+            existing_logs = []
+            if log_file.exists():
+                try:
+                    with open(log_file, 'r') as f:
+                        existing_logs = json.load(f)
+                except:
+                    existing_logs = []
+            
+            # Add timestamp and bot version
+            trade_log = {
+                **trade_data,
+                'logged_at': datetime.now().isoformat(),
+                'bot_version': 'Ultimate_Trading_Bot_v1.0',
+                'session_id': self.session_token[:8] if self.session_token else 'unknown'
+            }
+            
+            # Convert datetime objects to ISO strings
+            for key, value in trade_log.items():
+                if isinstance(value, datetime):
+                    trade_log[key] = value.isoformat()
+            
+            existing_logs.append(trade_log)
+            
+            # Keep last 1000 trades to prevent file from growing too large
+            if len(existing_logs) > 1000:
+                existing_logs = existing_logs[-1000:]
+            
+            # Save back to file
+            with open(log_file, 'w') as f:
+                json.dump(existing_logs, f, indent=2, default=str)
+                
+            self.logger.info(f"💾 Trade saved to persistent log: {trade_data['symbol']}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving to persistent log: {e}")
+
+    def _update_performance_stats(self, trade_data: Dict[str, Any]):
+        """Update performance statistics"""
+        try:
+            self.performance_stats['total_signals'] += 1
+            
+            if trade_data['profit_loss'] > 0:
+                self.performance_stats['profitable_signals'] += 1
+                self.performance_stats['total_profit'] += trade_data['profit_loss']
+            
+            if self.performance_stats['total_signals'] > 0:
+                self.performance_stats['win_rate'] = (
+                    self.performance_stats['profitable_signals'] / 
+                    self.performance_stats['total_signals'] * 100
+                )
+            
+        except Exception as e:
+            self.logger.error(f"Error updating performance stats: {e}")
+
+    async def load_persistent_trade_logs(self):
+        """Load persistent trade logs on startup for ML continuity"""
+        try:
+            log_file = Path("persistent_trade_logs.json")
+            
+            if not log_file.exists():
+                self.logger.info("📁 No persistent trade logs found - starting fresh")
+                return
+            
+            with open(log_file, 'r') as f:
+                trade_logs = json.load(f)
+            
+            if not trade_logs:
+                return
+            
+            # Feed historical data to ML analyzer
+            for trade_log in trade_logs[-100:]:  # Load last 100 trades for ML context
+                try:
+                    # Convert ISO strings back to datetime for ML processing
+                    if 'entry_time' in trade_log and isinstance(trade_log['entry_time'], str):
+                        trade_log['entry_time'] = datetime.fromisoformat(trade_log['entry_time'])
+                    if 'exit_time' in trade_log and isinstance(trade_log['exit_time'], str):
+                        trade_log['exit_time'] = datetime.fromisoformat(trade_log['exit_time'])
+                    
+                    # Record in ML analyzer for learning continuity
+                    await self.ml_analyzer.record_trade_outcome(trade_log)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error loading trade log: {e}")
+                    continue
+            
+            self.logger.info(f"📚 Loaded {len(trade_logs)} persistent trade logs for ML continuity")
+            
+            # Update performance stats from historical data
+            profitable_trades = sum(1 for trade in trade_logs if trade.get('profit_loss', 0) > 0)
+            total_profit = sum(trade.get('profit_loss', 0) for trade in trade_logs if trade.get('profit_loss', 0) > 0)
+            
+            self.performance_stats.update({
+                'total_signals': len(trade_logs),
+                'profitable_signals': profitable_trades,
+                'win_rate': (profitable_trades / len(trade_logs) * 100) if trade_logs else 0,
+                'total_profit': total_profit
+            })
+            
+        except Exception as e:
+            self.logger.error(f"Error loading persistent trade logs: {e}")
 
     async def auto_scan_loop(self):
         """Main auto-scanning loop with ML learning"""
@@ -2275,6 +2441,9 @@ Models Active:
         try:
             await self.create_session()
             await self.verify_channel_access()
+            
+            # Load persistent trade logs for ML continuity
+            await self.load_persistent_trade_logs()
 
             if self.admin_chat_id:
                 ml_summary = self.ml_analyzer.get_ml_summary()

@@ -834,6 +834,10 @@ class UltimateTradingBot:
         self.last_signal_time = {}
         self.min_signal_interval = 180  # 3 minutes between signals for same symbol
 
+        # Active symbol tracking - prevent duplicate trades
+        self.active_symbols = set()  # Track symbols with open trades
+        self.symbol_trade_lock = {}  # Lock mechanism for each symbol
+
         # Advanced ML Trade Analyzer
         self.ml_analyzer = AdvancedMLTradeAnalyzer()
         self.ml_analyzer.load_ml_models()
@@ -1358,6 +1362,12 @@ class UltimateTradingBot:
         """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
+            
+            # Check if symbol already has an active trade
+            if symbol in self.active_symbols:
+                self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
+                return None
+            
             if symbol in self.last_signal_time:
                 time_diff = (current_time - self.last_signal_time[symbol]).total_seconds()
                 if time_diff < self.min_signal_interval:
@@ -1500,8 +1510,10 @@ class UltimateTradingBot:
             if signal_strength < self.min_signal_strength:
                 return None
 
-            # Update last signal time
+            # Update last signal time and mark symbol as active
             self.last_signal_time[symbol] = current_time
+            self.active_symbols.add(symbol)
+            self.symbol_trade_lock[symbol] = current_time
 
             return {
                 'symbol': symbol,
@@ -1848,6 +1860,16 @@ Exchange: Binance Futures"""
             self.logger.error(f"Error sending photo: {e}")
             return False
 
+    async def _auto_unlock_symbol(self, symbol: str, delay_seconds: int):
+        """Automatically unlock symbol after delay (safety mechanism)"""
+        try:
+            await asyncio.sleep(delay_seconds)
+            if symbol in self.active_symbols:
+                self.release_symbol_lock(symbol)
+                self.logger.info(f"🕐 Auto-unlocked {symbol} after {delay_seconds/60:.0f} minutes")
+        except Exception as e:
+            self.logger.error(f"Error auto-unlocking {symbol}: {e}")
+
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands"""
         try:
@@ -1894,17 +1916,22 @@ Exchange: Binance Futures"""
 /cvd - CVD analysis
 /market - Market conditions
 /insights - Trading insights
-/settings - Bot settings""")
+/settings - Bot settings
+/unlock [SYMBOL] - Unlock symbol trade lock""")
 
             elif text.startswith('/stats'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
+                active_symbols_list = ', '.join(sorted(self.active_symbols)) if self.active_symbols else 'None'
                 await self.send_message(chat_id, f"""📊 **PERFORMANCE STATS**
 
 🎯 Signals: {self.performance_stats['total_signals']}
 ✅ Win Rate: {self.performance_stats['win_rate']:.1f}%
 📈 Active: {len(self.active_trades)}
+🔒 Active Symbols: {len(self.active_symbols)}
 🧠 ML Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
-⚡ Trades Learned: {ml_summary['model_performance']['total_trades_learned']}""")
+⚡ Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+
+**Active Pairs:** {active_symbols_list}""")
 
             elif text.startswith('/symbols'):
                 await self.send_message(chat_id, f"""📋 **TRADING SYMBOLS**
@@ -1994,6 +2021,23 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
 
 *Insights improve with more data*""")
 
+            elif text.startswith('/unlock'):
+                # Manual unlock command for specific symbol
+                parts = text.split()
+                if len(parts) > 1:
+                    symbol = parts[1].upper()
+                    if symbol in self.active_symbols:
+                        self.release_symbol_lock(symbol)
+                        await self.send_message(chat_id, f"🔓 **{symbol} unlocked**")
+                    else:
+                        await self.send_message(chat_id, f"ℹ️ **{symbol} not locked**")
+                else:
+                    # Unlock all symbols
+                    unlocked_count = len(self.active_symbols)
+                    self.active_symbols.clear()
+                    self.symbol_trade_lock.clear()
+                    await self.send_message(chat_id, f"🔓 **Unlocked {unlocked_count} symbols**")
+
             elif text.startswith('/settings'):
                 await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
 
@@ -2001,6 +2045,7 @@ Target: {self.target_channel}
 Max Signals/Hour: {self.max_signals_per_hour}
 Min Signal Interval: {self.min_signal_interval}s
 Auto-Restart: ✅ Enabled
+Duplicate Prevention: ✅ One trade per symbol
 
 ML Features:
 • Continuous Learning: ✅
@@ -2053,11 +2098,26 @@ Models Active:
         except Exception as e:
             self.logger.error(f"Error handling command {text}: {e}")
 
+    def release_symbol_lock(self, symbol: str):
+        """Release symbol from active trading lock"""
+        try:
+            if symbol in self.active_symbols:
+                self.active_symbols.remove(symbol)
+                self.logger.info(f"🔓 Released trade lock for {symbol}")
+            
+            if symbol in self.symbol_trade_lock:
+                del self.symbol_trade_lock[symbol]
+                
+        except Exception as e:
+            self.logger.error(f"Error releasing symbol lock for {symbol}: {e}")
+
     async def record_trade_completion(self, signal: Dict[str, Any], trade_result: Dict[str, Any]):
         """Record completed trade for ML learning"""
         try:
+            symbol = signal['symbol']
+            
             trade_data = {
-                'symbol': signal['symbol'],
+                'symbol': symbol,
                 'direction': signal['direction'],
                 'entry_price': signal['entry_price'],
                 'exit_price': trade_result.get('exit_price', signal['entry_price']),
@@ -2084,6 +2144,9 @@ Models Active:
             }
 
             await self.ml_analyzer.record_trade_outcome(trade_data)
+            
+            # Release symbol lock after trade completion
+            self.release_symbol_lock(symbol)
 
         except Exception as e:
             self.logger.error(f"Error recording trade completion: {e}")
@@ -2144,7 +2207,13 @@ Models Active:
 
                                 ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
                                 self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
+                                
+                                # Schedule automatic symbol unlock after 30 minutes if no manual close
+                                symbol = signal['symbol']
+                                asyncio.create_task(self._auto_unlock_symbol(symbol, 1800))  # 30 minutes
                             else:
+                                # Release symbol lock if signal failed to send
+                                self.release_symbol_lock(signal['symbol'])
                                 self.logger.warning(f"❌ Failed to send ML Signal #{self.signal_counter} to @SignalTactics")
 
                             signals_sent_count += 1

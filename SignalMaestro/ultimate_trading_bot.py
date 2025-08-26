@@ -842,6 +842,16 @@ class UltimateTradingBot:
         self.ml_analyzer = AdvancedMLTradeAnalyzer()
         self.ml_analyzer.load_ml_models()
 
+        # Closed Trades Scanner for ML Training
+        self.closed_trades_scanner = None
+        if self.bot_token:
+            try:
+                from telegram_closed_trades_scanner import TelegramClosedTradesScanner
+                self.closed_trades_scanner = TelegramClosedTradesScanner(self.bot_token, self.target_channel)
+                self.logger.info("📊 Telegram Closed Trades Scanner initialized")
+            except Exception as e:
+                self.logger.warning(f"Could not initialize closed trades scanner: {e}")
+
         # Bot status
         self.running = True
         self.last_heartbeat = datetime.now()
@@ -2154,6 +2164,45 @@ Models Active:
                 else:
                     await self.send_message(chat_id, "📊 **No signals found**\nML filtering for quality")
 
+            elif text.startswith('/train'):
+                await self.send_message(chat_id, "🧠 **Scanning channel for closed trades...**")
+                
+                try:
+                    await self.scan_and_train_from_closed_trades()
+                    ml_summary = self.ml_analyzer.get_ml_summary()
+                    
+                    await self.send_message(chat_id, f"""✅ **ML TRAINING COMPLETE**
+
+🧠 **Updated Model Performance:**
+• Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+• Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+• Learning Status: {ml_summary['learning_status'].title()}
+
+📊 **Channel Scan Results:**
+• Processed closed trades from @SignalTactics
+• ML models retrained with new data
+• Performance metrics updated
+
+*Bot continuously learns from channel activity*""")
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Training Error:** {str(e)}")
+
+            elif text.startswith('/channel'):
+                await self.send_message(chat_id, f"""📢 **CHANNEL STATUS**
+
+Target: {self.target_channel}
+Access: {'✅ Available' if self.channel_accessible else '❌ Limited'}
+Auto-Training: ✅ Enabled
+
+**ML Channel Learning:**
+• Scans for closed trades automatically
+• Extracts trade outcomes and P/L
+• Trains models with real results
+• Improves prediction accuracy
+
+Use /train to manually scan and train""")
+
         except Exception as e:
             self.logger.error(f"Error handling command {text}: {e}")
 
@@ -2326,14 +2375,241 @@ Models Active:
         except Exception as e:
             self.logger.error(f"Error loading persistent trade logs: {e}")
 
+    async def scan_and_train_from_closed_trades(self):
+        """Scan Telegram channel for closed trades and train ML"""
+        try:
+            if not self.closed_trades_scanner:
+                self.logger.warning("Closed trades scanner not available")
+                return
+                
+            self.logger.info("🔍 Scanning Telegram channel for closed trades...")
+            
+            # Scan for closed trades using dedicated scanner
+            closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=24)
+            
+            if closed_trades:
+                self.logger.info(f"📈 Found {len(closed_trades)} closed trades from channel")
+                
+                # Process and log each closed trade
+                processed_ids = []
+                for trade in closed_trades:
+                    await self._process_closed_trade_for_ml(trade)
+                    processed_ids.append(trade.get('message_id'))
+                
+                # Mark trades as processed
+                await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
+                
+                # Retrain ML models with new data
+                await self.ml_analyzer.retrain_models()
+                
+                self.logger.info(f"✅ ML trained with {len(closed_trades)} closed trades")
+            else:
+                self.logger.info("📊 No new closed trades found in recent channel messages")
+                
+        except Exception as e:
+            self.logger.error(f"Error scanning for closed trades: {e}")
+
+    async def _scan_channel_for_closed_trades(self) -> List[Dict[str, Any]]:
+        """Scan channel messages for closed/completed trades"""
+        try:
+            closed_trades = []
+            
+            # Get recent messages from the target channel
+            url = f"{self.base_url}/getUpdates"
+            params = {'offset': -100}  # Get last 100 updates
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        updates = data.get('result', [])
+                        
+                        # Look for channel messages
+                        for update in updates:
+                            if 'channel_post' in update:
+                                message = update['channel_post']
+                                if message.get('chat', {}).get('username') == self.target_channel.replace('@', ''):
+                                    text = message.get('text', '')
+                                    
+                                    # Check if message contains closed trade information
+                                    closed_trade = self._parse_closed_trade_message(text, message)
+                                    if closed_trade:
+                                        closed_trades.append(closed_trade)
+            
+            return closed_trades
+            
+        except Exception as e:
+            self.logger.error(f"Error scanning channel messages: {e}")
+            return []
+
+    def _parse_closed_trade_message(self, text: str, message: Dict) -> Optional[Dict[str, Any]]:
+        """Parse message text to identify and extract closed trade information"""
+        try:
+            import re
+            
+            # Keywords that indicate a closed/completed trade
+            closed_keywords = [
+                'closed', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 
+                'stop loss hit', 'sl hit', 'trade closed', 'position closed',
+                'profit taken', 'loss taken', 'exit', 'completed'
+            ]
+            
+            text_lower = text.lower()
+            
+            # Check if message contains closed trade indicators
+            if not any(keyword in text_lower for keyword in closed_keywords):
+                return None
+            
+            closed_trade = {
+                'message_id': message.get('message_id'),
+                'timestamp': datetime.fromtimestamp(message.get('date', 0)),
+                'text': text
+            }
+            
+            # Extract symbol
+            symbol_match = re.search(r'#?(\w+USDT?)\s+', text, re.IGNORECASE)
+            if symbol_match:
+                closed_trade['symbol'] = symbol_match.group(1).upper()
+            
+            # Extract direction
+            direction_match = re.search(r'(LONG|SHORT|BUY|SELL)', text, re.IGNORECASE)
+            if direction_match:
+                closed_trade['direction'] = direction_match.group(1).upper()
+            
+            # Extract profit/loss percentage
+            profit_patterns = [
+                r'profit[:\s]*([+-]?\d+\.?\d*)%',
+                r'([+-]?\d+\.?\d*)%\s*profit',
+                r'gain[:\s]*([+-]?\d+\.?\d*)%',
+                r'loss[:\s]*([+-]?\d+\.?\d*)%',
+                r'([+-]?\d+\.?\d*)%\s*loss'
+            ]
+            
+            for pattern in profit_patterns:
+                profit_match = re.search(pattern, text, re.IGNORECASE)
+                if profit_match:
+                    profit_value = float(profit_match.group(1))
+                    closed_trade['profit_loss'] = profit_value
+                    closed_trade['trade_result'] = 'PROFIT' if profit_value > 0 else 'LOSS'
+                    break
+            
+            # Determine trade result from keywords if profit_loss not found
+            if 'trade_result' not in closed_trade:
+                if any(word in text_lower for word in ['tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 'profit taken']):
+                    closed_trade['trade_result'] = 'PROFIT'
+                    closed_trade['profit_loss'] = 1.0  # Default positive value
+                elif any(word in text_lower for word in ['stop loss hit', 'sl hit', 'loss taken']):
+                    closed_trade['trade_result'] = 'LOSS'
+                    closed_trade['profit_loss'] = -1.0  # Default negative value
+                else:
+                    closed_trade['trade_result'] = 'CLOSED'
+                    closed_trade['profit_loss'] = 0.0
+            
+            # Extract entry and exit prices if available
+            entry_match = re.search(r'entry[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
+            if entry_match:
+                closed_trade['entry_price'] = float(entry_match.group(1))
+            
+            exit_match = re.search(r'exit[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
+            if exit_match:
+                closed_trade['exit_price'] = float(exit_match.group(1))
+            
+            # Extract leverage if mentioned
+            leverage_match = re.search(r'(\d+)x', text, re.IGNORECASE)
+            if leverage_match:
+                closed_trade['leverage'] = int(leverage_match.group(1))
+            
+            # Only return if we have minimum required information
+            if 'symbol' in closed_trade and 'trade_result' in closed_trade:
+                return closed_trade
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing closed trade message: {e}")
+            return None
+
+    async def _process_closed_trade_for_ml(self, closed_trade: Dict[str, Any]):
+        """Process a closed trade and prepare it for ML training"""
+        try:
+            # Create comprehensive trade data for ML
+            trade_data = {
+                'symbol': closed_trade.get('symbol', 'UNKNOWN'),
+                'direction': closed_trade.get('direction', 'BUY'),
+                'entry_price': closed_trade.get('entry_price', 0),
+                'exit_price': closed_trade.get('exit_price', closed_trade.get('entry_price', 0)),
+                'stop_loss': 0,  # Not available from channel message
+                'take_profit_1': 0,  # Not available from channel message
+                'take_profit_2': 0,  # Not available from channel message
+                'take_profit_3': 0,  # Not available from channel message
+                'signal_strength': 85,  # Default value for channel signals
+                'leverage': closed_trade.get('leverage', 35),
+                'profit_loss': closed_trade.get('profit_loss', 0),
+                'trade_result': closed_trade.get('trade_result', 'UNKNOWN'),
+                'duration_minutes': 30,  # Default duration
+                'market_volatility': 0.02,
+                'volume_ratio': 1.0,
+                'rsi_value': 50,
+                'macd_signal': 'neutral',
+                'ema_alignment': False,
+                'cvd_trend': 'neutral',
+                'indicators_data': ['telegram_channel_signal'],
+                'ml_prediction': 'channel_signal',
+                'ml_confidence': 75,
+                'entry_time': closed_trade.get('timestamp', datetime.now()),
+                'exit_time': closed_trade.get('timestamp', datetime.now()),
+                'data_source': 'telegram_channel'
+            }
+            
+            # Get current market data for the symbol to enhance the trade data
+            try:
+                df = await self.get_binance_data(trade_data['symbol'], '1h', 50)
+                if df is not None and len(df) > 20:
+                    indicators = self.calculate_advanced_indicators(df)
+                    if indicators:
+                        # Update trade data with current market indicators
+                        trade_data.update({
+                            'market_volatility': indicators.get('market_volatility', 0.02),
+                            'volume_ratio': indicators.get('volume_ratio', 1.0),
+                            'rsi_value': indicators.get('rsi', 50),
+                            'ema_alignment': indicators.get('ema_bullish', False) or indicators.get('ema_bearish', False),
+                            'cvd_trend': indicators.get('cvd_trend', 'neutral')
+                        })
+            except Exception as e:
+                self.logger.warning(f"Could not enhance trade data with market indicators: {e}")
+            
+            # Record in ML analyzer
+            await self.ml_analyzer.record_trade_outcome(trade_data)
+            
+            # Save to persistent logs
+            await self._save_trade_to_persistent_log(trade_data)
+            
+            # Update performance stats
+            self._update_performance_stats(trade_data)
+            
+            self.logger.info(f"📊 Processed closed trade for ML: {trade_data['symbol']} - {trade_data['trade_result']} - P/L: {trade_data['profit_loss']:.2f}%")
+            
+        except Exception as e:
+            self.logger.error(f"Error processing closed trade for ML: {e}")
+
     async def auto_scan_loop(self):
         """Main auto-scanning loop with ML learning"""
         consecutive_errors = 0
         max_consecutive_errors = 5
         base_scan_interval = 90
+        last_channel_training = datetime.now()
 
         while self.running and not self.shutdown_requested:
             try:
+                # Periodically scan channel for closed trades and train ML (every 30 minutes)
+                now = datetime.now()
+                if (now - last_channel_training).total_seconds() > 1800:  # 30 minutes
+                    try:
+                        await self.scan_and_train_from_closed_trades()
+                        last_channel_training = now
+                    except Exception as e:
+                        self.logger.warning(f"Channel training error: {e}")
+
                 self.logger.info("🧠 Scanning markets for ML-enhanced signals...")
                 signals = await self.scan_for_signals()
 

@@ -2384,27 +2384,47 @@ Use /train to manually scan and train""")
                 
             self.logger.info("🔍 Scanning Telegram channel for closed trades...")
             
-            # Scan for closed trades using dedicated scanner
-            closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=24)
+            # First get unprocessed trades from database
+            unprocessed_trades = await self.closed_trades_scanner.get_unprocessed_trades()
             
-            if closed_trades:
-                self.logger.info(f"📈 Found {len(closed_trades)} closed trades from channel")
+            # Scan for new closed trades
+            new_closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=48)
+            
+            # Combine all trades for processing
+            all_trades = unprocessed_trades + new_closed_trades
+            
+            if all_trades:
+                self.logger.info(f"📈 Processing {len(all_trades)} closed trades for ML training")
                 
-                # Process and log each closed trade
+                processed_count = 0
                 processed_ids = []
-                for trade in closed_trades:
-                    await self._process_closed_trade_for_ml(trade)
-                    processed_ids.append(trade.get('message_id'))
+                
+                for trade in all_trades:
+                    try:
+                        # Process trade for ML training
+                        await self._process_closed_trade_for_ml(trade)
+                        processed_count += 1
+                        
+                        if trade.get('message_id'):
+                            processed_ids.append(trade.get('message_id'))
+                            
+                    except Exception as trade_error:
+                        self.logger.warning(f"Error processing trade {trade.get('symbol', 'UNKNOWN')}: {trade_error}")
+                        continue
                 
                 # Mark trades as processed
-                await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
+                if processed_ids:
+                    await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
                 
-                # Retrain ML models with new data
-                await self.ml_analyzer.retrain_models()
-                
-                self.logger.info(f"✅ ML trained with {len(closed_trades)} closed trades")
+                # Retrain ML models with new data if we have enough trades
+                if processed_count >= 5:
+                    await self.ml_analyzer.retrain_models()
+                    self.logger.info(f"✅ ML models retrained with {processed_count} closed trades")
+                else:
+                    self.logger.info(f"📊 Processed {processed_count} trades (need 5+ for retraining)")
+                    
             else:
-                self.logger.info("📊 No new closed trades found in recent channel messages")
+                self.logger.info("📊 No closed trades found for ML training")
                 
         except Exception as e:
             self.logger.error(f"Error scanning for closed trades: {e}")
@@ -2532,10 +2552,25 @@ Use /train to manually scan and train""")
     async def _process_closed_trade_for_ml(self, closed_trade: Dict[str, Any]):
         """Process a closed trade and prepare it for ML training"""
         try:
+            # Validate required fields
+            symbol = closed_trade.get('symbol')
+            if not symbol:
+                self.logger.warning("Skipping trade with no symbol")
+                return
+            
+            # Extract trade result and profit/loss
+            trade_result = closed_trade.get('trade_result', 'UNKNOWN')
+            profit_loss = closed_trade.get('profit_loss', 0)
+            
+            # Skip trades with no meaningful result
+            if trade_result == 'UNKNOWN' and profit_loss == 0:
+                self.logger.debug(f"Skipping {symbol} - no trade outcome data")
+                return
+            
             # Create comprehensive trade data for ML
             trade_data = {
-                'symbol': closed_trade.get('symbol', 'UNKNOWN'),
-                'direction': closed_trade.get('direction', 'BUY'),
+                'symbol': symbol.upper(),
+                'direction': closed_trade.get('direction', 'BUY').upper(),
                 'entry_price': closed_trade.get('entry_price', 0),
                 'exit_price': closed_trade.get('exit_price', closed_trade.get('entry_price', 0)),
                 'stop_loss': 0,  # Not available from channel message
@@ -2543,10 +2578,10 @@ Use /train to manually scan and train""")
                 'take_profit_2': 0,  # Not available from channel message
                 'take_profit_3': 0,  # Not available from channel message
                 'signal_strength': 85,  # Default value for channel signals
-                'leverage': closed_trade.get('leverage', 35),
-                'profit_loss': closed_trade.get('profit_loss', 0),
-                'trade_result': closed_trade.get('trade_result', 'UNKNOWN'),
-                'duration_minutes': 30,  # Default duration
+                'leverage': max(10, min(100, closed_trade.get('leverage', 35))),  # Validate leverage range
+                'profit_loss': float(profit_loss),
+                'trade_result': trade_result,
+                'duration_minutes': closed_trade.get('duration_minutes', 30),
                 'market_volatility': 0.02,
                 'volume_ratio': 1.0,
                 'rsi_value': 50,
@@ -2561,22 +2596,23 @@ Use /train to manually scan and train""")
                 'data_source': 'telegram_channel'
             }
             
-            # Get current market data for the symbol to enhance the trade data
+            # Try to enhance with current market data (optional)
             try:
-                df = await self.get_binance_data(trade_data['symbol'], '1h', 50)
-                if df is not None and len(df) > 20:
-                    indicators = self.calculate_advanced_indicators(df)
-                    if indicators:
-                        # Update trade data with current market indicators
-                        trade_data.update({
-                            'market_volatility': indicators.get('market_volatility', 0.02),
-                            'volume_ratio': indicators.get('volume_ratio', 1.0),
-                            'rsi_value': indicators.get('rsi', 50),
-                            'ema_alignment': indicators.get('ema_bullish', False) or indicators.get('ema_bearish', False),
-                            'cvd_trend': indicators.get('cvd_trend', 'neutral')
-                        })
-            except Exception as e:
-                self.logger.warning(f"Could not enhance trade data with market indicators: {e}")
+                if symbol in self.symbols:  # Only for supported symbols
+                    df = await self.get_binance_data(symbol, '1h', 50)
+                    if df is not None and len(df) > 20:
+                        indicators = self.calculate_advanced_indicators(df)
+                        if indicators:
+                            # Update trade data with market indicators
+                            trade_data.update({
+                                'market_volatility': indicators.get('market_volatility', 0.02),
+                                'volume_ratio': indicators.get('volume_ratio', 1.0),
+                                'rsi_value': indicators.get('rsi', 50),
+                                'ema_alignment': indicators.get('ema_bullish', False) or indicators.get('ema_bearish', False),
+                                'cvd_trend': indicators.get('cvd_trend', 'neutral')
+                            })
+            except Exception as market_error:
+                self.logger.debug(f"Could not enhance {symbol} with market data: {market_error}")
             
             # Record in ML analyzer
             await self.ml_analyzer.record_trade_outcome(trade_data)
@@ -2587,10 +2623,12 @@ Use /train to manually scan and train""")
             # Update performance stats
             self._update_performance_stats(trade_data)
             
-            self.logger.info(f"📊 Processed closed trade for ML: {trade_data['symbol']} - {trade_data['trade_result']} - P/L: {trade_data['profit_loss']:.2f}%")
+            result_emoji = "✅" if profit_loss > 0 else "❌" if profit_loss < 0 else "➖"
+            self.logger.info(f"📊 {result_emoji} Processed {symbol} {trade_result}: {profit_loss:.2f}% P/L")
             
         except Exception as e:
-            self.logger.error(f"Error processing closed trade for ML: {e}")
+            symbol = closed_trade.get('symbol', 'UNKNOWN')
+            self.logger.error(f"Error processing closed trade {symbol}: {e}")
 
     async def auto_scan_loop(self):
         """Main auto-scanning loop with ML learning"""

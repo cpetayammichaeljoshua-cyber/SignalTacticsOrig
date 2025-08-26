@@ -167,8 +167,14 @@ class TelegramClosedTradesScanner:
             
             text_lower = text.lower()
             
+            # Enhanced keywords for closed trade detection
+            extended_closed_keywords = self.closed_trade_patterns['closed_keywords'] + [
+                'position closed', 'trade finished', 'signal ended', 'outcome',
+                'result:', 'final:', 'update:', 'closed at', 'exit at'
+            ]
+            
             # Check if message contains closed trade indicators
-            if not any(keyword in text_lower for keyword in self.closed_trade_patterns['closed_keywords']):
+            if not any(keyword in text_lower for keyword in extended_closed_keywords):
                 return None
             
             closed_trade = {
@@ -178,71 +184,160 @@ class TelegramClosedTradesScanner:
                 'data_source': 'telegram_channel'
             }
             
-            # Extract symbol
-            symbol_match = re.search(self.closed_trade_patterns['symbol_pattern'], text, re.IGNORECASE)
-            if symbol_match:
-                closed_trade['symbol'] = symbol_match.group(1).upper()
+            # Extract symbol with improved pattern
+            symbol_patterns = [
+                r'#?(\w+USDT?)\s+',
+                r'(\w+USDT?)\s+(?:long|short|buy|sell)',
+                r'(?:pair|symbol):\s*(\w+USDT?)',
+                r'^(\w+USDT?)\s',  # Symbol at start of message
+            ]
             
-            # Extract direction
-            direction_match = re.search(self.closed_trade_patterns['direction_pattern'], text, re.IGNORECASE)
-            if direction_match:
-                closed_trade['direction'] = direction_match.group(1).upper()
+            for pattern in symbol_patterns:
+                symbol_match = re.search(pattern, text, re.IGNORECASE)
+                if symbol_match:
+                    closed_trade['symbol'] = symbol_match.group(1).upper()
+                    break
             
-            # Extract profit/loss percentage
+            # Extract direction with improved pattern
+            direction_patterns = [
+                r'(LONG|SHORT|BUY|SELL)\s',
+                r'direction:\s*(LONG|SHORT|BUY|SELL)',
+                r'(LONG|SHORT|BUY|SELL)\s+(?:position|trade)'
+            ]
+            
+            for pattern in direction_patterns:
+                direction_match = re.search(pattern, text, re.IGNORECASE)
+                if direction_match:
+                    closed_trade['direction'] = direction_match.group(1).upper()
+                    break
+            
+            # Enhanced profit/loss extraction
             profit_loss = None
             trade_result = None
             
-            # Check for profit patterns
-            for pattern in self.closed_trade_patterns['profit_patterns']:
+            # More comprehensive profit patterns
+            profit_patterns = [
+                r'profit[:\s]*([+-]?\d+\.?\d*)%',
+                r'([+-]?\d+\.?\d*)%\s*profit',
+                r'gain[:\s]*([+-]?\d+\.?\d*)%',
+                r'([+-]?\d+\.?\d*)%\s*gain',
+                r'pnl[:\s]*([+-]?\d+\.?\d*)%',
+                r'\+(\d+\.?\d*)%',  # Simple +X% format
+                r'up\s+(\d+\.?\d*)%'
+            ]
+            
+            for pattern in profit_patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
-                    profit_loss = abs(float(match.group(1)))  # Make positive
-                    trade_result = 'PROFIT'
+                    profit_value = float(match.group(1))
+                    profit_loss = abs(profit_value) if profit_value >= 0 else profit_value
+                    trade_result = 'PROFIT' if profit_loss > 0 else 'LOSS'
                     break
             
-            # Check for loss patterns if profit not found
+            # Enhanced loss patterns
             if profit_loss is None:
-                for pattern in self.closed_trade_patterns['loss_patterns']:
+                loss_patterns = [
+                    r'loss[:\s]*-?(\d+\.?\d*)%',
+                    r'-(\d+\.?\d*)%\s*loss',
+                    r'sl\s+hit[:\s]*-?(\d+\.?\d*)%',
+                    r'stop\s+loss[:\s]*-?(\d+\.?\d*)%',
+                    r'down\s+(\d+\.?\d*)%',
+                    r'-(\d+\.?\d*)%'  # Simple -X% format
+                ]
+                
+                for pattern in loss_patterns:
                     match = re.search(pattern, text, re.IGNORECASE)
                     if match:
-                        profit_loss = -abs(float(match.group(1)))  # Make negative
+                        loss_value = float(match.group(1))
+                        profit_loss = -abs(loss_value)  # Always negative for loss
                         trade_result = 'LOSS'
                         break
             
             # Determine trade result from keywords if percentage not found
             if trade_result is None:
-                if any(word in text_lower for word in ['tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 'profit taken']):
+                profit_keywords = ['tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 'profit taken', 'target hit', 'tp hit']
+                loss_keywords = ['stop loss hit', 'sl hit', 'loss taken', 'stopped out', 'hit sl']
+                
+                if any(keyword in text_lower for keyword in profit_keywords):
                     trade_result = 'PROFIT'
-                    profit_loss = 1.5  # Default positive value
-                elif any(word in text_lower for word in ['stop loss hit', 'sl hit', 'loss taken']):
-                    trade_result = 'LOSS'
-                    profit_loss = -1.5  # Default negative value
+                    profit_loss = 2.0 if profit_loss is None else profit_loss  # Default positive
+                elif any(keyword in text_lower for keyword in loss_keywords):
+                    trade_result = 'LOSS'  
+                    profit_loss = -1.5 if profit_loss is None else profit_loss  # Default negative
                 else:
-                    trade_result = 'CLOSED'
-                    profit_loss = 0.0
+                    # Check for neutral closure
+                    if any(word in text_lower for word in ['closed', 'exit', 'ended']):
+                        trade_result = 'CLOSED'
+                        profit_loss = 0.0
             
-            closed_trade['profit_loss'] = profit_loss
-            closed_trade['trade_result'] = trade_result
+            if profit_loss is not None:
+                closed_trade['profit_loss'] = profit_loss
+            if trade_result:
+                closed_trade['trade_result'] = trade_result
             
-            # Extract entry price
-            entry_match = re.search(self.closed_trade_patterns['entry_pattern'], text, re.IGNORECASE)
-            if entry_match:
-                closed_trade['entry_price'] = float(entry_match.group(1))
+            # Extract prices with improved patterns
+            price_patterns = {
+                'entry_pattern': [
+                    r'entry[:\s]*(\d+\.?\d*)',
+                    r'entered\s+at[:\s]*(\d+\.?\d*)',
+                    r'buy[:\s]*(\d+\.?\d*)',
+                    r'sell[:\s]*(\d+\.?\d*)'
+                ],
+                'exit_pattern': [
+                    r'exit[:\s]*(\d+\.?\d*)',
+                    r'closed\s+at[:\s]*(\d+\.?\d*)',
+                    r'target[:\s]*(\d+\.?\d*)'
+                ]
+            }
             
-            # Extract exit price
-            exit_match = re.search(self.closed_trade_patterns['exit_pattern'], text, re.IGNORECASE)
-            if exit_match:
-                closed_trade['exit_price'] = float(exit_match.group(1))
+            for price_type, patterns in price_patterns.items():
+                for pattern in patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        price_key = price_type.replace('_pattern', '_price')
+                        closed_trade[price_key] = float(match.group(1))
+                        break
             
             # Extract leverage
-            leverage_match = re.search(self.closed_trade_patterns['leverage_pattern'], text, re.IGNORECASE)
-            if leverage_match:
-                closed_trade['leverage'] = int(leverage_match.group(1))
-            else:
+            leverage_patterns = [
+                r'(\d+)x\s+leverage',
+                r'leverage[:\s]*(\d+)x',
+                r'(\d+)x(?:\s|$)',
+                r'lev[:\s]*(\d+)'
+            ]
+            
+            for pattern in leverage_patterns:
+                leverage_match = re.search(pattern, text, re.IGNORECASE)
+                if leverage_match:
+                    leverage = int(leverage_match.group(1))
+                    if 1 <= leverage <= 125:  # Validate leverage range
+                        closed_trade['leverage'] = leverage
+                    break
+            
+            if 'leverage' not in closed_trade:
                 closed_trade['leverage'] = 35  # Default leverage
             
+            # Calculate duration if timestamps are available
+            if 'entry_time' in closed_trade and 'exit_time' in closed_trade:
+                try:
+                    entry_dt = closed_trade['entry_time']
+                    exit_dt = closed_trade['exit_time']
+                    if isinstance(entry_dt, str):
+                        entry_dt = datetime.fromisoformat(entry_dt)
+                    if isinstance(exit_dt, str):
+                        exit_dt = datetime.fromisoformat(exit_dt)
+                    duration = (exit_dt - entry_dt).total_seconds() / 60
+                    closed_trade['duration_minutes'] = max(1, duration)  # Minimum 1 minute
+                except:
+                    closed_trade['duration_minutes'] = 30  # Default duration
+            else:
+                closed_trade['duration_minutes'] = 30  # Default duration
+            
             # Only return if we have minimum required information
-            if 'symbol' in closed_trade and 'trade_result' in closed_trade:
+            has_symbol = 'symbol' in closed_trade and closed_trade['symbol']
+            has_result = 'trade_result' in closed_trade and closed_trade['trade_result'] != 'UNKNOWN'
+            
+            if has_symbol and has_result:
                 return closed_trade
             
             return None

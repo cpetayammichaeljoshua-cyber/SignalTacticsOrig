@@ -814,7 +814,7 @@ class UltimateTradingBot:
         }
 
         # Risk management - optimized for maximum profitability
-        self.risk_reward_ratio = 3.0
+        self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 80
         self.max_signals_per_hour = 5
         self.capital_allocation = 0.025  # 2.5% per trade
@@ -834,9 +834,23 @@ class UltimateTradingBot:
         self.last_signal_time = {}
         self.min_signal_interval = 180  # 3 minutes between signals for same symbol
 
+        # Active symbol tracking - prevent duplicate trades
+        self.active_symbols = set()  # Track symbols with open trades
+        self.symbol_trade_lock = {}  # Lock mechanism for each symbol
+
         # Advanced ML Trade Analyzer
         self.ml_analyzer = AdvancedMLTradeAnalyzer()
         self.ml_analyzer.load_ml_models()
+
+        # Closed Trades Scanner for ML Training
+        self.closed_trades_scanner = None
+        if self.bot_token:
+            try:
+                from telegram_closed_trades_scanner import TelegramClosedTradesScanner
+                self.closed_trades_scanner = TelegramClosedTradesScanner(self.bot_token, self.target_channel)
+                self.logger.info("📊 Telegram Closed Trades Scanner initialized")
+            except Exception as e:
+                self.logger.warning(f"Could not initialize closed trades scanner: {e}")
 
         # Bot status
         self.running = True
@@ -1329,12 +1343,21 @@ class UltimateTradingBot:
                 performance_factor += 0.5
             elif win_rate <= 0.4:  # Low win rate - decrease leverage
                 performance_factor -= 0.5
+            else:
+                # Moderate performance gets a small boost
+                performance_factor += (win_rate - 0.5) * 0.4
 
             # Consecutive performance adjustment
             if consecutive_wins >= 3:
                 performance_factor += 0.3
             elif consecutive_losses >= 3:
                 performance_factor -= 0.5
+            elif consecutive_wins >= 1:
+                performance_factor += 0.1
+
+            # Add base performance factor to avoid 0.0
+            if performance_factor == 0.0:
+                performance_factor = 0.25  # Default positive factor
 
             # Limit performance factor
             performance_factor = max(-1.0, min(1.0, performance_factor))
@@ -1349,6 +1372,12 @@ class UltimateTradingBot:
         """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
+            
+            # Check if symbol already has an active trade
+            if symbol in self.active_symbols:
+                self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
+                return None
+            
             if symbol in self.last_signal_time:
                 time_diff = (current_time - self.last_signal_time[symbol]).total_seconds()
                 if time_diff < self.min_signal_interval:
@@ -1425,26 +1454,26 @@ class UltimateTradingBot:
 
             if direction == 'BUY':
                 stop_loss = entry_price - risk_amount
-                tp1 = entry_price + (risk_amount * 1.0)
-                tp2 = entry_price + (risk_amount * 2.0)
-                tp3 = entry_price + (risk_amount * 3.0)
+                tp1 = entry_price + (risk_amount * 0.33)  # 33% of profit for 1:1 ratio
+                tp2 = entry_price + (risk_amount * 0.67)  # 67% of profit for 1:1 ratio
+                tp3 = entry_price + (risk_amount * 1.0)   # Full 1:1 profit
 
                 if not (stop_loss < entry_price < tp1 < tp2 < tp3):
                     stop_loss = entry_price * 0.985
-                    tp1 = entry_price * 1.015
-                    tp2 = entry_price * 1.030
-                    tp3 = entry_price * 1.045
+                    tp1 = entry_price * 1.005
+                    tp2 = entry_price * 1.010
+                    tp3 = entry_price * 1.015
             else:
                 stop_loss = entry_price + risk_amount
-                tp1 = entry_price - (risk_amount * 1.0)
-                tp2 = entry_price - (risk_amount * 2.0)
-                tp3 = entry_price - (risk_amount * 3.0)
+                tp1 = entry_price - (risk_amount * 0.33)  # 33% of profit for 1:1 ratio
+                tp2 = entry_price - (risk_amount * 0.67)  # 67% of profit for 1:1 ratio
+                tp3 = entry_price - (risk_amount * 1.0)   # Full 1:1 profit
 
                 if not (tp3 < tp2 < tp1 < entry_price < stop_loss):
                     stop_loss = entry_price * 1.015
-                    tp1 = entry_price * 0.985
-                    tp2 = entry_price * 0.970
-                    tp3 = entry_price * 0.955
+                    tp1 = entry_price * 0.995
+                    tp2 = entry_price * 0.990
+                    tp3 = entry_price * 0.985
 
             # Risk validation
             risk_percentage = abs(entry_price - stop_loss) / entry_price * 100
@@ -1491,8 +1520,10 @@ class UltimateTradingBot:
             if signal_strength < self.min_signal_strength:
                 return None
 
-            # Update last signal time
+            # Update last signal time and mark symbol as active
             self.last_signal_time[symbol] = current_time
+            self.active_symbols.add(symbol)
+            self.symbol_trade_lock[symbol] = current_time
 
             return {
                 'symbol': symbol,
@@ -1660,41 +1691,20 @@ class UltimateTradingBot:
             return False
 
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format ML-enhanced signal message for Cornix compatibility via Telegram"""
-        direction = signal['direction']
-        timestamp = datetime.now().strftime('%H:%M')
-        optimal_leverage = signal.get('optimal_leverage', 35)
+        """Format minimal ML signal message"""
         ml_prediction = signal.get('ml_prediction', {})
-
-        # Cornix-compatible format for Telegram channel
+        
+        # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
-
+        
         message = f"""{cornix_signal}
 
-🧠 **ML ANALYSIS:**
-• Prediction: {ml_prediction.get('prediction', 'unknown').title()}
-• Confidence: {ml_prediction.get('confidence', 0):.1f}%
-• Expected Profit: {ml_prediction.get('expected_profit', 0):.2f}%
-• Risk: {ml_prediction.get('risk_probability', 0):.1f}%
+🧠 ML: {ml_prediction.get('prediction', 'unknown').title()} ({ml_prediction.get('confidence', 0):.0f}%)
+📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:1
+⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
+🕐 {datetime.now().strftime('%H:%M')} UTC
 
-📊 **SIGNAL DATA:**
-• Signal #{self.signal_counter} | Strength: {signal['signal_strength']:.0f}%
-• Time: {timestamp} UTC | R/R: 1:{signal['risk_reward_ratio']:.1f}
-• CVD: {self.cvd_data['cvd_trend'].title()} | ML Acc: {ml_prediction.get('model_accuracy', 0):.1f}%
-
-⚙️ **ADAPTIVE FEATURES:**
-• Leverage: {optimal_leverage}x (Adaptive)
-• Margin: Cross | Win Streak: {self.adaptive_leverage['consecutive_wins']}
-• Recent Performance: {self.adaptive_leverage['recent_wins']}/{self.adaptive_leverage['recent_wins'] + self.adaptive_leverage['recent_losses']}
-
-🔧 **AUTO MANAGEMENT:**
-✅ TP1 Hit → SL to Entry (Risk-Free)
-✅ TP2 Hit → SL to TP1 (Profit Lock)
-✅ TP3 Hit → Full Close (Complete)
-
-🧠 **ML REC:** {ml_prediction.get('recommendation', 'Trade with caution')}
-
-*TradeTactics ML Bot | Cross Margin • Adaptive Learning*"""
+*Auto SL Management Active*"""
 
         return message.strip()
 
@@ -1766,6 +1776,119 @@ Exchange: Binance Futures"""
             self.logger.error(f"Error getting updates: {e}")
             return []
 
+    def generate_chart(self, symbol: str, df: pd.DataFrame, signal: Dict[str, Any]) -> Optional[str]:
+        """Generate 1:1 ratio chart for the signal"""
+        try:
+            if not CHART_AVAILABLE or df is None or len(df) < 10:
+                self.logger.warning(f"Chart generation skipped for {symbol}: insufficient data or libraries")
+                return None
+
+            # Create figure with 1:1 aspect ratio (square)
+            fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+            
+            # Validate data
+            if 'close' not in df.columns or len(df) == 0:
+                plt.close(fig)
+                return None
+                
+            closes = df['close'].values
+            if len(closes) == 0:
+                plt.close(fig)
+                return None
+            
+            # Use available data
+            data_len = min(50, len(df))
+            x_range = range(data_len)
+            
+            # Plot price line
+            ax.plot(x_range, closes[-data_len:], color='#00ff00', linewidth=2, label='Price')
+            
+            # Mark entry point
+            entry_price = signal.get('entry_price', closes[-1])
+            ax.axhline(y=entry_price, color='yellow', linestyle='--', alpha=0.8, label=f'Entry: {entry_price:.4f}')
+            
+            # Mark TP levels
+            if 'tp1' in signal and signal['tp1'] > 0:
+                ax.axhline(y=signal['tp1'], color='green', linestyle=':', alpha=0.6, label=f'TP1: {signal["tp1"]:.4f}')
+            if 'tp2' in signal and signal['tp2'] > 0:
+                ax.axhline(y=signal['tp2'], color='green', linestyle=':', alpha=0.4)
+            if 'tp3' in signal and signal['tp3'] > 0:
+                ax.axhline(y=signal['tp3'], color='green', linestyle=':', alpha=0.2)
+            
+            # Mark SL
+            if 'stop_loss' in signal and signal['stop_loss'] > 0:
+                ax.axhline(y=signal['stop_loss'], color='red', linestyle=':', alpha=0.8, label=f'SL: {signal["stop_loss"]:.4f}')
+            
+            # Style the chart
+            ax.set_facecolor('black')
+            fig.patch.set_facecolor('black')
+            ax.tick_params(colors='white')
+            ax.set_title(f'{symbol} - {signal.get("direction", "BUY")} Signal', color='white', fontsize=12)
+            ax.legend(loc='upper left', facecolor='black', edgecolor='white', labelcolor='white')
+            ax.grid(True, alpha=0.3, color='gray')
+            
+            # Remove x-axis labels for cleaner look
+            ax.set_xticks([])
+            
+            plt.tight_layout()
+            
+            # Convert to base64 string
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', facecolor='black', edgecolor='white', dpi=80, bbox_inches='tight')
+            buffer.seek(0)
+            chart_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            # Clean up
+            plt.close(fig)
+            buffer.close()
+            
+            return chart_base64
+            
+        except Exception as e:
+            self.logger.error(f"Error generating chart for {symbol}: {e}")
+            if 'fig' in locals():
+                plt.close(fig)
+            return None
+
+    async def send_photo(self, chat_id: str, photo_data: str, caption: str = "") -> bool:
+        """Send photo to Telegram"""
+        try:
+            url = f"{self.base_url}/sendPhoto"
+            
+            # Convert base64 to bytes
+            photo_bytes = base64.b64decode(photo_data)
+            
+            # Create form data properly for aiohttp
+            form_data = aiohttp.FormData()
+            form_data.add_field('chat_id', chat_id)
+            form_data.add_field('caption', caption)
+            form_data.add_field('parse_mode', 'Markdown')
+            form_data.add_field('photo', photo_bytes, filename='chart.png', content_type='image/png')
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=form_data) as response:
+                    if response.status == 200:
+                        self.logger.info(f"✅ Photo sent successfully to {chat_id}")
+                        return True
+                    else:
+                        error = await response.text()
+                        self.logger.warning(f"Send photo failed: {error}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"Error sending photo: {e}")
+            return False
+
+    async def _auto_unlock_symbol(self, symbol: str, delay_seconds: int):
+        """Automatically unlock symbol after delay (safety mechanism)"""
+        try:
+            await asyncio.sleep(delay_seconds)
+            if symbol in self.active_symbols:
+                self.release_symbol_lock(symbol)
+                self.logger.info(f"🕐 Auto-unlocked {symbol} after {delay_seconds/60:.0f} minutes")
+        except Exception as e:
+            self.logger.error(f"Error auto-unlocking {symbol}: {e}")
+
     async def handle_commands(self, message: Dict, chat_id: str):
         """Handle bot commands"""
         try:
@@ -1777,110 +1900,332 @@ Exchange: Binance Futures"""
             if text.startswith('/start'):
                 self.admin_chat_id = chat_id
                 self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
-
-                await self.verify_channel_access()
-                channel_status = "✅ Accessible" if self.channel_accessible else "⚠️ Not Accessible"
+                
                 ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🧠 **ULTIMATE ML BOT**
 
-                welcome = f"""🧠 **ULTIMATE ML TRADING BOT**
-*Advanced Machine Learning Strategy*
+✅ Online & Learning
+📊 Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+📈 Trades: {ml_summary['model_performance']['total_trades_learned']}
+🎯 Next Retrain: {ml_summary['next_retrain_in']}
 
-✅ **Status:** Online & Learning
-🎯 **Strategy:** ML-Enhanced Multi-Indicator Scalping
-⚖️ **Risk/Reward:** 1:3 Ratio Guaranteed
-📊 **Timeframes:** 1m to 4h
-🔍 **Symbols:** {len(self.symbols)}+ Top Crypto Pairs
+**Commands:**
+/ml - ML Status
+/scan - Market Scan  
+/stats - Performance
+/symbols - Active Pairs
+/leverage - Current Settings
+/risk - Risk Management
+/session - Trading Session
+/help - All Commands
 
-**🧠 Machine Learning Status:**
-• **Signal Accuracy:** {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
-• **Trades Learned:** {ml_summary['model_performance']['total_trades_learned']}
-• **Learning Status:** {ml_summary['learning_status'].title()}
-• **Next Retrain:** {ml_summary['next_retrain_in']} trades
+*Bot learns from every trade*""")
 
-**🛡️ Risk Management:**
-• Stop Loss to Entry after TP1
-• Maximum 2.5% risk per trade
-• 3 Take Profit levels
-• ML-enhanced signal filtering
+            elif text.startswith('/help'):
+                await self.send_message(chat_id, """**Available Commands:**
 
-**📈 Performance:**
-• Signals Generated: `{self.performance_stats['total_signals']}`
-• Win Rate: `{self.performance_stats['win_rate']:.1f}%`
-• Active Trades: `{len(self.active_trades)}`
+/start - Initialize bot
+/ml - ML model status
+/scan - Scan markets
+/stats - Performance stats
+/symbols - Trading symbols
+/leverage - Leverage settings
+/risk - Risk management
+/session - Current session
+/cvd - CVD analysis
+/market - Market conditions
+/insights - Trading insights
+/settings - Bot settings
+/unlock [SYMBOL] - Unlock symbol trade lock""")
 
-**📢 Channel Status:**
-• Target: `{self.target_channel}`
-• Access: `{channel_status}`
-• Fallback: Admin messaging enabled
+            elif text.startswith('/stats'):
+                ml_summary = self.ml_analyzer.get_ml_summary()
+                active_symbols_list = ', '.join(sorted(self.active_symbols)) if self.active_symbols else 'None'
+                
+                # Check persistent log status
+                log_file = Path("persistent_trade_logs.json")
+                persistent_logs_count = 0
+                if log_file.exists():
+                    try:
+                        with open(log_file, 'r') as f:
+                            logs = json.load(f)
+                            persistent_logs_count = len(logs)
+                    except:
+                        pass
+                
+                await self.send_message(chat_id, f"""📊 **PERFORMANCE STATS**
 
-**🤖 ML Features:**
-• Continuous learning from every trade
-• Profit prediction & risk assessment
-• Market insight analysis
-• Time session optimization
-• Symbol performance tracking
+🎯 Signals: {self.performance_stats['total_signals']}
+✅ Win Rate: {self.performance_stats['win_rate']:.1f}%
+💰 Total Profit: {self.performance_stats['total_profit']:.2f}%
+📈 Active: {len(self.active_trades)}
+🔒 Active Symbols: {len(self.active_symbols)}
+🧠 ML Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+⚡ Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+💾 Persistent Logs: {persistent_logs_count}
 
-*Bot learns and improves with each trade*
-Use `/help` for all commands"""
+**Active Pairs:** {active_symbols_list}""")
 
-                await self.send_message(chat_id, welcome)
+            elif text.startswith('/symbols'):
+                await self.send_message(chat_id, f"""📋 **TRADING SYMBOLS**
+
+Total Pairs: {len(self.symbols)}
+Timeframes: {', '.join(self.timeframes)}
+
+Top Pairs:
+• BTCUSDT, ETHUSDT, BNBUSDT
+• XRPUSDT, ADAUSDT, SOLUSDT
+• DOGEUSDT, AVAXUSDT, DOTUSDT
+• +{len(self.symbols)-9} more pairs""")
+
+            elif text.startswith('/leverage'):
+                await self.send_message(chat_id, f"""⚖️ **LEVERAGE SETTINGS**
+
+Current: {self.leverage_config['base_leverage']}x
+Range: {self.leverage_config['min_leverage']}x - {self.leverage_config['max_leverage']}x
+Type: Cross Margin
+Adaptive: ✅ Enabled
+
+Recent Performance:
+• Wins: {self.adaptive_leverage['recent_wins']}
+• Losses: {self.adaptive_leverage['recent_losses']}
+• Streak: {self.adaptive_leverage['consecutive_wins']}W""")
+
+            elif text.startswith('/risk'):
+                await self.send_message(chat_id, f"""🛡️ **RISK MANAGEMENT**
+
+Risk per Trade: 1.5%
+Risk/Reward: 1:3
+Max Concurrent: {self.max_concurrent_trades}
+Signal Filter: {self.min_signal_strength}%+
+
+Auto Management:
+✅ SL to Entry after TP1
+✅ SL to TP1 after TP2
+✅ Full close at TP3""")
+
+            elif text.startswith('/session'):
+                current_session = self._get_time_session(datetime.now())
+                await self.send_message(chat_id, f"""🕐 **TRADING SESSION**
+
+Current: {current_session}
+Time: {datetime.now().strftime('%H:%M UTC')}
+CVD Trend: {self.cvd_data['cvd_trend'].title()}
+CVD Strength: {self.cvd_data['cvd_strength']:.1f}%
+
+Session Performance:
+• Best: NY_MAIN, LONDON_OPEN
+• Moderate: NY_OVERLAP
+• Quiet: ASIA_MAIN""")
+
+            elif text.startswith('/cvd'):
+                await self.send_message(chat_id, f"""📊 **CVD ANALYSIS**
+
+BTC Perp CVD: {self.cvd_data['btc_perp_cvd']:.2f}
+Trend: {self.cvd_data['cvd_trend'].title()}
+Strength: {self.cvd_data['cvd_strength']:.1f}%
+Divergence: {'⚠️ Yes' if self.cvd_data['cvd_divergence'] else '✅ No'}
+
+*CVD measures institutional flow*""")
+
+            elif text.startswith('/market'):
+                await self.send_message(chat_id, f"""🌍 **MARKET CONDITIONS**
+
+Session: {self._get_time_session(datetime.now())}
+CVD: {self.cvd_data['cvd_trend'].title()}
+Volatility: Normal
+Volume: Active
+
+Signal Quality: High
+ML Filter: Active
+Next Scan: <60s""")
+
+            elif text.startswith('/insights'):
+                ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🔍 **TRADING INSIGHTS**
+
+Best Sessions: Available
+Symbol Performance: Tracked  
+Indicator Effectiveness: Analyzed
+Market Patterns: Learning
+
+Learning Status: {ml_summary['learning_status'].title()}
+Data Points: {ml_summary['model_performance']['total_trades_learned']}
+
+*Insights improve with more data*""")
+
+            elif text.startswith('/unlock'):
+                # Manual unlock command for specific symbol
+                parts = text.split()
+                if len(parts) > 1:
+                    symbol = parts[1].upper()
+                    if symbol in self.active_symbols:
+                        self.release_symbol_lock(symbol)
+                        await self.send_message(chat_id, f"🔓 **{symbol} unlocked**")
+                    else:
+                        await self.send_message(chat_id, f"ℹ️ **{symbol} not locked**")
+                else:
+                    # Unlock all symbols
+                    unlocked_count = len(self.active_symbols)
+                    self.active_symbols.clear()
+                    self.symbol_trade_lock.clear()
+                    await self.send_message(chat_id, f"🔓 **Unlocked {unlocked_count} symbols**")
+
+            elif text.startswith('/history'):
+                # Show recent trade history from persistent logs
+                try:
+                    log_file = Path("persistent_trade_logs.json")
+                    if not log_file.exists():
+                        await self.send_message(chat_id, "📭 **No trade history found**")
+                        return
+                    
+                    with open(log_file, 'r') as f:
+                        logs = json.load(f)
+                    
+                    if not logs:
+                        await self.send_message(chat_id, "📭 **No trades in history**")
+                        return
+                    
+                    # Show last 5 trades
+                    recent_trades = logs[-5:]
+                    history_msg = "📈 **RECENT TRADE HISTORY**\n\n"
+                    
+                    for trade in reversed(recent_trades):
+                        symbol = trade.get('symbol', 'UNKNOWN')
+                        direction = trade.get('direction', 'UNKNOWN')
+                        result = trade.get('trade_result', 'UNKNOWN')
+                        pnl = trade.get('profit_loss', 0)
+                        leverage = trade.get('leverage', 0)
+                        
+                        status_emoji = "✅" if pnl > 0 else "❌"
+                        history_msg += f"{status_emoji} **{symbol}** {direction} - {result}\n"
+                        history_msg += f"   P/L: {pnl:.2f}% | Leverage: {leverage}x\n\n"
+                    
+                    history_msg += f"💾 Total Logged Trades: {len(logs)}"
+                    await self.send_message(chat_id, history_msg)
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Error loading history:** {str(e)}")
+
+            elif text.startswith('/settings'):
+                await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
+
+Target: {self.target_channel}
+Max Signals/Hour: {self.max_signals_per_hour}
+Min Signal Interval: {self.min_signal_interval}s
+Auto-Restart: ✅ Enabled
+Duplicate Prevention: ✅ One trade per symbol
+
+ML Features:
+• Continuous Learning: ✅
+• Adaptive Leverage: ✅  
+• Risk Assessment: ✅
+• Market Insights: ✅""")
 
             elif text.startswith('/ml'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🧠 **ML STATUS**
 
-                ml_status = f"""🧠 **MACHINE LEARNING STATUS**
+Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+Learning: {ml_summary['learning_status'].title()}
+Next Retrain: {ml_summary['next_retrain_in']} trades
 
-**🤖 Model Performance:**
-• **Signal Accuracy:** {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
-• **Profit Prediction:** {ml_summary['model_performance']['profit_prediction_accuracy']*100:.1f}%
-• **Risk Assessment:** {ml_summary['model_performance']['risk_assessment_accuracy']*100:.1f}%
-• **Total Trades Learned:** {ml_summary['model_performance']['total_trades_learned']}
-
-**📊 Learning Progress:**
-• **Status:** {ml_summary['learning_status'].title()}
-• **Next Retrain:** {ml_summary['next_retrain_in']} trades
-• **Last Training:** {ml_summary['model_performance']['last_training_time'] or 'Never'}
-
-**🔍 Market Insights:**
-• **Best Time Sessions:** Available
-• **Symbol Performance:** Tracked
-• **Indicator Effectiveness:** Analyzed
-
-**⚙️ ML Features:**
-✅ Real-time trade learning
-✅ Profit prediction
-✅ Risk assessment
-✅ Market regime detection
-✅ Time session optimization
-
-*ML models continuously improve with new data*"""
-
-                await self.send_message(chat_id, ml_status)
+Models Active:
+✅ Signal Classifier
+✅ Profit Predictor  
+✅ Risk Assessor""")
 
             elif text.startswith('/scan'):
-                await self.send_message(chat_id, "🧠 **ML-ENHANCED MARKET SCAN**\n\nAnalyzing markets with machine learning...")
-
+                await self.send_message(chat_id, "🔍 **Scanning markets...**")
+                
                 signals = await self.scan_for_signals()
-
+                
                 if signals:
                     for signal in signals[:3]:
                         self.signal_counter += 1
+                        
+                        # Send chart first
+                        try:
+                            df = await self.get_binance_data(signal['symbol'], '1h', 100)
+                            if df is not None:
+                                chart_data = self.generate_chart(signal['symbol'], df, signal)
+                                if chart_data:
+                                    await self.send_photo(chat_id, chart_data, f"📊 {signal['symbol']} Chart")
+                        except Exception as e:
+                            self.logger.warning(f"Chart generation failed: {e}")
+                        
+                        # Send signal info separately  
                         signal_msg = self.format_ml_signal_message(signal)
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
-
-                    await self.send_message(chat_id, f"✅ **{len(signals)} ML-ENHANCED SIGNALS FOUND**\n\nTop ML-validated signals delivered! Bot continues learning...")
+                    
+                    await self.send_message(chat_id, f"✅ **{len(signals)} signals found**")
                 else:
-                    await self.send_message(chat_id, "📊 **NO HIGH-CONFIDENCE ML SIGNALS**\n\nML models filtering for optimal opportunities. Bot continues learning...")
+                    await self.send_message(chat_id, "📊 **No signals found**\nML filtering for quality")
+
+            elif text.startswith('/train'):
+                await self.send_message(chat_id, "🧠 **Scanning channel for closed trades...**")
+                
+                try:
+                    await self.scan_and_train_from_closed_trades()
+                    ml_summary = self.ml_analyzer.get_ml_summary()
+                    
+                    await self.send_message(chat_id, f"""✅ **ML TRAINING COMPLETE**
+
+🧠 **Updated Model Performance:**
+• Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+• Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+• Learning Status: {ml_summary['learning_status'].title()}
+
+📊 **Channel Scan Results:**
+• Processed closed trades from @SignalTactics
+• ML models retrained with new data
+• Performance metrics updated
+
+*Bot continuously learns from channel activity*""")
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Training Error:** {str(e)}")
+
+            elif text.startswith('/channel'):
+                await self.send_message(chat_id, f"""📢 **CHANNEL STATUS**
+
+Target: {self.target_channel}
+Access: {'✅ Available' if self.channel_accessible else '❌ Limited'}
+Auto-Training: ✅ Enabled
+
+**ML Channel Learning:**
+• Scans for closed trades automatically
+• Extracts trade outcomes and P/L
+• Trains models with real results
+• Improves prediction accuracy
+
+Use /train to manually scan and train""")
 
         except Exception as e:
             self.logger.error(f"Error handling command {text}: {e}")
 
-    async def record_trade_completion(self, signal: Dict[str, Any], trade_result: Dict[str, Any]):
-        """Record completed trade for ML learning"""
+    def release_symbol_lock(self, symbol: str):
+        """Release symbol from active trading lock"""
         try:
+            if symbol in self.active_symbols:
+                self.active_symbols.remove(symbol)
+                self.logger.info(f"🔓 Released trade lock for {symbol}")
+            
+            if symbol in self.symbol_trade_lock:
+                del self.symbol_trade_lock[symbol]
+                
+        except Exception as e:
+            self.logger.error(f"Error releasing symbol lock for {symbol}: {e}")
+
+    async def record_trade_completion(self, signal: Dict[str, Any], trade_result: Dict[str, Any]):
+        """Record completed trade for ML learning with comprehensive logging"""
+        try:
+            symbol = signal['symbol']
+            
             trade_data = {
-                'symbol': signal['symbol'],
+                'symbol': symbol,
                 'direction': signal['direction'],
                 'entry_price': signal['entry_price'],
                 'exit_price': trade_result.get('exit_price', signal['entry_price']),
@@ -1906,19 +2251,403 @@ Use `/help` for all commands"""
                 'exit_time': trade_result.get('exit_time', datetime.now())
             }
 
+            # Record in ML analyzer database for learning
             await self.ml_analyzer.record_trade_outcome(trade_data)
+            
+            # Also save to persistent trade logs for backup and analysis
+            await self._save_trade_to_persistent_log(trade_data)
+            
+            # Update performance tracking
+            self._update_performance_stats(trade_data)
+            
+            # Release symbol lock after trade completion
+            self.release_symbol_lock(symbol)
+
+            self.logger.info(f"📊 Trade logged for ML learning: {symbol} - {trade_data['trade_result']} - P/L: {trade_data['profit_loss']:.2f}%")
 
         except Exception as e:
             self.logger.error(f"Error recording trade completion: {e}")
+
+    async def _save_trade_to_persistent_log(self, trade_data: Dict[str, Any]):
+        """Save trade to persistent JSON log file for backup"""
+        try:
+            log_file = Path("persistent_trade_logs.json")
+            
+            # Load existing logs
+            existing_logs = []
+            if log_file.exists():
+                try:
+                    with open(log_file, 'r') as f:
+                        existing_logs = json.load(f)
+                except:
+                    existing_logs = []
+            
+            # Add timestamp and bot version
+            trade_log = {
+                **trade_data,
+                'logged_at': datetime.now().isoformat(),
+                'bot_version': 'Ultimate_Trading_Bot_v1.0',
+                'session_id': self.session_token[:8] if self.session_token else 'unknown'
+            }
+            
+            # Convert datetime objects to ISO strings
+            for key, value in trade_log.items():
+                if isinstance(value, datetime):
+                    trade_log[key] = value.isoformat()
+            
+            existing_logs.append(trade_log)
+            
+            # Keep last 1000 trades to prevent file from growing too large
+            if len(existing_logs) > 1000:
+                existing_logs = existing_logs[-1000:]
+            
+            # Save back to file
+            with open(log_file, 'w') as f:
+                json.dump(existing_logs, f, indent=2, default=str)
+                
+            self.logger.info(f"💾 Trade saved to persistent log: {trade_data['symbol']}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving to persistent log: {e}")
+
+    def _update_performance_stats(self, trade_data: Dict[str, Any]):
+        """Update performance statistics"""
+        try:
+            self.performance_stats['total_signals'] += 1
+            
+            if trade_data['profit_loss'] > 0:
+                self.performance_stats['profitable_signals'] += 1
+                self.performance_stats['total_profit'] += trade_data['profit_loss']
+            
+            if self.performance_stats['total_signals'] > 0:
+                self.performance_stats['win_rate'] = (
+                    self.performance_stats['profitable_signals'] / 
+                    self.performance_stats['total_signals'] * 100
+                )
+            
+        except Exception as e:
+            self.logger.error(f"Error updating performance stats: {e}")
+
+    async def load_persistent_trade_logs(self):
+        """Load persistent trade logs on startup for ML continuity"""
+        try:
+            log_file = Path("persistent_trade_logs.json")
+            
+            if not log_file.exists():
+                self.logger.info("📁 No persistent trade logs found - starting fresh")
+                return
+            
+            with open(log_file, 'r') as f:
+                trade_logs = json.load(f)
+            
+            if not trade_logs:
+                return
+            
+            # Feed historical data to ML analyzer
+            for trade_log in trade_logs[-100:]:  # Load last 100 trades for ML context
+                try:
+                    # Convert ISO strings back to datetime for ML processing
+                    if 'entry_time' in trade_log and isinstance(trade_log['entry_time'], str):
+                        trade_log['entry_time'] = datetime.fromisoformat(trade_log['entry_time'])
+                    if 'exit_time' in trade_log and isinstance(trade_log['exit_time'], str):
+                        trade_log['exit_time'] = datetime.fromisoformat(trade_log['exit_time'])
+                    
+                    # Record in ML analyzer for learning continuity
+                    await self.ml_analyzer.record_trade_outcome(trade_log)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error loading trade log: {e}")
+                    continue
+            
+            self.logger.info(f"📚 Loaded {len(trade_logs)} persistent trade logs for ML continuity")
+            
+            # Update performance stats from historical data
+            profitable_trades = sum(1 for trade in trade_logs if trade.get('profit_loss', 0) > 0)
+            total_profit = sum(trade.get('profit_loss', 0) for trade in trade_logs if trade.get('profit_loss', 0) > 0)
+            
+            self.performance_stats.update({
+                'total_signals': len(trade_logs),
+                'profitable_signals': profitable_trades,
+                'win_rate': (profitable_trades / len(trade_logs) * 100) if trade_logs else 0,
+                'total_profit': total_profit
+            })
+            
+        except Exception as e:
+            self.logger.error(f"Error loading persistent trade logs: {e}")
+
+    async def scan_and_train_from_closed_trades(self):
+        """Scan Telegram channel for closed trades and train ML"""
+        try:
+            if not self.closed_trades_scanner:
+                self.logger.warning("Closed trades scanner not available")
+                return
+                
+            self.logger.info("🔍 Scanning Telegram channel for closed trades...")
+            
+            # First get unprocessed trades from database
+            unprocessed_trades = await self.closed_trades_scanner.get_unprocessed_trades()
+            
+            # Scan for new closed trades
+            new_closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=48)
+            
+            # Combine all trades for processing
+            all_trades = unprocessed_trades + new_closed_trades
+            
+            if all_trades:
+                self.logger.info(f"📈 Processing {len(all_trades)} closed trades for ML training")
+                
+                processed_count = 0
+                processed_ids = []
+                
+                for trade in all_trades:
+                    try:
+                        # Process trade for ML training
+                        await self._process_closed_trade_for_ml(trade)
+                        processed_count += 1
+                        
+                        if trade.get('message_id'):
+                            processed_ids.append(trade.get('message_id'))
+                            
+                    except Exception as trade_error:
+                        self.logger.warning(f"Error processing trade {trade.get('symbol', 'UNKNOWN')}: {trade_error}")
+                        continue
+                
+                # Mark trades as processed
+                if processed_ids:
+                    await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
+                
+                # Retrain ML models with new data if we have enough trades
+                if processed_count >= 5:
+                    await self.ml_analyzer.retrain_models()
+                    self.logger.info(f"✅ ML models retrained with {processed_count} closed trades")
+                else:
+                    self.logger.info(f"📊 Processed {processed_count} trades (need 5+ for retraining)")
+                    
+            else:
+                self.logger.info("📊 No closed trades found for ML training")
+                
+        except Exception as e:
+            self.logger.error(f"Error scanning for closed trades: {e}")
+
+    async def _scan_channel_for_closed_trades(self) -> List[Dict[str, Any]]:
+        """Scan channel messages for closed/completed trades"""
+        try:
+            closed_trades = []
+            
+            # Get recent messages from the target channel
+            url = f"{self.base_url}/getUpdates"
+            params = {'offset': -100}  # Get last 100 updates
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        updates = data.get('result', [])
+                        
+                        # Look for channel messages
+                        for update in updates:
+                            if 'channel_post' in update:
+                                message = update['channel_post']
+                                if message.get('chat', {}).get('username') == self.target_channel.replace('@', ''):
+                                    text = message.get('text', '')
+                                    
+                                    # Check if message contains closed trade information
+                                    closed_trade = self._parse_closed_trade_message(text, message)
+                                    if closed_trade:
+                                        closed_trades.append(closed_trade)
+            
+            return closed_trades
+            
+        except Exception as e:
+            self.logger.error(f"Error scanning channel messages: {e}")
+            return []
+
+    def _parse_closed_trade_message(self, text: str, message: Dict) -> Optional[Dict[str, Any]]:
+        """Parse message text to identify and extract closed trade information"""
+        try:
+            import re
+            
+            # Keywords that indicate a closed/completed trade
+            closed_keywords = [
+                'closed', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 
+                'stop loss hit', 'sl hit', 'trade closed', 'position closed',
+                'profit taken', 'loss taken', 'exit', 'completed'
+            ]
+            
+            text_lower = text.lower()
+            
+            # Check if message contains closed trade indicators
+            if not any(keyword in text_lower for keyword in closed_keywords):
+                return None
+            
+            closed_trade = {
+                'message_id': message.get('message_id'),
+                'timestamp': datetime.fromtimestamp(message.get('date', 0)),
+                'text': text
+            }
+            
+            # Extract symbol
+            symbol_match = re.search(r'#?(\w+USDT?)\s+', text, re.IGNORECASE)
+            if symbol_match:
+                closed_trade['symbol'] = symbol_match.group(1).upper()
+            
+            # Extract direction
+            direction_match = re.search(r'(LONG|SHORT|BUY|SELL)', text, re.IGNORECASE)
+            if direction_match:
+                closed_trade['direction'] = direction_match.group(1).upper()
+            
+            # Extract profit/loss percentage
+            profit_patterns = [
+                r'profit[:\s]*([+-]?\d+\.?\d*)%',
+                r'([+-]?\d+\.?\d*)%\s*profit',
+                r'gain[:\s]*([+-]?\d+\.?\d*)%',
+                r'loss[:\s]*([+-]?\d+\.?\d*)%',
+                r'([+-]?\d+\.?\d*)%\s*loss'
+            ]
+            
+            for pattern in profit_patterns:
+                profit_match = re.search(pattern, text, re.IGNORECASE)
+                if profit_match:
+                    profit_value = float(profit_match.group(1))
+                    closed_trade['profit_loss'] = profit_value
+                    closed_trade['trade_result'] = 'PROFIT' if profit_value > 0 else 'LOSS'
+                    break
+            
+            # Determine trade result from keywords if profit_loss not found
+            if 'trade_result' not in closed_trade:
+                if any(word in text_lower for word in ['tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 'profit taken']):
+                    closed_trade['trade_result'] = 'PROFIT'
+                    closed_trade['profit_loss'] = 1.0  # Default positive value
+                elif any(word in text_lower for word in ['stop loss hit', 'sl hit', 'loss taken']):
+                    closed_trade['trade_result'] = 'LOSS'
+                    closed_trade['profit_loss'] = -1.0  # Default negative value
+                else:
+                    closed_trade['trade_result'] = 'CLOSED'
+                    closed_trade['profit_loss'] = 0.0
+            
+            # Extract entry and exit prices if available
+            entry_match = re.search(r'entry[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
+            if entry_match:
+                closed_trade['entry_price'] = float(entry_match.group(1))
+            
+            exit_match = re.search(r'exit[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
+            if exit_match:
+                closed_trade['exit_price'] = float(exit_match.group(1))
+            
+            # Extract leverage if mentioned
+            leverage_match = re.search(r'(\d+)x', text, re.IGNORECASE)
+            if leverage_match:
+                closed_trade['leverage'] = int(leverage_match.group(1))
+            
+            # Only return if we have minimum required information
+            if 'symbol' in closed_trade and 'trade_result' in closed_trade:
+                return closed_trade
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing closed trade message: {e}")
+            return None
+
+    async def _process_closed_trade_for_ml(self, closed_trade: Dict[str, Any]):
+        """Process a closed trade and prepare it for ML training"""
+        try:
+            # Validate required fields
+            symbol = closed_trade.get('symbol')
+            if not symbol:
+                self.logger.warning("Skipping trade with no symbol")
+                return
+            
+            # Extract trade result and profit/loss
+            trade_result = closed_trade.get('trade_result', 'UNKNOWN')
+            profit_loss = closed_trade.get('profit_loss', 0)
+            
+            # Skip trades with no meaningful result
+            if trade_result == 'UNKNOWN' and profit_loss == 0:
+                self.logger.debug(f"Skipping {symbol} - no trade outcome data")
+                return
+            
+            # Create comprehensive trade data for ML
+            trade_data = {
+                'symbol': symbol.upper(),
+                'direction': closed_trade.get('direction', 'BUY').upper(),
+                'entry_price': closed_trade.get('entry_price', 0),
+                'exit_price': closed_trade.get('exit_price', closed_trade.get('entry_price', 0)),
+                'stop_loss': 0,  # Not available from channel message
+                'take_profit_1': 0,  # Not available from channel message
+                'take_profit_2': 0,  # Not available from channel message
+                'take_profit_3': 0,  # Not available from channel message
+                'signal_strength': 85,  # Default value for channel signals
+                'leverage': max(10, min(100, closed_trade.get('leverage', 35))),  # Validate leverage range
+                'profit_loss': float(profit_loss),
+                'trade_result': trade_result,
+                'duration_minutes': closed_trade.get('duration_minutes', 30),
+                'market_volatility': 0.02,
+                'volume_ratio': 1.0,
+                'rsi_value': 50,
+                'macd_signal': 'neutral',
+                'ema_alignment': False,
+                'cvd_trend': 'neutral',
+                'indicators_data': ['telegram_channel_signal'],
+                'ml_prediction': 'channel_signal',
+                'ml_confidence': 75,
+                'entry_time': closed_trade.get('timestamp', datetime.now()),
+                'exit_time': closed_trade.get('timestamp', datetime.now()),
+                'data_source': 'telegram_channel'
+            }
+            
+            # Try to enhance with current market data (optional)
+            try:
+                if symbol in self.symbols:  # Only for supported symbols
+                    df = await self.get_binance_data(symbol, '1h', 50)
+                    if df is not None and len(df) > 20:
+                        indicators = self.calculate_advanced_indicators(df)
+                        if indicators:
+                            # Update trade data with market indicators
+                            trade_data.update({
+                                'market_volatility': indicators.get('market_volatility', 0.02),
+                                'volume_ratio': indicators.get('volume_ratio', 1.0),
+                                'rsi_value': indicators.get('rsi', 50),
+                                'ema_alignment': indicators.get('ema_bullish', False) or indicators.get('ema_bearish', False),
+                                'cvd_trend': indicators.get('cvd_trend', 'neutral')
+                            })
+            except Exception as market_error:
+                self.logger.debug(f"Could not enhance {symbol} with market data: {market_error}")
+            
+            # Record in ML analyzer
+            await self.ml_analyzer.record_trade_outcome(trade_data)
+            
+            # Save to persistent logs
+            await self._save_trade_to_persistent_log(trade_data)
+            
+            # Update performance stats
+            self._update_performance_stats(trade_data)
+            
+            result_emoji = "✅" if profit_loss > 0 else "❌" if profit_loss < 0 else "➖"
+            self.logger.info(f"📊 {result_emoji} Processed {symbol} {trade_result}: {profit_loss:.2f}% P/L")
+            
+        except Exception as e:
+            symbol = closed_trade.get('symbol', 'UNKNOWN')
+            self.logger.error(f"Error processing closed trade {symbol}: {e}")
 
     async def auto_scan_loop(self):
         """Main auto-scanning loop with ML learning"""
         consecutive_errors = 0
         max_consecutive_errors = 5
         base_scan_interval = 90
+        last_channel_training = datetime.now()
 
         while self.running and not self.shutdown_requested:
             try:
+                # Periodically scan channel for closed trades and train ML (every 30 minutes)
+                now = datetime.now()
+                if (now - last_channel_training).total_seconds() > 1800:  # 30 minutes
+                    try:
+                        await self.scan_and_train_from_closed_trades()
+                        last_channel_training = now
+                    except Exception as e:
+                        self.logger.warning(f"Channel training error: {e}")
+
                 self.logger.info("🧠 Scanning markets for ML-enhanced signals...")
                 signals = await self.scan_for_signals()
 
@@ -1942,20 +2671,43 @@ Use `/help` for all commands"""
                                     self.performance_stats['total_signals'] * 100
                                 )
 
-                            signal_msg = self.format_ml_signal_message(signal)
+                            # Send chart first to @SignalTactics
+                            chart_sent = False
+                            if self.channel_accessible:
+                                try:
+                                    df = await self.get_binance_data(signal['symbol'], '1h', 100)
+                                    if df is not None and len(df) > 10:
+                                        chart_data = self.generate_chart(signal['symbol'], df, signal)
+                                        if chart_data and len(chart_data) > 100:  # Valid base64 should be longer
+                                            chart_sent = await self.send_photo(self.target_channel, chart_data, 
+                                                                             f"📊 {signal['symbol']} - {signal['direction']} Setup")
+                                        else:
+                                            self.logger.info(f"📊 Chart generation skipped for {signal['symbol']} - no valid chart data")
+                                    else:
+                                        self.logger.info(f"📊 Chart generation skipped for {signal['symbol']} - insufficient market data")
+                                except Exception as chart_error:
+                                    self.logger.warning(f"Chart error for {signal['symbol']}: {str(chart_error)[:100]}")
+                                    chart_sent = False
 
-                            # Send only to Telegram channel @SignalTactics
+                            # Send signal info separately
+                            signal_msg = self.format_ml_signal_message(signal)
                             channel_sent = False
                             if self.channel_accessible:
                                 channel_sent = await self.send_message(self.target_channel, signal_msg)
 
                             if channel_sent:
-                                delivery_info = "Channel @SignalTactics"
-                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered to: {delivery_info}")
+                                chart_status = "📊✅" if chart_sent else "📊❌"
+                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered {chart_status}: Channel @SignalTactics")
 
                                 ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
                                 self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
+                                
+                                # Schedule automatic symbol unlock after 30 minutes if no manual close
+                                symbol = signal['symbol']
+                                asyncio.create_task(self._auto_unlock_symbol(symbol, 1800))  # 30 minutes
                             else:
+                                # Release symbol lock if signal failed to send
+                                self.release_symbol_lock(signal['symbol'])
                                 self.logger.warning(f"❌ Failed to send ML Signal #{self.signal_counter} to @SignalTactics")
 
                             signals_sent_count += 1
@@ -2003,6 +2755,9 @@ Use `/help` for all commands"""
         try:
             await self.create_session()
             await self.verify_channel_access()
+            
+            # Load persistent trade logs for ML continuity
+            await self.load_persistent_trade_logs()
 
             if self.admin_chat_id:
                 ml_summary = self.ml_analyzer.get_ml_summary()

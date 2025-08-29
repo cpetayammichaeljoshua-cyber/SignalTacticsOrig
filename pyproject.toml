@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "aiohttp-cors>=0.8.1",
     "aiohttp>=3.12.15",
     "aiosqlite>=0.21.0",
     "ccxt>=4.5.0",
@@ -16,6 +17,8 @@ dependencies = [
     "python-binance>=1.0.29",
     "python-telegram-bot==20.7",
     "scikit-learn>=1.7.1",
+    "asyncio>=4.0.0",
+    "joblib>=1.5.1",
 ]
 
 [tool.uv]

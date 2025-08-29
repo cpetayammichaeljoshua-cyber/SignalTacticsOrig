@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Crypto Trading Bot Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>
+                <i class="fas fa-robot"></i>
+                Ultimate Crypto Trading Bot
+            </h1>
+            <p class="subtitle">
+                <span class="status-indicator" id="botStatus"></span>
+                <span id="botStatusText">Connecting...</span>
+            </p>
+        </header>
+
+        <!-- Connection Status -->
+        <div class="connection-status" id="connectionStatus">
+            <i class="fas fa-wifi"></i> Connecting...
+        </div>
+
+        <!-- Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Account Overview -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Account Overview</h2>
+                    <i class="fas fa-wallet card-icon"></i>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Total Balance</div>
+                    <div class="metric-value" id="totalBalance">$0.00</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Unrealized P&L</div>
+                    <div class="metric-value" id="unrealizedPnl">$0.00</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Available Balance</div>
+                    <div class="metric-value" id="availableBalance">$0.00</div>
+                </div>
+            </div>
+
+            <!-- Bot Statistics -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Bot Statistics</h2>
+                    <i class="fas fa-chart-line card-icon"></i>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Active Positions</div>
+                    <div class="metric-value" id="activePositions">0</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Daily Trades</div>
+                    <div class="metric-value" id="dailyTrades">0</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Total Trades</div>
+                    <div class="metric-value" id="totalTrades">0</div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Performance</h2>
+                    <i class="fas fa-trophy card-icon"></i>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Total Return</div>
+                    <div class="metric-value" id="totalReturn">0.00%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Win Rate</div>
+                    <div class="metric-value" id="winRate">0.00%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="winRateProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Metrics -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Risk Management</h2>
+                    <i class="fas fa-shield-alt card-icon"></i>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Portfolio Exposure</div>
+                    <div class="metric-value" id="portfolioExposure">0.00x</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Max Drawdown</div>
+                    <div class="metric-value" id="maxDrawdown">0.00%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Risk Level</div>
+                    <div class="metric-value" id="riskLevel">LOW</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Positions -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Current Positions</h2>
+                <i class="fas fa-coins card-icon"></i>
+            </div>
+            <div class="positions-list" id="positionsList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-inbox"></i>
+                    </div>
+                    <p>No active positions</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Recent Trades</h2>
+                <i class="fas fa-history card-icon"></i>
+            </div>
+            <div class="trades-list" id="tradesList">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    Loading trades...
+                </div>
+            </div>
+        </div>
+
+        <!-- Signal Statistics -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Signal Statistics</h2>
+                <i class="fas fa-signal card-icon"></i>
+            </div>
+            <div class="signals-grid" id="signalsGrid">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    Loading signals...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class TradingBotDashboard {
+            constructor() {
+                this.ws = null;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 1000;
+                
+                this.init();
+            }
+
+            init() {
+                this.connectWebSocket();
+                this.loadInitialData();
+                
+                // Refresh data every 30 seconds
+                setInterval(() => {
+                    this.loadInitialData();
+                }, 30000);
+            }
+
+            connectWebSocket() {
+                try {
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+                    
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onopen = () => {
+                        console.log('WebSocket connected');
+                        this.updateConnectionStatus(true);
+                        this.reconnectAttempts = 0;
+                        
+                        // Subscribe to updates
+                        this.ws.send(JSON.stringify({
+                            type: 'subscribe'
+                        }));
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleWebSocketMessage(data);
+                        } catch (error) {
+                            console.error('Error parsing WebSocket message:', error);
+                        }
+                    };
+                    
+                    this.ws.onclose = () => {
+                        console.log('WebSocket disconnected');
+                        this.updateConnectionStatus(false);
+                        this.scheduleReconnect();
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.updateConnectionStatus(false);
+                    };
+                } catch (error) {
+                    console.error('Error connecting WebSocket:', error);
+                    this.updateConnectionStatus(false);
+                    this.scheduleReconnect();
+                }
+            }
+
+            scheduleReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    setTimeout(() => {
+                        console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+                        this.connectWebSocket();
+                    }, this.reconnectDelay * this.reconnectAttempts);
+                }
+            }
+
+            handleWebSocketMessage(data) {
+                switch (data.type) {
+                    case 'status_update':
+                        this.updateDashboard(data.data);
+                        break;
+                    case 'subscription_confirmed':
+                        console.log('Subscription confirmed');
+                        break;
+                    default:
+                        console.log('Unknown message type:', data.type);
+                }
+            }
+
+            updateConnectionStatus(connected) {
+                const statusEl = document.getElementById('connectionStatus');
+                if (connected) {
+                    statusEl.className = 'connection-status connected';
+                    statusEl.innerHTML = '<i class="fas fa-wifi"></i> Connected';
+                } else {
+                    statusEl.className = 'connection-status disconnected';
+                    statusEl.innerHTML = '<i class="fas fa-wifi"></i> Disconnected';
+                }
+            }
+
+            async loadInitialData() {
+                try {
+                    // Load all data in parallel
+                    const [status, positions, trades, signals] = await Promise.all([
+                        this.fetchData('/api/status'),
+                        this.fetchData('/api/positions'),
+                        this.fetchData('/api/trades?limit=10'),
+                        this.fetchData('/api/signals')
+                    ]);
+
+                    this.updateDashboard(status);
+                    this.updatePositions(positions);
+                    this.updateTrades(trades);
+                    this.updateSignals(signals);
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                    this.showError('Failed to load dashboard data');
+                }
+            }
+
+            async fetchData(url) {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await response.json();
+            }
+
+            updateDashboard(status) {
+                // Bot Status
+                const botStatusEl = document.getElementById('botStatus');
+                const botStatusTextEl = document.getElementById('botStatusText');
+                
+                if (status.is_running) {
+                    botStatusEl.className = 'status-indicator running';
+                    botStatusTextEl.textContent = 'Running';
+                } else {
+                    botStatusEl.className = 'status-indicator stopped';
+                    botStatusTextEl.textContent = 'Stopped';
+                }
+
+                // Account Information
+                const accountInfo = status.account_info || {};
+                this.updateElement('totalBalance', this.formatCurrency(accountInfo.total_balance || 0));
+                this.updateElement('unrealizedPnl', this.formatCurrency(accountInfo.total_unrealized_pnl || 0), 
+                    this.getValueClass(accountInfo.total_unrealized_pnl || 0));
+                this.updateElement('availableBalance', this.formatCurrency(accountInfo.available_balance || 0));
+
+                // Bot Statistics
+                const performance = status.performance_metrics || {};
+                this.updateElement('activePositions', Object.keys(status.current_positions || {}).length);
+                this.updateElement('dailyTrades', status.daily_trade_count || 0);
+                this.updateElement('totalTrades', performance.total_trades || 0);
+
+                // Performance Metrics
+                this.updateElement('totalReturn', this.formatPercentage(performance.total_return || 0),
+                    this.getValueClass(performance.total_return || 0));
+                
+                // Calculate and update win rate (simplified)
+                const winRate = this.calculateWinRate(performance);
+                this.updateElement('winRate', this.formatPercentage(winRate));
+                this.updateProgressBar('winRateProgress', winRate * 100);
+
+                // Risk Metrics (simplified)
+                this.updateElement('portfolioExposure', '1.0x'); // Placeholder
+                this.updateElement('maxDrawdown', '0.00%'); // Placeholder
+                this.updateElement('riskLevel', 'LOW', 'neutral'); // Placeholder
+            }
+
+            updatePositions(positions) {
+                const positionsListEl = document.getElementById('positionsList');
+                
+                if (!positions || Object.keys(positions).length === 0) {
+                    positionsListEl.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">
+                                <i class="fas fa-inbox"></i>
+                            </div>
+                            <p>No active positions</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const positionsHtml = Object.values(positions).map(position => `
+                    <div class="position-item">
+                        <div>
+                            <div class="position-symbol">${position.symbol}</div>
+                            <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7);">
+                                ${position.leverage}x | ${this.formatNumber(Math.abs(position.position_amount))}
+                            </div>
+                        </div>
+                        <div class="position-pnl ${this.getValueClass(position.unrealized_pnl)}">
+                            ${this.formatCurrency(position.unrealized_pnl)}
+                        </div>
+                    </div>
+                `).join('');
+
+                positionsListEl.innerHTML = positionsHtml;
+            }
+
+            updateTrades(trades) {
+                const tradesListEl = document.getElementById('tradesList');
+                
+                if (!trades || trades.length === 0) {
+                    tradesListEl.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">
+                                <i class="fas fa-history"></i>
+                            </div>
+                            <p>No recent trades</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const tradesHtml = trades.slice(0, 5).map(trade => `
+                    <div class="trade-item">
+                        <div class="trade-header">
+                            <div class="trade-symbol">${trade.symbol}</div>
+                            <div class="trade-signal ${trade.signal === 1 ? 'buy' : 'sell'}">
+                                ${trade.signal === 1 ? 'BUY' : 'SELL'}
+                            </div>
+                        </div>
+                        <div class="trade-details">
+                            <div>Confidence: ${this.formatPercentage(trade.confidence)} | 
+                                 Leverage: ${trade.leverage}x | 
+                                 Size: ${this.formatCurrency(trade.position_size)}</div>
+                            <div style="margin-top: 4px;">
+                                ${this.formatDateTime(trade.timestamp)} | ${trade.reason}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+                tradesListEl.innerHTML = tradesHtml;
+            }
+
+            updateSignals(signals) {
+                const signalsGridEl = document.getElementById('signalsGrid');
+                
+                if (!signals || Object.keys(signals).length === 0) {
+                    signalsGridEl.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">
+                                <i class="fas fa-signal"></i>
+                            </div>
+                            <p>No signal data available</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const signalsHtml = Object.entries(signals).map(([symbol, stats]) => {
+                    const distribution = stats.signal_distribution || { buy: 0, sell: 0, hold: 0 };
+                    return `
+                        <div class="signal-item">
+                            <div class="signal-symbol">${symbol}</div>
+                            <div class="signal-count buy">${distribution.buy}</div>
+                            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">BUY</div>
+                        </div>
+                        <div class="signal-item">
+                            <div class="signal-symbol">${symbol}</div>
+                            <div class="signal-count sell">${distribution.sell}</div>
+                            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">SELL</div>
+                        </div>
+                        <div class="signal-item">
+                            <div class="signal-symbol">${symbol}</div>
+                            <div class="signal-count hold">${distribution.hold}</div>
+                            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">HOLD</div>
+                        </div>
+                    `;
+                }).join('');
+
+                signalsGridEl.innerHTML = signalsHtml;
+            }
+
+            // Utility methods
+            updateElement(id, value, className = '') {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = value;
+                    if (className) {
+                        element.className = `metric-value ${className}`;
+                    }
+                }
+            }
+
+            updateProgressBar(id, percentage) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
+                }
+            }
+
+            formatCurrency(value) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(value || 0);
+            }
+
+            formatPercentage(value) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'percent',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(value || 0);
+            }
+
+            formatNumber(value) {
+                return new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 4,
+                    maximumFractionDigits: 4
+                }).format(value || 0);
+            }
+
+            formatDateTime(dateString) {
+                if (!dateString) return 'N/A';
+                const date = new Date(dateString);
+                return date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+
+            getValueClass(value) {
+                if (value > 0) return 'positive';
+                if (value < 0) return 'negative';
+                return 'neutral';
+            }
+
+            calculateWinRate(performance) {
+                // Simplified win rate calculation
+                // In a real implementation, this would be calculated based on actual trade outcomes
+                return 0.65; // 65% placeholder
+            }
+
+            showError(message) {
+                console.error(message);
+                // You could add a toast notification system here
+            }
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new TradingBotDashboard();
+        });
+    </script>
+</body>
+</html>

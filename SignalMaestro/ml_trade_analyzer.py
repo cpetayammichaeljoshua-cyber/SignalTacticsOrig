@@ -511,33 +511,65 @@ class MLTradeAnalyzer:
     def _prepare_features(self, trades_df: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Prepare features for ML models"""
         try:
+            # Define consistent feature columns
+            feature_columns = [
+                'signal_strength', 'leverage', 'volatility', 'volume_ratio', 'rsi_value',
+                'direction_encoded', 'cvd_trend_encoded', 'macd_signal_encoded', 
+                'ema_alignment', 'hour', 'day_of_week'
+            ]
+            
             features = pd.DataFrame()
             
-            # Basic features
-            features['signal_strength'] = trades_df['signal_strength']
-            features['leverage'] = trades_df['leverage']
-            features['volatility'] = trades_df['volatility'].fillna(0)
-            features['volume_ratio'] = trades_df['volume_ratio'].fillna(1)
+            # Basic features with safe defaults
+            features['signal_strength'] = trades_df['signal_strength'].fillna(85)
+            features['leverage'] = trades_df['leverage'].fillna(35)
+            features['volatility'] = trades_df['volatility'].fillna(0.02)
+            features['volume_ratio'] = trades_df['volume_ratio'].fillna(1.0)
             features['rsi_value'] = trades_df['rsi_value'].fillna(50)
             
-            # Encode categorical features
-            le_direction = LabelEncoder()
-            le_cvd = LabelEncoder()
-            le_macd = LabelEncoder()
-            
-            features['direction_encoded'] = le_direction.fit_transform(trades_df['direction'].fillna('BUY'))
-            features['cvd_trend_encoded'] = le_cvd.fit_transform(trades_df['cvd_trend'].fillna('neutral'))
-            features['macd_signal_encoded'] = le_macd.fit_transform(trades_df['macd_signal'].fillna('neutral'))
+            # Encode categorical features safely
+            try:
+                le_direction = LabelEncoder()
+                le_cvd = LabelEncoder()
+                le_macd = LabelEncoder()
+                
+                direction_values = trades_df['direction'].fillna('BUY').astype(str)
+                cvd_values = trades_df['cvd_trend'].fillna('neutral').astype(str)
+                macd_values = trades_df['macd_signal'].fillna('neutral').astype(str)
+                
+                features['direction_encoded'] = le_direction.fit_transform(direction_values)
+                features['cvd_trend_encoded'] = le_cvd.fit_transform(cvd_values)
+                features['macd_signal_encoded'] = le_macd.fit_transform(macd_values)
+            except Exception as e:
+                self.logger.warning(f"Label encoding error: {e}")
+                features['direction_encoded'] = 1
+                features['cvd_trend_encoded'] = 0
+                features['macd_signal_encoded'] = 0
+                
             features['ema_alignment'] = trades_df['ema_alignment'].fillna(False).astype(int)
             
-            # Time-based features
-            if 'entry_time' in trades_df.columns:
-                trades_df['entry_time'] = pd.to_datetime(trades_df['entry_time'])
-                features['hour'] = trades_df['entry_time'].dt.hour
-                features['day_of_week'] = trades_df['entry_time'].dt.dayofweek
+            # Time-based features with safer extraction
+            try:
+                if 'entry_time' in trades_df.columns:
+                    entry_times = pd.to_datetime(trades_df['entry_time'], errors='coerce')
+                    features['hour'] = entry_times.dt.hour.fillna(datetime.now().hour)
+                    features['day_of_week'] = entry_times.dt.dayofweek.fillna(datetime.now().weekday())
+                else:
+                    features['hour'] = datetime.now().hour
+                    features['day_of_week'] = datetime.now().weekday()
+            except Exception as e:
+                self.logger.warning(f"Time feature extraction error: {e}")
+                features['hour'] = datetime.now().hour
+                features['day_of_week'] = datetime.now().weekday()
+            
+            # Ensure consistent column order
+            features = features[feature_columns]
             
             # Remove rows with too many NaN values
-            features = features.dropna()
+            features = features.fillna(0)
+            
+            # Store feature names for consistent usage
+            self.feature_names = feature_columns
             
             return features
             
@@ -816,12 +848,12 @@ class MLTradeAnalyzer:
                 return {'prediction': 'unknown', 'confidence': 0}
             
             # Prepare features
-            features = self._prepare_signal_features(signal_data)
-            if features is None:
+            features_df = self._prepare_signal_features(signal_data)
+            if features_df is None or len(features_df) == 0:
                 return {'prediction': 'unknown', 'confidence': 0}
             
             # Scale features
-            features_scaled = self.scaler.transform([features])
+            features_scaled = self.scaler.transform(features_df)
             
             # Predict loss probability
             loss_prob = self.loss_prediction_model.predict_proba(features_scaled)[0][1]
@@ -854,24 +886,31 @@ class MLTradeAnalyzer:
             self.logger.error(f"Error predicting trade outcome: {e}")
             return {'prediction': 'unknown', 'confidence': 0, 'error': str(e)}
     
-    def _prepare_signal_features(self, signal_data: Dict[str, Any]) -> Optional[List[float]]:
+    def _prepare_signal_features(self, signal_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Prepare features from signal data for prediction"""
         try:
-            features = [
-                signal_data.get('signal_strength', 85),
-                signal_data.get('optimal_leverage', 50),
-                signal_data.get('volatility', 0.02),
-                signal_data.get('volume_ratio', 1.0),
-                signal_data.get('rsi', 50),
-                1 if signal_data.get('direction') == 'BUY' else 0,
-                1 if signal_data.get('cvd_trend') == 'bullish' else 0,
-                1 if signal_data.get('macd_bullish', False) else 0,
-                1 if signal_data.get('ema_bullish', False) else 0,
-                datetime.now().hour,
-                datetime.now().weekday()
-            ]
+            # Create DataFrame with consistent structure
+            feature_data = {
+                'signal_strength': [signal_data.get('signal_strength', 85)],
+                'leverage': [signal_data.get('optimal_leverage', 35)],
+                'volatility': [signal_data.get('volatility', 0.02)],
+                'volume_ratio': [signal_data.get('volume_ratio', 1.0)],
+                'rsi_value': [signal_data.get('rsi', 50)],
+                'direction_encoded': [1 if signal_data.get('direction') == 'BUY' else 0],
+                'cvd_trend_encoded': [1 if signal_data.get('cvd_trend') == 'bullish' else 0],
+                'macd_signal_encoded': [1 if signal_data.get('macd_bullish', False) else 0],
+                'ema_alignment': [1 if signal_data.get('ema_bullish', False) else 0],
+                'hour': [datetime.now().hour],
+                'day_of_week': [datetime.now().weekday()]
+            }
             
-            return features
+            features_df = pd.DataFrame(feature_data)
+            
+            # Ensure consistent column order
+            if hasattr(self, 'feature_names'):
+                features_df = features_df[self.feature_names]
+            
+            return features_df
             
         except Exception as e:
             self.logger.error(f"Error preparing signal features: {e}")

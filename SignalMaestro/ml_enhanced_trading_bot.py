@@ -108,7 +108,7 @@ class MLTradePredictor:
         self.tp2_model = None
         self.tp3_model = None
         self.volatility_model = None
-        self.scaler = StandardScaler()
+        self.scaler = StandardScaler() # Initialize scaler here
 
         # Trade database
         self.db_path = "ml_trade_learning.db"
@@ -215,6 +215,72 @@ class MLTradePredictor:
         except Exception as e:
             self.logger.error(f"Error recording trade outcome: {e}")
 
+    def _prepare_features_and_targets(self, df: pd.DataFrame, target_column: str) -> tuple:
+        """Helper to prepare features and targets, fitting scaler and handling feature names."""
+        try:
+            if len(df) == 0:
+                return None, None
+
+            # Define feature columns - MUST match the order expected by the model
+            feature_columns = [
+                'entry_price', 'leverage', 'market_volatility', 'volume_ratio', 'rsi',
+                'direction_encoded', 'macd_bullish', 'hour', 'day_of_week'
+            ]
+            features_df = pd.DataFrame()
+            features_df['entry_price'] = df['entry_price']
+            features_df['leverage'] = df['leverage'].fillna(50)
+            features_df['market_volatility'] = df['market_volatility'].fillna(0.02)
+            features_df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
+            features_df['rsi'] = df['rsi'].fillna(50)
+
+            features_df['direction_encoded'] = df['direction'].map({'BUY': 1, 'SELL': 0}).fillna(1)
+            features_df['macd_bullish'] = df['macd_signal'].map({'bullish': 1, 'bearish': 0}).fillna(0)
+
+            # Time features - ensure they are calculated correctly
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+                valid_timestamps = df['timestamp'].dropna()
+                if not valid_timestamps.empty:
+                    features_df['hour'] = valid_timestamps.dt.hour.iloc[0] if len(valid_timestamps) == 1 else valid_timestamps.dt.hour.mode().iloc[0]
+                    features_df['day_of_week'] = valid_timestamps.dt.dayofweek.iloc[0] if len(valid_timestamps) == 1 else valid_timestamps.dt.dayofweek.mode().iloc[0]
+                else:
+                    current_time = datetime.now()
+                    features_df['hour'] = current_time.hour
+                    features_df['day_of_week'] = current_time.weekday()
+            else:
+                current_time = datetime.now()
+                features_df['hour'] = current_time.hour
+                features_df['day_of_week'] = current_time.weekday()
+
+            # Align features with the target column
+            features_df = features_df.loc[df.index]
+            features_df = features_df.ffill().bfill().fillna(0)
+
+            # Select only the defined feature columns in the correct order
+            features_aligned = features_df[feature_columns]
+
+            # Prepare target variable
+            targets_df = df[target_column]
+
+            # Fit scaler ONLY if it hasn't been fitted before or if new data demands it
+            # For simplicity, we'll fit it here whenever preparing data for training.
+            # In a more robust system, you might load/save the scaler.
+            self.scaler.fit(features_aligned) # Fit scaler on the aligned feature columns
+            self.scaler_fitted = True
+
+            # Transform features using the fitted scaler
+            features_scaled = self.scaler.transform(features_aligned)
+
+            # Convert scaled features back to DataFrame to retain column names for potential debugging
+            features_scaled_df = pd.DataFrame(features_scaled, columns=feature_columns, index=features_aligned.index)
+
+            return features_scaled_df, targets_df
+
+        except Exception as e:
+            self.logger.error(f"Error in _prepare_features_and_targets: {e}")
+            return None, None
+
+
     async def retrain_models(self):
         """Retrain ML models with new data"""
         try:
@@ -230,14 +296,36 @@ class MLTradePredictor:
                 self.logger.warning(f"Insufficient training data: {len(training_data)} trades")
                 return
 
-            # Prepare features and targets
-            features, targets = self._prepare_training_data(training_data)
-            if features is None or len(features) == 0:
+            # Prepare features and targets for each model
+            targets = {}
+            targets['optimal_sl'] = training_data['stop_loss'] / training_data['entry_price']
+            targets['optimal_tp1'] = training_data['take_profit_1'] / training_data['entry_price']
+            targets['optimal_tp2'] = training_data['take_profit_2'] / training_data['entry_price']
+            targets['optimal_tp3'] = training_data['take_profit_3'] / training_data['entry_price']
+
+            # Filter for profitable trades to use for training SL/TP
+            profitable_trades_df = training_data[training_data['profit_loss'] > 0].copy()
+            if len(profitable_trades_df) == 0:
+                self.logger.warning("No profitable trades found for training SL/TP models.")
                 return
 
-            # Train models
-            await self._train_sl_model(features, targets)
-            await self._train_tp_models(features, targets)
+            # Align features with profitable trades
+            for target_name in targets:
+                targets[target_name] = targets[target_name].loc[profitable_trades_df.index]
+
+            # Train SL model
+            sl_features, sl_targets = self._prepare_features_and_targets(profitable_trades_df, 'optimal_sl')
+            if sl_features is not None and sl_targets is not None:
+                await self._train_sl_model(sl_features, sl_targets)
+
+            # Train TP models
+            tp1_features, tp1_targets = self._prepare_features_and_targets(profitable_trades_df, 'optimal_tp1')
+            tp2_features, tp2_targets = self._prepare_features_and_targets(profitable_trades_df, 'optimal_tp2')
+            tp3_features, tp3_targets = self._prepare_features_and_targets(profitable_trades_df, 'optimal_tp3')
+
+            await self._train_tp_models(tp1_features, tp1_targets, 'tp1_model', 'tp1_accuracy')
+            await self._train_tp_models(tp2_features, tp2_targets, 'tp2_model', 'tp2_accuracy')
+            await self._train_tp_models(tp3_features, tp3_targets, 'tp3_model', 'tp3_accuracy')
 
             # Save models
             self._save_models()
@@ -261,6 +349,10 @@ class MLTradePredictor:
                 df['market_conditions'] = df['market_conditions'].apply(
                     lambda x: json.loads(x) if x else {}
                 )
+            
+            # Ensure timestamp is parsed correctly
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
 
             return df
 
@@ -337,19 +429,14 @@ class MLTradePredictor:
             self.logger.error(f"Error preparing training data: {e}")
             return None, None
 
-    async def _train_sl_model(self, features: pd.DataFrame, targets: Dict[str, pd.Series]):
+    async def _train_sl_model(self, features: pd.DataFrame, targets: pd.Series):
         """Train stop loss prediction model"""
         try:
-            if 'optimal_sl' not in targets or len(targets['optimal_sl']) < 10:
+            if targets is None or len(targets) < 10:
                 return
 
             X = features
-            y = targets['optimal_sl']
-
-            # Align data
-            common_indices = X.index.intersection(y.index)
-            X = X.loc[common_indices]
-            y = y.loc[common_indices]
+            y = targets
 
             if len(X) < 10:
                 return
@@ -357,16 +444,12 @@ class MLTradePredictor:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-            # Scale features
-            X_train_scaled = self.scaler.fit_transform(X_train)
-            X_test_scaled = self.scaler.transform(X_test)
-
             # Train model
             self.sl_model = RandomForestRegressor(n_estimators=100, random_state=42)
-            self.sl_model.fit(X_train_scaled, y_train)
+            self.sl_model.fit(X_train, y_train)
 
             # Evaluate
-            y_pred = self.sl_model.predict(X_test_scaled)
+            y_pred = self.sl_model.predict(X_test)
             accuracy = r2_score(y_test, y_pred)
             self.model_accuracy['sl_accuracy'] = max(0, accuracy)
 
@@ -375,44 +458,34 @@ class MLTradePredictor:
         except Exception as e:
             self.logger.error(f"Error training SL model: {e}")
 
-    async def _train_tp_models(self, features: pd.DataFrame, targets: Dict[str, pd.Series]):
+    async def _train_tp_models(self, features: pd.DataFrame, targets: pd.Series, model_attr: str, accuracy_attr: str):
         """Train take profit prediction models"""
         try:
-            for tp_level, model_attr in [('optimal_tp1', 'tp1_model'), ('optimal_tp2', 'tp2_model'), ('optimal_tp3', 'tp3_model')]:
-                if tp_level not in targets or len(targets[tp_level]) < 10:
-                    continue
+            if targets is None or len(targets) < 10:
+                return
 
-                X = features
-                y = targets[tp_level]
+            X = features
+            y = targets
 
-                # Align data
-                common_indices = X.index.intersection(y.index)
-                X = X.loc[common_indices]
-                y = y.loc[common_indices]
+            if len(X) < 10:
+                return
 
-                if len(X) < 10:
-                    continue
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-                # Split data
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+            # Train model
+            model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+            model.fit(X_train, y_train)
 
-                # Scale features
-                X_train_scaled = self.scaler.fit_transform(X_train)
-                X_test_scaled = self.scaler.transform(X_test)
+            # Set model
+            setattr(self, model_attr, model)
 
-                # Train model
-                model = GradientBoostingRegressor(n_estimators=100, random_state=42)
-                model.fit(X_train_scaled, y_train)
+            # Evaluate
+            y_pred = model.predict(X_test)
+            accuracy = r2_score(y_test, y_pred)
+            self.model_accuracy[accuracy_attr] = max(0, accuracy)
 
-                # Set model
-                setattr(self, model_attr, model)
-
-                # Evaluate
-                y_pred = model.predict(X_test_scaled)
-                accuracy = r2_score(y_test, y_pred)
-                self.model_accuracy[f'{tp_level.replace("optimal_", "")}_accuracy'] = max(0, accuracy)
-
-                self.logger.info(f"📈 {tp_level} model accuracy: {accuracy:.3f}")
+            self.logger.info(f"📈 {model_attr} model accuracy: {accuracy:.3f}")
 
         except Exception as e:
             self.logger.error(f"Error training TP models: {e}")
@@ -425,7 +498,7 @@ class MLTradePredictor:
                 'tp1_model.pkl': self.tp1_model,
                 'tp2_model.pkl': self.tp2_model,
                 'tp3_model.pkl': self.tp3_model,
-                'scaler.pkl': self.scaler
+                'scaler.pkl': self.scaler # Save the scaler
             }
 
             for filename, model in models.items():
@@ -448,7 +521,7 @@ class MLTradePredictor:
                 'tp1_model.pkl': 'tp1_model',
                 'tp2_model.pkl': 'tp2_model',
                 'tp3_model.pkl': 'tp3_model',
-                'scaler.pkl': 'scaler'
+                'scaler.pkl': 'scaler' # Load the scaler
             }
 
             for filename, attr_name in models.items():
@@ -463,24 +536,48 @@ class MLTradePredictor:
                 with open(accuracy_file, 'r') as f:
                     self.model_accuracy.update(json.load(f))
 
+            # Check if scaler was loaded successfully
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                self.scaler_fitted = True # Mark scaler as fitted if loaded
+                self.logger.info("Scaler loaded successfully.")
+            else:
+                self.logger.warning("Scaler not found or failed to load. A new scaler will be initialized.")
+                self.scaler = StandardScaler() # Re-initialize if loading failed
+                self.scaler_fitted = False
+
+
             self.logger.info("🤖 ML models loaded successfully")
 
         except Exception as e:
             self.logger.error(f"Error loading models: {e}")
+            # Ensure scaler is initialized if loading fails
+            if not hasattr(self, 'scaler') or self.scaler is None:
+                self.scaler = StandardScaler()
+                self.scaler_fitted = False
+                self.logger.warning("Initialized a new scaler due to loading error.")
+
 
     def predict_optimal_levels(self, signal_data: Dict[str, Any]) -> Dict[str, float]:
         """Predict optimal SL/TP levels using ML models"""
         try:
             if not all([self.sl_model, self.tp1_model, self.tp2_model, self.tp3_model, self.scaler]):
+                self.logger.warning("ML models or scaler not fully loaded. Using default levels.")
                 return self._get_default_levels(signal_data)
 
             # Prepare features
             features = self._prepare_prediction_features(signal_data)
             if features is None:
+                self.logger.warning("Failed to prepare prediction features. Using default levels.")
                 return self._get_default_levels(signal_data)
 
-            # Scale features
-            features_scaled = self.scaler.transform([features])
+            # Ensure features are in a DataFrame and have correct columns for scaling
+            features_df = pd.DataFrame([features], columns=[
+                'entry_price', 'leverage', 'market_volatility', 'volume_ratio', 'rsi',
+                'direction_encoded', 'macd_bullish', 'hour', 'day_of_week'
+            ])
+
+            # Scale features using the loaded scaler
+            features_scaled = self.scaler.transform(features_df)
 
             # Predict levels
             sl_ratio = self.sl_model.predict(features_scaled)[0]
@@ -491,6 +588,12 @@ class MLTradePredictor:
             entry_price = signal_data.get('entry_price', signal_data.get('current_price', 0))
             direction = signal_data.get('direction', 'BUY').upper()
 
+            # Ensure ratios are positive, fallback if prediction is nonsensical
+            sl_ratio = max(0.01, sl_ratio)
+            tp1_ratio = max(0.01, tp1_ratio)
+            tp2_ratio = max(0.01, tp2_ratio)
+            tp3_ratio = max(0.01, tp3_ratio)
+
             if direction in ['BUY', 'LONG']:
                 predicted_levels = {
                     'stop_loss': entry_price * sl_ratio,
@@ -498,20 +601,32 @@ class MLTradePredictor:
                     'take_profit_2': entry_price * tp2_ratio,
                     'take_profit_3': entry_price * tp3_ratio
                 }
-            else:
+            else: # SELL or SHORT
+                # For SELL, we expect ratios to be multipliers for inverse logic
+                # Example: entry_price * (2 - ratio) or entry_price / ratio
+                # Assuming ratios are relative to entry price for profit/loss calculation
                 predicted_levels = {
-                    'stop_loss': entry_price * (2 - sl_ratio),
-                    'take_profit_1': entry_price * (2 - tp1_ratio),
-                    'take_profit_2': entry_price * (2 - tp2_ratio),
-                    'take_profit_3': entry_price * (2 - tp3_ratio)
+                    'stop_loss': entry_price * (1 + (1 - sl_ratio)), # Inverse logic for stop loss on sell
+                    'take_profit_1': entry_price * (1 - (1 - tp1_ratio)), # Inverse logic for TP on sell
+                    'take_profit_2': entry_price * (1 - (1 - tp2_ratio)),
+                    'take_profit_3': entry_price * (1 - (1 - tp3_ratio))
                 }
+                # Re-adjust for common interpretation where higher TP means further away from entry price
+                if tp1_ratio > 1: predicted_levels['take_profit_1'] = entry_price * tp1_ratio
+                if tp2_ratio > 1: predicted_levels['take_profit_2'] = entry_price * tp2_ratio
+                if tp3_ratio > 1: predicted_levels['take_profit_3'] = entry_price * tp3_ratio
+
 
             # Validate predictions
             if self._validate_predicted_levels(predicted_levels, entry_price, direction):
                 return predicted_levels
             else:
+                self.logger.warning("ML predictions failed validation. Using default levels.")
                 return self._get_default_levels(signal_data)
 
+        except ValueError as ve:
+             self.logger.error(f"ValueError during prediction: {ve}. Ensure scaler is fitted correctly.")
+             return self._get_default_levels(signal_data)
         except Exception as e:
             self.logger.error(f"Error predicting optimal levels: {e}")
             return self._get_default_levels(signal_data)
@@ -520,17 +635,24 @@ class MLTradePredictor:
         """Prepare features for prediction"""
         try:
             entry_price = signal_data.get('entry_price', signal_data.get('current_price', 0))
+            
+            # Ensure all required features are present and in the correct order
             features = [
                 entry_price,
                 signal_data.get('leverage', 50),
                 signal_data.get('volatility', 0.02),
                 signal_data.get('volume_ratio', 1.0),
                 signal_data.get('rsi', 50),
-                1 if signal_data.get('direction', 'BUY').upper() in ['BUY', 'LONG'] else 0,
+                1 if signal_data.get('direction', 'BUY').upper() in ['BUY', 'LONG'] else 0, # direction_encoded
                 1 if signal_data.get('macd_bullish', False) else 0,
                 datetime.now().hour,
                 datetime.now().weekday()
             ]
+
+            # Check for NaNs or invalid values that might cause issues during scaling
+            if any(np.isnan(f) or not np.isfinite(f) for f in features):
+                self.logger.warning("NaN or infinite value detected in prediction features.")
+                return None
 
             return features
 
@@ -547,11 +669,28 @@ class MLTradePredictor:
             tp3 = levels['take_profit_3']
 
             if direction.upper() in ['BUY', 'LONG']:
-                return sl < entry_price < tp1 < tp2 < tp3
-            else:
-                return tp3 < tp2 < tp1 < entry_price < sl
+                # For BUY, SL should be below entry, TPs should be above entry and increasing
+                if not (sl < entry_price < tp1 < tp2 < tp3):
+                    return False
+                # Also check for reasonable risk/reward ratios implied
+                if not (tp1 - entry_price > entry_price - sl): # TP1 should be at least as far as SL
+                    return False
+            else: # SELL or SHORT
+                # For SELL, SL should be above entry, TPs should be below entry and decreasing
+                if not (tp3 < tp2 < tp1 < entry_price < sl):
+                    return False
+                # Check for reasonable risk/reward ratios implied
+                if not (entry_price - tp1 > sl - entry_price): # TP1 should be at least as far as SL
+                    return False
+
+            # Ensure no zero or negative prices, although unlikely with ratio predictions
+            if sl <= 0 or tp1 <= 0 or tp2 <= 0 or tp3 <= 0:
+                return False
+
+            return True
 
         except Exception as e:
+            self.logger.error(f"Error validating predicted levels: {e}")
             return False
 
     def _get_default_levels(self, signal_data: Dict[str, Any]) -> Dict[str, float]:
@@ -571,7 +710,7 @@ class MLTradePredictor:
                 'take_profit_2': entry_price * (1 + base_risk * 2.5),
                 'take_profit_3': entry_price * (1 + base_risk * 4.0)
             }
-        else:
+        else: # SELL or SHORT
             return {
                 'stop_loss': entry_price * (1 + base_risk),
                 'take_profit_1': entry_price * (1 - base_risk * 1.5),
@@ -1073,7 +1212,7 @@ class MLEnhancedTradingBot:
                     safe_high = float(high[-1]) if len(high) > 0 else 0.0
                     safe_low = float(low[-1]) if len(low) > 0 else 0.0
                     safe_pivot = (safe_high + safe_low) / 2 if safe_high > 0 and safe_low > 0 else 0.0
-                    
+
                     return {
                         'resistance': safe_high,
                         'support': safe_low,
@@ -1087,55 +1226,55 @@ class MLEnhancedTradingBot:
 
             # Calculate current price and range
             current_price = float((high[-1] + low[-1]) / 2)
-            
+
             # Find significant swing points for Fibonacci analysis
             swing_high, swing_low = self._find_fibonacci_swing_points(high, low)
-            
+
             if swing_high == 0 or swing_low == 0:
                 # Fallback to simple calculation
                 recent_period = min(20, len(high))
                 swing_high = float(np.max(high[-recent_period:]))
                 swing_low = float(np.min(low[-recent_period:]))
-            
+
             # Calculate Fibonacci retracement levels
             fibonacci_levels = self._calculate_fibonacci_levels(swing_high, swing_low, current_price)
-            
+
             # Find optimal support and resistance from Fibonacci levels
             support_candidates = [level for level in fibonacci_levels['retracements'] if level < current_price]
             resistance_candidates = [level for level in fibonacci_levels['retracements'] if level > current_price]
-            
+
             # Add Fibonacci extension levels for additional targets
             extension_levels = fibonacci_levels['extensions']
             resistance_candidates.extend([level for level in extension_levels if level > current_price])
-            
+
             # Select the nearest and most significant levels
             if support_candidates:
                 nearest_support = max(support_candidates)  # Closest support below current price
             else:
                 nearest_support = swing_low
-                
+
             if resistance_candidates:
                 nearest_resistance = min(resistance_candidates)  # Closest resistance above current price
             else:
                 nearest_resistance = swing_high
-            
+
             # Enhanced pivot point calculation using Fibonacci ratios
             fibonacci_pivot = self._calculate_fibonacci_pivot(swing_high, swing_low, current_price)
-            
-            # Calculate level strength based on Fibonacci significance
+
+            # Calculate level strength based on Fibonacci alignment
             support_strength = self._calculate_fibonacci_strength(nearest_support, fibonacci_levels['retracements'])
             resistance_strength = self._calculate_fibonacci_strength(nearest_resistance, fibonacci_levels['retracements'])
-            
+
             # Ensure logical price ordering
             if nearest_resistance <= current_price:
                 nearest_resistance = current_price * 1.015  # 1.5% above current price
             if nearest_support >= current_price:
                 nearest_support = current_price * 0.985  # 1.5% below current price
-                
+
             # Compile all significant levels for additional analysis
             key_levels = fibonacci_levels['retracements'] + extension_levels[:3]  # Top 3 extensions
             key_levels = sorted(list(set([round(level, 6) for level in key_levels if level > 0])))
-                
+
             return {
                 'resistance': float(nearest_resistance),
                 'support': float(nearest_support),
@@ -1158,14 +1297,14 @@ class MLEnhancedTradingBot:
                 fallback_high = float(np.max(high[-3:]) if len(high) >= 3 else high[-1])
                 fallback_low = float(np.min(low[-3:]) if len(low) >= 3 else low[-1])
                 fallback_pivot = (fallback_high + fallback_low) / 2
-                
+
                 return {
                     'resistance': fallback_high,
                     'support': fallback_low,
                     'pivot': fallback_pivot,
                     'resistance_strength': 0.5,
                     'support_strength': 0.5,
-                    'key_levels': [fallback_support, fallback_resistance] if 'fallback_support' in locals() else []
+                    'key_levels': [fallback_low, fallback_high] if fallback_low > 0 and fallback_high > 0 else []
                 }
             except:
                 return {
@@ -1177,11 +1316,11 @@ class MLEnhancedTradingBot:
         """Find significant swing high and low for Fibonacci analysis"""
         try:
             lookback_period = min(lookback, len(high))
-            
+
             # Find the highest high and lowest low in the lookback period
             swing_high = float(np.max(high[-lookback_period:]))
             swing_low = float(np.min(low[-lookback_period:]))
-            
+
             # Enhance swing point detection with volatility consideration
             price_range = swing_high - swing_low
             if price_range > 0:
@@ -1189,15 +1328,15 @@ class MLEnhancedTradingBot:
                 recent_period = min(20, len(high))
                 recent_high = float(np.max(high[-recent_period:]))
                 recent_low = float(np.min(low[-recent_period:]))
-                
+
                 # Use recent swings if they represent significant portion of total range
                 recent_range = recent_high - recent_low
                 if recent_range >= price_range * 0.618:  # Golden ratio threshold
                     swing_high = recent_high
                     swing_low = recent_low
-            
+
             return swing_high, swing_low
-            
+
         except Exception as e:
             # Fallback to simple high/low
             try:
@@ -1210,23 +1349,23 @@ class MLEnhancedTradingBot:
         try:
             if swing_high <= swing_low or swing_high == 0 or swing_low == 0:
                 return {'retracements': [], 'extensions': []}
-            
+
             price_range = swing_high - swing_low
-            
+
             # Standard Fibonacci retracement levels
             fib_ratios = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-            
+
             # Calculate retracement levels (from swing high down to swing low)
             retracement_levels = []
             for ratio in fib_ratios:
                 level = swing_high - (price_range * ratio)
                 if level > 0:
                     retracement_levels.append(float(level))
-            
+
             # Calculate Fibonacci extension levels (beyond the swing range)
             extension_ratios = [1.272, 1.414, 1.618, 2.0, 2.618, 3.618]
             extension_levels = []
-            
+
             # Determine trend direction for extensions
             if current_price > (swing_high + swing_low) / 2:  # Uptrend
                 # Extensions above swing high
@@ -1240,12 +1379,12 @@ class MLEnhancedTradingBot:
                     level = swing_low - (price_range * (ratio - 1.0))
                     if level < swing_low and level > 0:
                         extension_levels.append(float(level))
-            
+
             return {
                 'retracements': retracement_levels,
                 'extensions': extension_levels[:5]  # Limit to 5 most relevant extensions
             }
-            
+
         except Exception as e:
             return {'retracements': [], 'extensions': []}
 
@@ -1254,19 +1393,19 @@ class MLEnhancedTradingBot:
         try:
             if swing_high <= 0 or swing_low <= 0:
                 return current_price
-            
+
             # Traditional pivot
             traditional_pivot = (swing_high + swing_low + current_price) / 3
-            
+
             # Fibonacci-based pivot using golden ratio
             price_range = swing_high - swing_low
             fibonacci_pivot = swing_low + (price_range * 0.618)  # Golden ratio
-            
+
             # Weighted combination favoring Fibonacci approach
             final_pivot = (fibonacci_pivot * 0.7) + (traditional_pivot * 0.3)
-            
+
             return float(final_pivot)
-            
+
         except Exception as e:
             return float(current_price)
 
@@ -1275,26 +1414,26 @@ class MLEnhancedTradingBot:
         try:
             if not fibonacci_levels or level <= 0:
                 return 0.5
-            
+
             # Check how close the level is to key Fibonacci ratios
             min_distance = float('inf')
             for fib_level in fibonacci_levels:
                 if fib_level > 0:
                     distance = abs(level - fib_level) / fib_level
                     min_distance = min(min_distance, distance)
-            
+
             # Convert distance to strength score (closer = stronger)
             if min_distance == float('inf'):
                 return 0.5
-            
+
             # Strength decreases exponentially with distance
             strength = max(0.1, 1.0 - (min_distance * 10))
             return min(1.0, strength)
-            
+
         except Exception as e:
             return 0.5
 
-    
+
 
     def _calculate_trend_strength(self, close: np.array) -> float:
         """Calculate trend strength (0-100)"""

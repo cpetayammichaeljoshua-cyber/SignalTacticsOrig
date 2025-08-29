@@ -488,34 +488,37 @@ class AdvancedMLTradeAnalyzer:
             return pd.DataFrame()
 
     def _prepare_ml_features(self, df: pd.DataFrame) -> tuple:
-        """Prepare features for ML training"""
+        """Prepare features for ML training with consistent column names"""
         try:
             if len(df) == 0:
                 return None, None
 
-            # Create feature matrix
+            # Create feature matrix with consistent column names
             features = pd.DataFrame()
 
-            # Basic features
+            # Basic features - ensure consistent naming
             features['signal_strength'] = df['signal_strength'].fillna(0)
             features['leverage'] = df['leverage'].fillna(35)
             features['market_volatility'] = df['market_volatility'].fillna(0.02)
             features['volume_ratio'] = df['volume_ratio'].fillna(1.0)
             features['rsi_value'] = df['rsi_value'].fillna(50)
 
-            # Encode categorical features
-            le_direction = LabelEncoder()
-            le_macd = LabelEncoder()
-            le_cvd = LabelEncoder()
-            le_session = LabelEncoder()
+            # Encode categorical features with consistent mapping
+            direction_map = {'BUY': 1, 'SELL': 0}
+            macd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
+            cvd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
+            session_map = {
+                'LONDON_OPEN': 0, 'LONDON_MAIN': 1, 'NY_OVERLAP': 2,
+                'NY_MAIN': 3, 'NY_CLOSE': 4, 'ASIA_MAIN': 5, 'TRANSITION': 6
+            }
 
-            features['direction_encoded'] = le_direction.fit_transform(df['direction'].fillna('BUY'))
-            features['macd_signal_encoded'] = le_macd.fit_transform(df['macd_signal'].fillna('neutral'))
-            features['cvd_trend_encoded'] = le_cvd.fit_transform(df['cvd_trend'].fillna('neutral'))
-            features['time_session_encoded'] = le_session.fit_transform(df['time_session'].fillna('NY_MAIN'))
+            features['direction_encoded'] = df['direction'].fillna('BUY').map(direction_map).fillna(1)
+            features['macd_signal_encoded'] = df['macd_signal'].fillna('neutral').map(macd_map).fillna(0)
+            features['cvd_trend_encoded'] = df['cvd_trend'].fillna('neutral').map(cvd_map).fillna(0)
+            features['time_session_encoded'] = df['time_session'].fillna('NY_MAIN').map(session_map).fillna(3)
             features['ema_alignment'] = df['ema_alignment'].fillna(False).astype(int)
 
-            # Time features
+            # Time features with consistent naming
             features['hour_of_day'] = df['hour_of_day'].fillna(12)
             features['day_of_week'] = df['day_of_week'].fillna(1)
 
@@ -734,13 +737,13 @@ class AdvancedMLTradeAnalyzer:
             if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
                 return self._fallback_prediction(signal_data)
 
-            # Prepare features
-            features = self._prepare_prediction_features(signal_data)
-            if features is None:
+            # Prepare features as DataFrame
+            features_df = self._prepare_prediction_features(signal_data)
+            if features_df is None or features_df.empty:
                 return self._fallback_prediction(signal_data)
 
-            # Scale features
-            features_scaled = self.scaler.transform([features])
+            # Scale features - now using DataFrame
+            features_scaled = self.scaler.transform(features_df)
 
             # Get predictions
             profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
@@ -775,8 +778,8 @@ class AdvancedMLTradeAnalyzer:
             self.logger.error(f"Error in ML prediction: {e}")
             return self._fallback_prediction(signal_data)
 
-    def _prepare_prediction_features(self, signal_data: Dict[str, Any]) -> Optional[List[float]]:
-        """Prepare features for prediction"""
+    def _prepare_prediction_features(self, signal_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Prepare features for prediction as DataFrame to match training data"""
         try:
             # Get current time for session
             current_time = datetime.now()
@@ -791,22 +794,25 @@ class AdvancedMLTradeAnalyzer:
             cvd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
             macd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
 
-            features = [
-                signal_data.get('signal_strength', 85),
-                signal_data.get('leverage', 35),
-                signal_data.get('market_volatility', 0.02),
-                signal_data.get('volume_ratio', 1.0),
-                signal_data.get('rsi', 50),
-                direction_map.get(signal_data.get('direction', 'BUY'), 1),
-                macd_map.get(signal_data.get('macd_signal', 'neutral'), 0),
-                cvd_map.get(signal_data.get('cvd_trend', 'neutral'), 0),
-                session_map.get(time_session, 3),
-                1 if signal_data.get('ema_bullish', False) else 0,
-                current_time.hour,
-                current_time.weekday()
-            ]
+            # Create DataFrame with proper column names matching training data
+            feature_data = {
+                'signal_strength': signal_data.get('signal_strength', 85),
+                'leverage': signal_data.get('leverage', 35),
+                'market_volatility': signal_data.get('market_volatility', 0.02),
+                'volume_ratio': signal_data.get('volume_ratio', 1.0),
+                'rsi_value': signal_data.get('rsi', 50),
+                'direction_encoded': direction_map.get(signal_data.get('direction', 'BUY'), 1),
+                'macd_signal_encoded': macd_map.get(signal_data.get('macd_signal', 'neutral'), 0),
+                'cvd_trend_encoded': cvd_map.get(signal_data.get('cvd_trend', 'neutral'), 0),
+                'time_session_encoded': session_map.get(time_session, 3),
+                'ema_alignment': 1 if signal_data.get('ema_bullish', False) else 0,
+                'hour_of_day': current_time.hour,
+                'day_of_week': current_time.weekday()
+            }
 
-            return features
+            # Return as single-row DataFrame
+            features_df = pd.DataFrame([feature_data])
+            return features_df
 
         except Exception as e:
             self.logger.error(f"Error preparing prediction features: {e}")

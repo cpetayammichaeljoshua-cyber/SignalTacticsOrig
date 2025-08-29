@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Project"
+runButton = "Ultimate Trading Bot"
 
 [[workflows.workflow]]
 name = "Project"
@@ -17,10 +17,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Signal Bot"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Trading Bot Server"
 
 [[workflows.workflow]]
 name = "Signal Bot"
@@ -176,18 +172,6 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_ultimate_bot.py"
-
-[[workflows.workflow]]
-name = "Trading Bot Server"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pip install -r requirements_additional.txt && pip install -r requirements_charts.txt && pip install pandas-ta scikit-learn joblib aiohttp aiohttp-cors python-binance && python main.py"
-waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 3000

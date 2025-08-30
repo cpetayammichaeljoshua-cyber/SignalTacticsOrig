@@ -293,7 +293,7 @@ class AdvancedMLTradeAnalyzer:
             # Trigger incremental learning every 10 updates
             update_count = getattr(self, '_open_trade_updates', 0) + 1
             setattr(self, '_open_trade_updates', update_count)
-            
+
             if update_count % 10 == 0:
                 await self._incremental_ml_learning()
 
@@ -304,11 +304,11 @@ class AdvancedMLTradeAnalyzer:
         """Perform incremental ML learning from open trades"""
         try:
             self.logger.info("🔄 Performing incremental ML learning from open trades...")
-            
+
             # Get recent open trade data
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             # Get last 50 open trades for incremental learning
             cursor.execute('''
                 SELECT * FROM ml_trades 
@@ -316,19 +316,19 @@ class AdvancedMLTradeAnalyzer:
                 ORDER BY created_at DESC 
                 LIMIT 50
             ''')
-            
+
             open_trades = cursor.fetchall()
             conn.close()
-            
+
             if len(open_trades) >= 10:  # Need minimum trades for learning
                 # Analyze patterns in open trades
                 patterns = await self._analyze_open_trade_patterns(open_trades)
-                
+
                 # Update ML models with real-time insights
                 await self._update_ml_models_incremental(patterns)
-                
+
                 self.logger.info(f"🧠 Incremental learning completed with {len(open_trades)} open trades")
-            
+
         except Exception as e:
             self.logger.error(f"Error in incremental ML learning: {e}")
 
@@ -342,14 +342,14 @@ class AdvancedMLTradeAnalyzer:
                 'volatility_patterns': {},
                 'signal_strength_correlation': {}
             }
-            
+
             profitable_count = 0
             losing_count = 0
-            
+
             for trade in open_trades:
                 # Analyze based on unrealized P/L
                 profit_loss = trade[11] if len(trade) > 11 else 0  # profit_loss column
-                
+
                 if profit_loss > 0:
                     profitable_count += 1
                     patterns['profitable_setups'].append({
@@ -366,13 +366,13 @@ class AdvancedMLTradeAnalyzer:
                         'volatility': trade[14],
                         'cvd_trend': trade[19]
                     })
-            
+
             # Calculate success rate
             total_trades = profitable_count + losing_count
             patterns['current_success_rate'] = (profitable_count / total_trades * 100) if total_trades > 0 else 0
-            
+
             return patterns
-            
+
         except Exception as e:
             self.logger.error(f"Error analyzing open trade patterns: {e}")
             return {}
@@ -381,7 +381,7 @@ class AdvancedMLTradeAnalyzer:
         """Update ML models with incremental learning from open trades"""
         try:
             success_rate = patterns.get('current_success_rate', 0)
-            
+
             # Adjust confidence thresholds based on real-time performance
             if success_rate > 80:
                 # High success rate - can be more aggressive
@@ -389,12 +389,12 @@ class AdvancedMLTradeAnalyzer:
             elif success_rate < 60:
                 # Low success rate - be more conservative
                 self.model_performance['signal_accuracy'] = max(0.70, self.model_performance['signal_accuracy'] - 0.02)
-            
+
             # Update learning progress
             self.model_performance['last_training_time'] = datetime.now().isoformat()
-            
+
             self.logger.info(f"📈 ML models updated - Current success rate: {success_rate:.1f}%")
-            
+
         except Exception as e:
             self.logger.error(f"Error updating ML models incrementally: {e}")
 
@@ -1549,12 +1549,12 @@ class UltimateTradingBot:
         """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
-            
+
             # Check if symbol already has an active trade
             if symbol in self.active_symbols:
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
                 return None
-            
+
             if symbol in self.last_signal_time:
                 time_diff = (current_time - self.last_signal_time[symbol]).total_seconds()
                 if time_diff < self.min_signal_interval:
@@ -1853,7 +1853,7 @@ class UltimateTradingBot:
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': self.admin_chat_id,
-                'text': f"📢 **CHANNEL FALLBACK**\n\n{text}",
+                'text': f"📢 <b>CHANNEL FALLBACK</b>\n\n{text}",
                 'parse_mode': parse_mode,
                 'disable_web_page_preview': True
             }
@@ -1870,10 +1870,10 @@ class UltimateTradingBot:
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
         """Format minimal ML signal message"""
         ml_prediction = signal.get('ml_prediction', {})
-        
+
         # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
-        
+
         message = f"""{cornix_signal}
 
 🧠 ML: {ml_prediction.get('prediction', 'unknown').title()} ({ml_prediction.get('confidence', 0):.0f}%)
@@ -1962,28 +1962,28 @@ Exchange: Binance Futures"""
 
             # Create figure with 1:1 aspect ratio (square)
             fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-            
+
             # Validate data
             if 'close' not in df.columns or len(df) == 0:
                 plt.close(fig)
                 return None
-                
+
             closes = df['close'].values
             if len(closes) == 0:
                 plt.close(fig)
                 return None
-            
+
             # Use available data
             data_len = min(50, len(df))
             x_range = range(data_len)
-            
+
             # Plot price line
             ax.plot(x_range, closes[-data_len:], color='#00ff00', linewidth=2, label='Price')
-            
+
             # Mark entry point
             entry_price = signal.get('entry_price', closes[-1])
             ax.axhline(y=entry_price, color='yellow', linestyle='--', alpha=0.8, label=f'Entry: {entry_price:.4f}')
-            
+
             # Mark TP levels
             if 'tp1' in signal and signal['tp1'] > 0:
                 ax.axhline(y=signal['tp1'], color='green', linestyle=':', alpha=0.6, label=f'TP1: {signal["tp1"]:.4f}')
@@ -1991,11 +1991,11 @@ Exchange: Binance Futures"""
                 ax.axhline(y=signal['tp2'], color='green', linestyle=':', alpha=0.4)
             if 'tp3' in signal and signal['tp3'] > 0:
                 ax.axhline(y=signal['tp3'], color='green', linestyle=':', alpha=0.2)
-            
+
             # Mark SL
             if 'stop_loss' in signal and signal['stop_loss'] > 0:
                 ax.axhline(y=signal['stop_loss'], color='red', linestyle=':', alpha=0.8, label=f'SL: {signal["stop_loss"]:.4f}')
-            
+
             # Style the chart
             ax.set_facecolor('black')
             fig.patch.set_facecolor('black')
@@ -2003,24 +2003,24 @@ Exchange: Binance Futures"""
             ax.set_title(f'{symbol} - {signal.get("direction", "BUY")} Signal', color='white', fontsize=12)
             ax.legend(loc='upper left', facecolor='black', edgecolor='white', labelcolor='white')
             ax.grid(True, alpha=0.3, color='gray')
-            
+
             # Remove x-axis labels for cleaner look
             ax.set_xticks([])
-            
+
             plt.tight_layout()
-            
+
             # Convert to base64 string
             buffer = BytesIO()
             plt.savefig(buffer, format='png', facecolor='black', edgecolor='white', dpi=80, bbox_inches='tight')
             buffer.seek(0)
             chart_base64 = base64.b64encode(buffer.getvalue()).decode()
-            
+
             # Clean up
             plt.close(fig)
             buffer.close()
-            
+
             return chart_base64
-            
+
         except Exception as e:
             self.logger.error(f"Error generating chart for {symbol}: {e}")
             if 'fig' in locals():
@@ -2031,17 +2031,17 @@ Exchange: Binance Futures"""
         """Send photo to Telegram"""
         try:
             url = f"{self.base_url}/sendPhoto"
-            
+
             # Convert base64 to bytes
             photo_bytes = base64.b64decode(photo_data)
-            
+
             # Create form data properly for aiohttp
             form_data = aiohttp.FormData()
             form_data.add_field('chat_id', chat_id)
             form_data.add_field('caption', caption)
             form_data.add_field('parse_mode', 'Markdown')
             form_data.add_field('photo', photo_bytes, filename='chart.png', content_type='image/png')
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, data=form_data) as response:
                     if response.status == 200:
@@ -2051,7 +2051,7 @@ Exchange: Binance Futures"""
                         error = await response.text()
                         self.logger.warning(f"Send photo failed: {error}")
                         return False
-                        
+
         except Exception as e:
             self.logger.error(f"Error sending photo: {e}")
             return False
@@ -2077,7 +2077,7 @@ Exchange: Binance Futures"""
             if text.startswith('/start'):
                 self.admin_chat_id = chat_id
                 self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
-                
+
                 ml_summary = self.ml_analyzer.get_ml_summary()
                 await self.send_message(chat_id, f"""🧠 **ULTIMATE ML BOT**
 
@@ -2118,7 +2118,7 @@ Exchange: Binance Futures"""
             elif text.startswith('/stats'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
                 active_symbols_list = ', '.join(sorted(self.active_symbols)) if self.active_symbols else 'None'
-                
+
                 # Check persistent log status
                 log_file = Path("persistent_trade_logs.json")
                 persistent_logs_count = 0
@@ -2129,7 +2129,7 @@ Exchange: Binance Futures"""
                             persistent_logs_count = len(logs)
                     except:
                         pass
-                
+
                 await self.send_message(chat_id, f"""📊 **PERFORMANCE STATS**
 
 🎯 Signals: {self.performance_stats['total_signals']}
@@ -2255,32 +2255,32 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
                     if not log_file.exists():
                         await self.send_message(chat_id, "📭 **No trade history found**")
                         return
-                    
+
                     with open(log_file, 'r') as f:
                         logs = json.load(f)
-                    
+
                     if not logs:
                         await self.send_message(chat_id, "📭 **No trades in history**")
                         return
-                    
+
                     # Show last 5 trades
                     recent_trades = logs[-5:]
                     history_msg = "📈 **RECENT TRADE HISTORY**\n\n"
-                    
+
                     for trade in reversed(recent_trades):
                         symbol = trade.get('symbol', 'UNKNOWN')
                         direction = trade.get('direction', 'UNKNOWN')
                         result = trade.get('trade_result', 'UNKNOWN')
                         pnl = trade.get('profit_loss', 0)
                         leverage = trade.get('leverage', 0)
-                        
+
                         status_emoji = "✅" if pnl > 0 else "❌"
                         history_msg += f"{status_emoji} **{symbol}** {direction} - {result}\n"
                         history_msg += f"   P/L: {pnl:.2f}% | Leverage: {leverage}x\n\n"
-                    
+
                     history_msg += f"💾 Total Logged Trades: {len(logs)}"
                     await self.send_message(chat_id, history_msg)
-                    
+
                 except Exception as e:
                     await self.send_message(chat_id, f"❌ **Error loading history:** {str(e)}")
 
@@ -2290,28 +2290,28 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
                     if not self.active_trades:
                         await self.send_message(chat_id, "📊 **No active trades currently**")
                         return
-                    
+
                     open_msg = "🔄 **OPEN TRADES - ML LEARNING**\n\n"
-                    
+
                     for symbol, trade_info in self.active_trades.items():
                         signal = trade_info['signal']
                         entry_time = trade_info['entry_time']
                         duration = (datetime.now() - entry_time).total_seconds() / 60
-                        
+
                         # Get current price for unrealized P/L
                         try:
                             df = await self.get_binance_data(symbol, '1m', 1)
                             if df is not None and len(df) > 0:
                                 current_price = float(df['close'].iloc[-1])
                                 entry_price = signal['entry_price']
-                                
+
                                 if signal['direction'].upper() in ['BUY', 'LONG']:
                                     unrealized_pnl = ((current_price - entry_price) / entry_price) * 100 * signal['optimal_leverage']
                                 else:
                                     unrealized_pnl = ((entry_price - current_price) / entry_price) * 100 * signal['optimal_leverage']
-                                
+
                                 status_emoji = "🟢" if unrealized_pnl > 0 else "🔴" if unrealized_pnl < 0 else "🟡"
-                                
+
                                 open_msg += f"{status_emoji} **{symbol}** {signal['direction']}\n"
                                 open_msg += f"   Entry: {entry_price:.6f}\n"
                                 open_msg += f"   Current: {current_price:.6f}\n"
@@ -2328,16 +2328,16 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
                             open_msg += f"   Entry: {signal['entry_price']:.6f}\n"
                             open_msg += f"   Duration: {duration:.1f} minutes\n"
                             open_msg += f"   ML Learning: ✅ Active\n\n"
-                    
+
                     # Add ML learning stats
                     update_count = getattr(self, '_open_trade_updates', 0)
                     open_msg += f"🧠 **ML Learning Stats:**\n"
                     open_msg += f"• Real-time Updates: {update_count}\n"
                     open_msg += f"• Learning Status: Active\n"
                     open_msg += f"• Next Incremental Training: {10 - (update_count % 10)} updates"
-                    
+
                     await self.send_message(chat_id, open_msg)
-                    
+
                 except Exception as e:
                     await self.send_message(chat_id, f"❌ **Error loading open trades:** {str(e)}")
 
@@ -2372,13 +2372,13 @@ Models Active:
 
             elif text.startswith('/scan'):
                 await self.send_message(chat_id, "🔍 **Scanning markets...**")
-                
+
                 signals = await self.scan_for_signals()
-                
+
                 if signals:
-                    for signal in signals[:3]:
+                    for signal in signals:
                         self.signal_counter += 1
-                        
+
                         # Send chart first
                         try:
                             df = await self.get_binance_data(signal['symbol'], '1h', 100)
@@ -2388,23 +2388,23 @@ Models Active:
                                     await self.send_photo(chat_id, chart_data, f"📊 {signal['symbol']} Chart")
                         except Exception as e:
                             self.logger.warning(f"Chart generation failed: {e}")
-                        
+
                         # Send signal info separately  
                         signal_msg = self.format_ml_signal_message(signal)
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
-                    
+
                     await self.send_message(chat_id, f"✅ **{len(signals)} signals found**")
                 else:
                     await self.send_message(chat_id, "📊 **No signals found**\nML filtering for quality")
 
             elif text.startswith('/train'):
                 await self.send_message(chat_id, "🧠 **Scanning channel for closed trades...**")
-                
+
                 try:
                     await self.scan_and_train_from_closed_trades()
                     ml_summary = self.ml_analyzer.get_ml_summary()
-                    
+
                     await self.send_message(chat_id, f"""✅ **ML TRAINING COMPLETE**
 
 🧠 **Updated Model Performance:**
@@ -2418,7 +2418,7 @@ Models Active:
 • Performance metrics updated
 
 *Bot continuously learns from channel activity*""")
-                    
+
                 except Exception as e:
                     await self.send_message(chat_id, f"❌ **Training Error:** {str(e)}")
 
@@ -2446,10 +2446,10 @@ Use /train to manually scan and train""")
             if symbol in self.active_symbols:
                 self.active_symbols.remove(symbol)
                 self.logger.info(f"🔓 Released trade lock for {symbol}")
-            
+
             if symbol in self.symbol_trade_lock:
                 del self.symbol_trade_lock[symbol]
-                
+
         except Exception as e:
             self.logger.error(f"Error releasing symbol lock for {symbol}: {e}")
 
@@ -2458,7 +2458,7 @@ Use /train to manually scan and train""")
         try:
             symbol = signal['symbol']
             current_time = datetime.now()
-            
+
             # Create open trade data for immediate ML learning
             open_trade_data = {
                 'symbol': symbol,
@@ -2491,7 +2491,7 @@ Use /train to manually scan and train""")
 
             # Record open trade in ML analyzer for immediate learning
             await self.ml_analyzer.record_trade_outcome(open_trade_data)
-            
+
             # Store in active trades tracking for real-time updates
             self.active_trades[symbol] = {
                 'signal': signal,
@@ -2499,11 +2499,11 @@ Use /train to manually scan and train""")
                 'ml_data': open_trade_data,
                 'monitoring_task': None
             }
-            
+
             # Start real-time monitoring task for this trade
             monitoring_task = asyncio.create_task(self._monitor_open_trade_ml(symbol, signal))
             self.active_trades[symbol]['monitoring_task'] = monitoring_task
-            
+
             # Save to persistent logs immediately
             await self._save_trade_to_persistent_log(open_trade_data)
 
@@ -2518,7 +2518,7 @@ Use /train to manually scan and train""")
             entry_price = signal['entry_price']
             entry_time = datetime.now()
             update_interval = 30  # Update ML every 30 seconds
-            
+
             while symbol in self.active_trades:
                 try:
                     # Get current market data
@@ -2526,20 +2526,20 @@ Use /train to manually scan and train""")
                     if df is None or len(df) == 0:
                         await asyncio.sleep(update_interval)
                         continue
-                    
+
                     current_price = float(df['close'].iloc[-1])
                     current_time = datetime.now()
                     duration_minutes = (current_time - entry_time).total_seconds() / 60
-                    
+
                     # Calculate unrealized P/L
                     if signal['direction'].upper() in ['BUY', 'LONG']:
                         unrealized_pnl = ((current_price - entry_price) / entry_price) * 100 * signal['optimal_leverage']
                     else:
                         unrealized_pnl = ((entry_price - current_price) / entry_price) * 100 * signal['optimal_leverage']
-                    
+
                     # Check if TP or SL levels are hit
                     trade_status = self._check_trade_status(current_price, signal)
-                    
+
                     # Update ML data with current state
                     updated_ml_data = {
                         'symbol': symbol,
@@ -2569,14 +2569,14 @@ Use /train to manually scan and train""")
                         'last_update': current_time,
                         'trade_status': 'MONITORING'
                     }
-                    
+
                     # Feed updated data to ML for continuous learning
                     await self.ml_analyzer.update_open_trade_data(updated_ml_data)
-                    
+
                     # Log progress every 2 minutes
                     if int(duration_minutes) % 2 == 0:
                         self.logger.info(f"🔄 ML Learning Update: {symbol} - Duration: {duration_minutes:.1f}min, Unrealized P/L: {unrealized_pnl:.2f}%, Status: {trade_status}")
-                    
+
                     # Check if trade should be closed
                     if trade_status in ['TP1_HIT', 'TP2_HIT', 'TP3_HIT', 'SL_HIT']:
                         # Record final trade result
@@ -2587,23 +2587,23 @@ Use /train to manually scan and train""")
                             'duration_minutes': duration_minutes,
                             'exit_time': current_time
                         }
-                        
+
                         await self.record_trade_completion(signal, final_result)
-                        
+
                         # Remove from active trades
                         if symbol in self.active_trades:
                             del self.active_trades[symbol]
-                        
+
                         self.logger.info(f"✅ ML Trade Completed: {symbol} - {trade_status} - P/L: {unrealized_pnl:.2f}%")
                         break
-                    
+
                     await asyncio.sleep(update_interval)
-                    
+
                 except Exception as monitor_error:
                     self.logger.warning(f"ML monitoring error for {symbol}: {monitor_error}")
                     await asyncio.sleep(update_interval)
                     continue
-                    
+
         except Exception as e:
             self.logger.error(f"Error in ML trade monitoring for {symbol}: {e}")
 
@@ -2611,7 +2611,7 @@ Use /train to manually scan and train""")
         """Check if trade has hit TP or SL levels"""
         try:
             direction = signal['direction'].upper()
-            
+
             if direction in ['BUY', 'LONG']:
                 if current_price >= signal['tp3']:
                     return 'TP3_HIT'
@@ -2630,9 +2630,9 @@ Use /train to manually scan and train""")
                     return 'TP1_HIT'
                 elif current_price >= signal['stop_loss']:
                     return 'SL_HIT'
-            
+
             return 'OPEN'
-            
+
         except Exception as e:
             return 'OPEN'
 
@@ -2640,7 +2640,7 @@ Use /train to manually scan and train""")
         """Record completed trade for ML learning with comprehensive logging"""
         try:
             symbol = signal['symbol']
-            
+
             trade_data = {
                 'symbol': symbol,
                 'direction': signal['direction'],
@@ -2671,13 +2671,13 @@ Use /train to manually scan and train""")
 
             # Record final result in ML analyzer database for learning
             await self.ml_analyzer.record_trade_outcome(trade_data)
-            
+
             # Also save to persistent trade logs for backup and analysis
             await self._save_trade_to_persistent_log(trade_data)
-            
+
             # Update performance tracking
             self._update_performance_stats(trade_data)
-            
+
             # Release symbol lock after trade completion
             self.release_symbol_lock(symbol)
 
@@ -2690,7 +2690,7 @@ Use /train to manually scan and train""")
         """Save trade to persistent JSON log file for backup"""
         try:
             log_file = Path("persistent_trade_logs.json")
-            
+
             # Load existing logs
             existing_logs = []
             if log_file.exists():
@@ -2699,7 +2699,7 @@ Use /train to manually scan and train""")
                         existing_logs = json.load(f)
                 except:
                     existing_logs = []
-            
+
             # Add timestamp and bot version
             trade_log = {
                 **trade_data,
@@ -2707,24 +2707,24 @@ Use /train to manually scan and train""")
                 'bot_version': 'Ultimate_Trading_Bot_v1.0',
                 'session_id': self.session_token[:8] if self.session_token else 'unknown'
             }
-            
+
             # Convert datetime objects to ISO strings
             for key, value in trade_log.items():
                 if isinstance(value, datetime):
                     trade_log[key] = value.isoformat()
-            
+
             existing_logs.append(trade_log)
-            
+
             # Keep last 1000 trades to prevent file from growing too large
             if len(existing_logs) > 1000:
                 existing_logs = existing_logs[-1000:]
-            
+
             # Save back to file
             with open(log_file, 'w') as f:
                 json.dump(existing_logs, f, indent=2, default=str)
-                
+
             self.logger.info(f"💾 Trade saved to persistent log: {trade_data['symbol']}")
-            
+
         except Exception as e:
             self.logger.error(f"Error saving to persistent log: {e}")
 
@@ -2732,17 +2732,17 @@ Use /train to manually scan and train""")
         """Update performance statistics"""
         try:
             self.performance_stats['total_signals'] += 1
-            
+
             if trade_data['profit_loss'] > 0:
                 self.performance_stats['profitable_signals'] += 1
                 self.performance_stats['total_profit'] += trade_data['profit_loss']
-            
+
             if self.performance_stats['total_signals'] > 0:
                 self.performance_stats['win_rate'] = (
                     self.performance_stats['profitable_signals'] / 
                     self.performance_stats['total_signals'] * 100
                 )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating performance stats: {e}")
 
@@ -2750,17 +2750,17 @@ Use /train to manually scan and train""")
         """Load persistent trade logs on startup for ML continuity"""
         try:
             log_file = Path("persistent_trade_logs.json")
-            
+
             if not log_file.exists():
                 self.logger.info("📁 No persistent trade logs found - starting fresh")
                 return
-            
+
             with open(log_file, 'r') as f:
                 trade_logs = json.load(f)
-            
+
             if not trade_logs:
                 return
-            
+
             # Feed historical data to ML analyzer
             for trade_log in trade_logs[-100:]:  # Load last 100 trades for ML context
                 try:
@@ -2769,81 +2769,81 @@ Use /train to manually scan and train""")
                         trade_log['entry_time'] = datetime.fromisoformat(trade_log['entry_time'])
                     if 'exit_time' in trade_log and isinstance(trade_log['exit_time'], str):
                         trade_log['exit_time'] = datetime.fromisoformat(trade_log['exit_time'])
-                    
+
                     # Record in ML analyzer for learning continuity
                     await self.ml_analyzer.record_trade_outcome(trade_log)
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Error loading trade log: {e}")
                     continue
-            
+
             self.logger.info(f"📚 Loaded {len(trade_logs)} persistent trade logs for ML continuity")
-            
+
             # Update performance stats from historical data
             profitable_trades = sum(1 for trade in trade_logs if trade.get('profit_loss', 0) > 0)
             total_profit = sum(trade.get('profit_loss', 0) for trade in trade_logs if trade.get('profit_loss', 0) > 0)
-            
+
             self.performance_stats.update({
                 'total_signals': len(trade_logs),
                 'profitable_signals': profitable_trades,
                 'win_rate': (profitable_trades / len(trade_logs) * 100) if trade_logs else 0,
                 'total_profit': total_profit
             })
-            
+
         except Exception as e:
             self.logger.error(f"Error loading persistent trade logs: {e}")
 
-    async def scan_and_train_from_closed_trades(self):
-        """Scan Telegram channel for closed trades and train ML"""
+    def scan_and_train_from_closed_trades(self):
+        """Scan channel for closed trades and train ML"""
         try:
             if not self.closed_trades_scanner:
                 self.logger.warning("Closed trades scanner not available")
                 return
-                
+
             self.logger.info("🔍 Scanning Telegram channel for closed trades...")
-            
+
             # First get unprocessed trades from database
             unprocessed_trades = await self.closed_trades_scanner.get_unprocessed_trades()
-            
+
             # Scan for new closed trades
             new_closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=48)
-            
+
             # Combine all trades for processing
             all_trades = unprocessed_trades + new_closed_trades
-            
+
             if all_trades:
                 self.logger.info(f"📈 Processing {len(all_trades)} closed trades for ML training")
-                
+
                 processed_count = 0
                 processed_ids = []
-                
+
                 for trade in all_trades:
                     try:
                         # Process trade for ML training
                         await self._process_closed_trade_for_ml(trade)
                         processed_count += 1
-                        
+
                         if trade.get('message_id'):
                             processed_ids.append(trade.get('message_id'))
-                            
+
                     except Exception as trade_error:
                         self.logger.warning(f"Error processing trade {trade.get('symbol', 'UNKNOWN')}: {trade_error}")
                         continue
-                
+
                 # Mark trades as processed
                 if processed_ids:
                     await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
-                
+
                 # Retrain ML models with new data if we have enough trades
                 if processed_count >= 5:
                     await self.ml_analyzer.retrain_models()
                     self.logger.info(f"✅ ML models retrained with {processed_count} closed trades")
                 else:
                     self.logger.info(f"📊 Processed {processed_count} trades (need 5+ for retraining)")
-                    
+
             else:
                 self.logger.info("📊 No closed trades found for ML training")
-                
+
         except Exception as e:
             self.logger.error(f"Error scanning for closed trades: {e}")
 
@@ -2851,31 +2851,31 @@ Use /train to manually scan and train""")
         """Scan channel messages for closed/completed trades"""
         try:
             closed_trades = []
-            
+
             # Get recent messages from the target channel
             url = f"{self.base_url}/getUpdates"
             params = {'offset': -100}  # Get last 100 updates
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         updates = data.get('result', [])
-                        
+
                         # Look for channel messages
                         for update in updates:
                             if 'channel_post' in update:
                                 message = update['channel_post']
                                 if message.get('chat', {}).get('username') == self.target_channel.replace('@', ''):
                                     text = message.get('text', '')
-                                    
+
                                     # Check if message contains closed trade information
                                     closed_trade = self._parse_closed_trade_message(text, message)
                                     if closed_trade:
                                         closed_trades.append(closed_trade)
-            
+
             return closed_trades
-            
+
         except Exception as e:
             self.logger.error(f"Error scanning channel messages: {e}")
             return []
@@ -2884,36 +2884,36 @@ Use /train to manually scan and train""")
         """Parse message text to identify and extract closed trade information"""
         try:
             import re
-            
+
             # Keywords that indicate a closed/completed trade
             closed_keywords = [
                 'closed', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 
                 'stop loss hit', 'sl hit', 'trade closed', 'position closed',
                 'profit taken', 'loss taken', 'exit', 'completed'
             ]
-            
+
             text_lower = text.lower()
-            
+
             # Check if message contains closed trade indicators
             if not any(keyword in text_lower for keyword in closed_keywords):
                 return None
-            
+
             closed_trade = {
                 'message_id': message.get('message_id'),
                 'timestamp': datetime.fromtimestamp(message.get('date', 0)),
                 'text': text
             }
-            
+
             # Extract symbol
             symbol_match = re.search(r'#?(\w+USDT?)\s+', text, re.IGNORECASE)
             if symbol_match:
                 closed_trade['symbol'] = symbol_match.group(1).upper()
-            
+
             # Extract direction
             direction_match = re.search(r'(LONG|SHORT|BUY|SELL)', text, re.IGNORECASE)
             if direction_match:
                 closed_trade['direction'] = direction_match.group(1).upper()
-            
+
             # Extract profit/loss percentage
             profit_patterns = [
                 r'profit[:\s]*([+-]?\d+\.?\d*)%',
@@ -2922,7 +2922,7 @@ Use /train to manually scan and train""")
                 r'loss[:\s]*([+-]?\d+\.?\d*)%',
                 r'([+-]?\d+\.?\d*)%\s*loss'
             ]
-            
+
             for pattern in profit_patterns:
                 profit_match = re.search(pattern, text, re.IGNORECASE)
                 if profit_match:
@@ -2930,7 +2930,7 @@ Use /train to manually scan and train""")
                     closed_trade['profit_loss'] = profit_value
                     closed_trade['trade_result'] = 'PROFIT' if profit_value > 0 else 'LOSS'
                     break
-            
+
             # Determine trade result from keywords if profit_loss not found
             if 'trade_result' not in closed_trade:
                 if any(word in text_lower for word in ['tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 'profit taken']):
@@ -2942,27 +2942,27 @@ Use /train to manually scan and train""")
                 else:
                     closed_trade['trade_result'] = 'CLOSED'
                     closed_trade['profit_loss'] = 0.0
-            
+
             # Extract entry and exit prices if available
             entry_match = re.search(r'entry[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
             if entry_match:
                 closed_trade['entry_price'] = float(entry_match.group(1))
-            
+
             exit_match = re.search(r'exit[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
             if exit_match:
                 closed_trade['exit_price'] = float(exit_match.group(1))
-            
+
             # Extract leverage if mentioned
             leverage_match = re.search(r'(\d+)x', text, re.IGNORECASE)
             if leverage_match:
                 closed_trade['leverage'] = int(leverage_match.group(1))
-            
+
             # Only return if we have minimum required information
             if 'symbol' in closed_trade and 'trade_result' in closed_trade:
                 return closed_trade
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Error parsing closed trade message: {e}")
             return None
@@ -2975,16 +2975,16 @@ Use /train to manually scan and train""")
             if not symbol:
                 self.logger.warning("Skipping trade with no symbol")
                 return
-            
+
             # Extract trade result and profit/loss
             trade_result = closed_trade.get('trade_result', 'UNKNOWN')
             profit_loss = closed_trade.get('profit_loss', 0)
-            
+
             # Skip trades with no meaningful result
             if trade_result == 'UNKNOWN' and profit_loss == 0:
                 self.logger.debug(f"Skipping {symbol} - no trade outcome data")
                 return
-            
+
             # Create comprehensive trade data for ML
             trade_data = {
                 'symbol': symbol.upper(),
@@ -3013,7 +3013,7 @@ Use /train to manually scan and train""")
                 'exit_time': closed_trade.get('timestamp', datetime.now()),
                 'data_source': 'telegram_channel'
             }
-            
+
             # Try to enhance with current market data (optional)
             try:
                 if symbol in self.symbols:  # Only for supported symbols
@@ -3031,19 +3031,19 @@ Use /train to manually scan and train""")
                             })
             except Exception as market_error:
                 self.logger.debug(f"Could not enhance {symbol} with market data: {market_error}")
-            
+
             # Record in ML analyzer
             await self.ml_analyzer.record_trade_outcome(trade_data)
-            
+
             # Save to persistent logs
             await self._save_trade_to_persistent_log(trade_data)
-            
+
             # Update performance stats
             self._update_performance_stats(trade_data)
-            
+
             result_emoji = "✅" if profit_loss > 0 else "❌" if profit_loss < 0 else "➖"
             self.logger.info(f"📊 {result_emoji} Processed {symbol} {trade_result}: {profit_loss:.2f}% P/L")
-            
+
         except Exception as e:
             symbol = closed_trade.get('symbol', 'UNKNOWN')
             self.logger.error(f"Error processing closed trade {symbol}: {e}")
@@ -3119,10 +3119,10 @@ Use /train to manually scan and train""")
 
                                 ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
                                 self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
-                                
+
                                 # Record open trade for immediate ML learning
                                 await self.record_open_trade_for_ml(signal)
-                                
+
                                 # Schedule automatic symbol unlock after 30 minutes if no manual close
                                 symbol = signal['symbol']
                                 asyncio.create_task(self._auto_unlock_symbol(symbol, 1800))  # 30 minutes
@@ -3176,7 +3176,7 @@ Use /train to manually scan and train""")
         try:
             await self.create_session()
             await self.verify_channel_access()
-            
+
             # Load persistent trade logs for ML continuity
             await self.load_persistent_trade_logs()
 

@@ -1440,81 +1440,90 @@ class UltimateTradingBot:
         return macd_line, signal_line, histogram
 
     def calculate_adaptive_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
-        """Calculate adaptive leverage based on market conditions and past performance"""
+        """Calculate adaptive leverage based on market conditions and past performance - always positive"""
         try:
             base_leverage = self.leverage_config['base_leverage']
             min_leverage = self.leverage_config['min_leverage']
             max_leverage = self.leverage_config['max_leverage']
 
-            # Load recent performance for adaptive adjustments
-            performance_factor = self._get_adaptive_performance_factor()
+            # Load recent performance for adaptive adjustments - guaranteed positive
+            performance_factor = abs(self._get_adaptive_performance_factor())  # Absolute value
 
             volatility_factor = 0
             volume_factor = 0
             trend_factor = 0
             signal_strength_factor = 0
 
-            # Volatility analysis
+            # Volatility analysis - convert negative to positive impact
             volatility = indicators.get('market_volatility', 0.02)
             if volatility <= self.leverage_config['volatility_threshold_low']:
-                volatility_factor = 15
+                volatility_factor = 15  # Low volatility = higher leverage
             elif volatility >= self.leverage_config['volatility_threshold_high']:
-                volatility_factor = -20
+                volatility_factor = 5   # High volatility = moderate leverage (was -20)
             else:
-                volatility_factor = -5
+                volatility_factor = 10  # Medium volatility = good leverage (was -5)
 
-            # Volume analysis
+            # Volume analysis - convert negative to positive impact
             volume_ratio = indicators.get('volume_ratio', 1.0)
             if volume_ratio >= self.leverage_config['volume_threshold_high']:
-                volume_factor = 10
+                volume_factor = 15  # High volume = higher confidence
             elif volume_ratio <= self.leverage_config['volume_threshold_low']:
-                volume_factor = -15
+                volume_factor = 5   # Low volume = conservative (was -15)
             else:
-                volume_factor = 0
+                volume_factor = 10  # Normal volume = moderate boost
 
-            # Trend strength
+            # Trend strength - convert negative to positive impact
             ema_bullish = indicators.get('ema_bullish', False)
             ema_bearish = indicators.get('ema_bearish', False)
             supertrend_direction = indicators.get('supertrend_direction', 0)
 
             if (ema_bullish or ema_bearish) and abs(supertrend_direction) == 1:
-                trend_factor = 8
+                trend_factor = 12  # Strong trend = higher leverage
             else:
-                trend_factor = -10
+                trend_factor = 8   # Weak trend = moderate leverage (was -10)
 
-            # Signal strength
+            # Signal strength - always positive impact
             signal_strength = indicators.get('signal_strength', 0)
             if signal_strength >= 90:
-                signal_strength_factor = 5
+                signal_strength_factor = 10  # Very strong signal
             elif signal_strength >= 80:
-                signal_strength_factor = 2
+                signal_strength_factor = 8   # Strong signal
+            elif signal_strength >= 70:
+                signal_strength_factor = 5   # Good signal (was -5)
             else:
-                signal_strength_factor = -5
+                signal_strength_factor = 3   # Minimum boost
 
-            # Adaptive performance adjustment
-            adaptive_factor = performance_factor * 10  # Scale performance impact
+            # Adaptive performance adjustment - guaranteed positive
+            adaptive_factor = performance_factor * 15  # Scale positive performance impact
 
-            leverage_adjustment = (
-                volatility_factor * 0.3 +
+            # Calculate leverage using absolute values only
+            leverage_boost = abs(
+                volatility_factor * 0.25 +
                 volume_factor * 0.2 +
                 trend_factor * 0.15 +
-                signal_strength_factor * 0.15 +
+                signal_strength_factor * 0.2 +
                 adaptive_factor * 0.2  # 20% weight for adaptive learning
             )
 
-            final_leverage = base_leverage + leverage_adjustment
-            final_leverage = max(min_leverage, min(max_leverage, final_leverage))
+            # Apply boost to base leverage
+            final_leverage = base_leverage + leverage_boost
+            
+            # Ensure leverage stays within safe bounds
+            final_leverage = max(min_leverage, min(max_leverage, abs(final_leverage)))
             final_leverage = round(final_leverage / 5) * 5
 
-            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f})")
-            return int(final_leverage)
+            # Guarantee minimum leverage
+            final_leverage = max(min_leverage, final_leverage)
+
+            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f}, Boost: +{leverage_boost:.1f})")
+            return int(abs(final_leverage))  # Return absolute value
 
         except Exception as e:
             self.logger.error(f"Error calculating adaptive leverage: {e}")
-            return self.leverage_config['base_leverage']
+            return abs(self.leverage_config['base_leverage'])  # Return absolute base leverage
 
     def _get_adaptive_performance_factor(self) -> float:
-        """Get performance factor for adaptive leverage adjustment"""
+        """Get performance factor for adaptive leverage adjustment - always returns positive absolute value"""
         try:
             # Load recent trades from ML database
             conn = sqlite3.connect(self.ml_analyzer.db_path)
@@ -1532,14 +1541,14 @@ class UltimateTradingBot:
             conn.close()
 
             if not recent_trades:
-                return 0.0  # No performance adjustment if no data
+                return 0.5  # Default positive factor if no data
 
             # Calculate performance metrics
             wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
             losses = len(recent_trades) - wins
 
             if len(recent_trades) == 0:
-                return 0.0
+                return 0.5  # Default positive factor
 
             win_rate = wins / len(recent_trades)
 
@@ -1569,38 +1578,33 @@ class UltimateTradingBot:
                 'consecutive_losses': consecutive_losses
             })
 
-            # Calculate performance factor (-1 to +1)
-            performance_factor = 0.0
+            # Calculate performance factor (0.1 to 1.0 - always positive)
+            performance_factor = 0.5  # Base positive factor
 
-            # Win rate adjustment
-            if win_rate >= 0.7:  # High win rate - increase leverage
-                performance_factor += 0.5
-            elif win_rate <= 0.4:  # Low win rate - decrease leverage
-                performance_factor -= 0.5
-            else:
-                # Moderate performance gets a small boost
-                performance_factor += (win_rate - 0.5) * 0.4
+            # Win rate adjustment - scale between 0.1 and 1.0
+            if win_rate >= 0.7:  # High win rate - boost leverage
+                performance_factor = 0.8 + (win_rate - 0.7) * 0.67  # 0.8 to 1.0
+            elif win_rate >= 0.5:  # Moderate win rate - normal leverage
+                performance_factor = 0.5 + (win_rate - 0.5) * 1.5  # 0.5 to 0.8
+            else:  # Lower win rate - conservative leverage
+                performance_factor = 0.1 + (win_rate * 0.8)  # 0.1 to 0.5
 
-            # Consecutive performance adjustment
-            if consecutive_wins >= 3:
-                performance_factor += 0.3
-            elif consecutive_losses >= 3:
-                performance_factor -= 0.5
+            # Consecutive performance adjustment - additive bonus only
+            if consecutive_wins >= 5:
+                performance_factor += 0.1  # Extra boost for strong streaks
+            elif consecutive_wins >= 3:
+                performance_factor += 0.05  # Small boost for good streaks
             elif consecutive_wins >= 1:
-                performance_factor += 0.1
+                performance_factor += 0.02  # Tiny boost for any wins
 
-            # Add base performance factor to avoid 0.0
-            if performance_factor == 0.0:
-                performance_factor = 0.25  # Default positive factor
-
-            # Limit performance factor
-            performance_factor = max(-1.0, min(1.0, performance_factor))
+            # Ensure performance factor stays within absolute positive bounds
+            performance_factor = max(0.1, min(1.0, abs(performance_factor)))
 
             return performance_factor
 
         except Exception as e:
             self.logger.error(f"Error calculating performance factor: {e}")
-            return 0.0
+            return 0.5  # Default positive factor on error
 
     def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
         """Generate ML-enhanced scalping signal"""

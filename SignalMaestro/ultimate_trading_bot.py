@@ -1812,16 +1812,19 @@ class UltimateTradingBot:
             self.logger.error(f"Error verifying channel access: {e}")
             return False
 
-    async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
+    async def send_message(self, chat_id: str, text: str, parse_mode=None) -> bool:
         """Send message to Telegram"""
         try:
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': chat_id,
                 'text': text,
-                'parse_mode': parse_mode,
                 'disable_web_page_preview': True
             }
+            
+            # Only add parse_mode if it's specified and not None
+            if parse_mode:
+                data['parse_mode'] = parse_mode
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=data) as response:
@@ -1853,8 +1856,7 @@ class UltimateTradingBot:
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': self.admin_chat_id,
-                'text': f"📢 <b>CHANNEL FALLBACK</b>\n\n{text}",
-                'parse_mode': parse_mode,
+                'text': f"📢 CHANNEL FALLBACK\n\n{text}",
                 'disable_web_page_preview': True
             }
 
@@ -1881,7 +1883,7 @@ class UltimateTradingBot:
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
 🕐 {datetime.now().strftime('%H:%M')} UTC
 
-*Auto SL Management Active*"""
+Auto SL Management Active"""
 
         return message.strip()
 
@@ -2079,14 +2081,14 @@ Exchange: Binance Futures"""
                 self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
 
                 ml_summary = self.ml_analyzer.get_ml_summary()
-                await self.send_message(chat_id, f"""🧠 **ULTIMATE ML BOT**
+                await self.send_message(chat_id, f"""🧠 ULTIMATE ML BOT
 
 ✅ Online & Learning
 📊 Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
 📈 Trades: {ml_summary['model_performance']['total_trades_learned']}
 🎯 Next Retrain: {ml_summary['next_retrain_in']}
 
-**Commands:**
+Commands:
 /ml - ML Status
 /scan - Market Scan  
 /stats - Performance
@@ -2096,10 +2098,10 @@ Exchange: Binance Futures"""
 /session - Trading Session
 /help - All Commands
 
-*Bot learns from every trade*""")
+Bot learns from every trade""")
 
             elif text.startswith('/help'):
-                await self.send_message(chat_id, """**Available Commands:**
+                await self.send_message(chat_id, """Available Commands:
 
 /start - Initialize bot
 /ml - ML model status

@@ -2793,7 +2793,7 @@ Use /train to manually scan and train""")
         except Exception as e:
             self.logger.error(f"Error loading persistent trade logs: {e}")
 
-    def scan_and_train_from_closed_trades(self):
+    async def scan_and_train_from_closed_trades(self):
         """Scan channel for closed trades and train ML"""
         try:
             if not self.closed_trades_scanner:

@@ -47,7 +47,7 @@ except ImportError:
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.preprocessing import StandardScaler, LabelEncoder
+    from sklearn.preprocessing import LabelEncoder
     from sklearn.metrics import classification_report, accuracy_score
     from sklearn.linear_model import LogisticRegression
     ML_AVAILABLE = True
@@ -68,7 +68,7 @@ class AdvancedMLTradeAnalyzer:
         self.profit_predictor = None
         self.risk_assessor = None
         self.market_regime_detector = None
-        self.scaler = StandardScaler()
+        # Removed StandardScaler to avoid compatibility issues
 
         # Learning database
         self.db_path = "advanced_ml_trading.db"
@@ -117,7 +117,7 @@ class AdvancedMLTradeAnalyzer:
                     take_profit_2 REAL,
                     take_profit_3 REAL,
                     signal_strength REAL,
-                    leverage INTEGER,
+                    # leverage removed
                     profit_loss REAL,
                     trade_result TEXT,
                     duration_minutes REAL,

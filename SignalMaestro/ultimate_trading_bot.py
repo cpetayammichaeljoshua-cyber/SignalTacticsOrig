@@ -117,7 +117,7 @@ class AdvancedMLTradeAnalyzer:
                     take_profit_2 REAL,
                     take_profit_3 REAL,
                     signal_strength REAL,
-                    # leverage removed
+                    leverage REAL,
                     profit_loss REAL,
                     trade_result TEXT,
                     duration_minutes REAL,
@@ -993,9 +993,9 @@ class UltimateTradingBot:
         # Risk management - optimized for maximum profitability
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 80
-        self.max_signals_per_hour = 5
+        self.max_signals_per_hour = 100  # Removed limit - allow many more signals
         self.capital_allocation = 0.025  # 2.5% per trade
-        self.max_concurrent_trades = 10
+        self.max_concurrent_trades = 25  # Increased concurrent trades
 
         # Performance tracking
         self.signal_counter = 0
@@ -1812,16 +1812,19 @@ class UltimateTradingBot:
             self.logger.error(f"Error verifying channel access: {e}")
             return False
 
-    async def send_message(self, chat_id: str, text: str, parse_mode='Markdown') -> bool:
+    async def send_message(self, chat_id: str, text: str, parse_mode=None) -> bool:
         """Send message to Telegram"""
         try:
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': chat_id,
                 'text': text,
-                'parse_mode': parse_mode,
                 'disable_web_page_preview': True
             }
+            
+            # Only add parse_mode if it's specified and not None
+            if parse_mode:
+                data['parse_mode'] = parse_mode
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=data) as response:
@@ -1853,8 +1856,7 @@ class UltimateTradingBot:
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': self.admin_chat_id,
-                'text': f"📢 <b>CHANNEL FALLBACK</b>\n\n{text}",
-                'parse_mode': parse_mode,
+                'text': f"📢 CHANNEL FALLBACK\n\n{text}",
                 'disable_web_page_preview': True
             }
 
@@ -1881,7 +1883,7 @@ class UltimateTradingBot:
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
 🕐 {datetime.now().strftime('%H:%M')} UTC
 
-*Auto SL Management Active*"""
+Auto SL Management Active"""
 
         return message.strip()
 
@@ -2079,14 +2081,14 @@ Exchange: Binance Futures"""
                 self.logger.info(f"✅ Admin set to chat_id: {chat_id}")
 
                 ml_summary = self.ml_analyzer.get_ml_summary()
-                await self.send_message(chat_id, f"""🧠 **ULTIMATE ML BOT**
+                await self.send_message(chat_id, f"""🧠 ULTIMATE ML BOT
 
 ✅ Online & Learning
 📊 Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
 📈 Trades: {ml_summary['model_performance']['total_trades_learned']}
 🎯 Next Retrain: {ml_summary['next_retrain_in']}
 
-**Commands:**
+Commands:
 /ml - ML Status
 /scan - Market Scan  
 /stats - Performance
@@ -2096,10 +2098,10 @@ Exchange: Binance Futures"""
 /session - Trading Session
 /help - All Commands
 
-*Bot learns from every trade*""")
+Bot learns from every trade""")
 
             elif text.startswith('/help'):
-                await self.send_message(chat_id, """**Available Commands:**
+                await self.send_message(chat_id, """Available Commands:
 
 /start - Initialize bot
 /ml - ML model status
@@ -2345,10 +2347,11 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
                 await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
 
 Target: {self.target_channel}
-Max Signals/Hour: {self.max_signals_per_hour}
+Max Signals/Hour: {self.max_signals_per_hour} (Unlimited)
 Min Signal Interval: {self.min_signal_interval}s
 Auto-Restart: ✅ Enabled
 Duplicate Prevention: ✅ One trade per symbol
+Max Concurrent: {self.max_concurrent_trades}
 
 ML Features:
 • Continuous Learning: ✅
@@ -3075,9 +3078,7 @@ Use /train to manually scan and train""")
                     signals_sent_count = 0
 
                     for signal in signals:
-                        if signals_sent_count >= self.max_signals_per_hour:
-                            self.logger.info(f"⏸️ Reached maximum signals per hour ({self.max_signals_per_hour})")
-                            break
+                        # Removed hourly limit - process all quality signals
 
                         try:
                             self.signal_counter += 1

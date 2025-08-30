@@ -856,29 +856,37 @@ class AdvancedMLTradeAnalyzer:
         return "Signal Strength Based: Favorable"
 
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback prediction when ML models not available - more permissive"""
+        """Fallback prediction when ML models not available"""
         signal_strength = signal_data.get('signal_strength', 50)
 
-        # More permissive fallback - allow most signals through
-        if signal_strength >= 80:
+        if signal_strength >= 85:
             prediction = 'favorable'
             confidence = 75
-        elif signal_strength >= 70:
+        elif signal_strength >= 75:
             prediction = 'neutral'
-            confidence = 65
-        elif signal_strength >= 60:
-            prediction = 'neutral'
-            confidence = 55
+            confidence = 60
         else:
             prediction = 'unfavorable'
-            confidence = 45
+            confidence = 40
+
+        # Only return favorable predictions in fallback
+        if signal_strength < 85:  # Only favorable signals
+            return {
+                'prediction': 'unfavorable',
+                'confidence': confidence,
+                'expected_profit': 0.0,
+                'risk_probability': 50.0,
+                'recommendation': "Signal Strength Based: Favorable",
+                'model_accuracy': 0.0,
+                'trades_learned_from': 0
+            }
 
         return {
-            'prediction': prediction,
+            'prediction': 'favorable',
             'confidence': confidence,
-            'expected_profit': max(0.5, signal_strength / 100 * 2),  # Estimate based on signal strength
-            'risk_probability': max(20, 100 - signal_strength),  # Lower risk for stronger signals
-            'recommendation': f"Signal Strength Based: {prediction.title()}",
+            'expected_profit': 0.0,
+            'risk_probability': 50.0,
+            'recommendation': "Signal Strength Based: Favorable",
             'model_accuracy': 0.0,
             'trades_learned_from': 0
         }
@@ -984,7 +992,7 @@ class UltimateTradingBot:
 
         # Risk management - optimized for maximum profitability
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 70  # Lowered from 80 to allow more signals
+        self.min_signal_strength = 80
         self.max_signals_per_hour = 100  # Removed limit - allow many more signals
         self.capital_allocation = 0.025  # 2.5% per trade
         self.max_concurrent_trades = 25  # Increased concurrent trades
@@ -1669,27 +1677,24 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # Relaxed ML filtering - allow more signals through
+            # Only proceed with favorable predictions - Optimized thresholds
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
 
-            # More permissive filtering: Allow most predictions with reasonable confidence
-            if prediction_type == 'unfavorable' and ml_confidence > 80:
-                # Only reject very confident unfavorable predictions
+            # Filter: Allow favorable, highly favorable, and high-confidence neutral predictions
+            if prediction_type not in ['favorable', 'highly_favorable'] and not (prediction_type == 'neutral' and ml_confidence > 70):
                 return None
-            
-            # Adjust signal strength based on ML predictions (but don't reject)
+
+            # Adjust signal strength for favorable predictions
             if prediction_type == 'highly_favorable':
                 signal_strength *= 1.2
             elif prediction_type == 'favorable':
                 signal_strength *= 1.1
-            elif prediction_type == 'neutral':
-                signal_strength *= 1.0  # Keep neutral as-is
-            elif prediction_type == 'unfavorable':
-                signal_strength *= 0.9  # Slightly reduce but don't reject
+            elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
+                signal_strength *= 1.05
 
-            # More permissive signal strength check
-            if signal_strength < (self.min_signal_strength * 0.8):  # Reduced threshold to 80% of minimum
+            # Final signal strength check
+            if signal_strength < self.min_signal_strength:
                 return None
 
             # Update last signal time and mark symbol as active

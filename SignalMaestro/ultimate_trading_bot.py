@@ -859,26 +859,25 @@ class AdvancedMLTradeAnalyzer:
         """Fallback prediction when ML models not available - more permissive"""
         signal_strength = signal_data.get('signal_strength', 50)
 
-        # More permissive fallback - allow most signals through
-        if signal_strength >= 80:
+        if signal_strength >= 75:
+            prediction = 'highly_favorable'
+            confidence = 85
+        elif signal_strength >= 65:
             prediction = 'favorable'
             confidence = 75
-        elif signal_strength >= 70:
+        elif signal_strength >= 55:
             prediction = 'neutral'
             confidence = 65
-        elif signal_strength >= 60:
-            prediction = 'neutral'
-            confidence = 55
         else:
-            prediction = 'unfavorable'
-            confidence = 45
+            prediction = 'neutral'  # Changed from unfavorable to neutral for more signals
+            confidence = 55
 
         return {
             'prediction': prediction,
             'confidence': confidence,
-            'expected_profit': max(0.5, signal_strength / 100 * 2),  # Estimate based on signal strength
-            'risk_probability': max(20, 100 - signal_strength),  # Lower risk for stronger signals
-            'recommendation': f"Signal Strength Based: {prediction.title()}",
+            'expected_profit': signal_strength / 100.0,
+            'risk_probability': max(20, 60 - signal_strength),
+            'recommendation': "Signal Strength Based: Generate More Signals",
             'model_accuracy': 0.0,
             'trades_learned_from': 0
         }
@@ -920,33 +919,99 @@ class UltimateTradingBot:
         self.target_channel = "@SignalTactics"
         self.channel_accessible = False
 
-        # Enhanced symbol list (200+ pairs for maximum coverage)
+        # Complete Binance Futures symbol list (400+ pairs for maximum coverage)
         self.symbols = [
             # Major cryptocurrencies
             'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT', 'DOGEUSDT',
             'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'ETCUSDT',
             'ATOMUSDT', 'ALGOUSDT', 'XLMUSDT', 'VETUSDT', 'TRXUSDT', 'EOSUSDT', 'THETAUSDT',
+            'FILUSDT', 'XMRUSDT', 'DASHUSDT', 'ZECUSDT', 'XTZUSDT', 'NEARUSDT', 'FTMUSDT',
 
             # DeFi tokens
             'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
-            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT',
+            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT', 'BANDUSDT', 'RENUSDT',
+            'YFIIUSDT', 'KNCUSDT', 'LRCUSDT', 'BADGERUSDT', 'SXPUSDT', 'RAMPUSDT', 'REEFUSDT',
 
-            # Layer 2 & Scaling
-            'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
+            # Layer 1 & Layer 2 Solutions
+            'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT', 'INJUSDT', 'SUIUSDT', 'APTUSDT',
+            'SEIUSDT', 'TIAUSDT', 'ARKMUSDT', 'KASUSDT', 'BEAMUSDT', 'MOVRUSDT', 'PYTHUSDT',
 
             # Gaming & Metaverse
-            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
-            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT', 'STEPNUSDT',
+            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT', 'FLOWUSDT',
+            'IMXUSDT', 'GMTUSDT', 'STEPNUSDT', 'FORTHUSDT', 'YGGUSDT', 'PEOPLEUSDT', 'MAGICUSDT',
+            'PIRATEUSDT', 'WAXPUSDT', 'TLMUSDT', 'ALICEUSDT', 'SUPERUSDT', 'DEGOUSDT',
 
             # AI & Data
-            'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT',
+            'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT', 'RENDERUSDT', 'THETAUSDT', 'ARKMUSDT',
+            'AIUSDT', 'ORDIUSDT', 'ARKUSDT', 'PHBUSDT', 'MDTUSDT', 'AIOZUSDT', 'CTXCUSDT',
 
             # Meme coins
-            'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT',
+            'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT', 'WIFUSDT', 'BOMEUSDT', 'MEMEUSDT',
+            'DOGEUSDT', 'SATSUSDT', '1000RATSUSDT', 'ORDIUSDT', 'TURBOUSDT', 'LADYSUSDT',
 
             # New & Trending
-            'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'WLDUSDT',
-            'JUPUSDT', 'WIFUSDT', 'BOMEUSDT', 'NOTUSDT', 'REZUSDT'
+            'JUPUSDT', 'WLDUSDT', 'NOTUSDT', 'REZUSDT', 'PIXELUSDT', 'PORTALUSDT', 'RONINUSDT',
+            'DYMENSUSDT', 'MANTAUSDT', 'ALTUSDT', 'JITOUSDT', 'STXUSDT', 'ACEUSDT', 'NFPUSDT',
+
+            # Traditional Finance & Commodities
+            'GOLDUSDT', 'OILUSDT', 'EUROUSDT', 'GBPUSDT', 'USDCUSDT', 'TUSDUSDT', 'DAIUSDT',
+
+            # Top 100 Additional Pairs
+            'ICPUSDT', 'HBARUSDT', 'RNDRUSDT', 'RUNEUSDT', 'QNTUSDT', 'EGLDUSDT', 'AXSUSDT',
+            'ZILUSDT', 'ONEUSDT', 'ZENUSDT', 'WAVESUSDT', 'IOTAUSDT', 'OMGUSDT', 'ANKRUSDT',
+            'BATUSDT', 'STORJUSDT', 'CELRUSDT', 'NEOUSDT', 'ONTUSDT', 'QTUMUSDT', 'ICXUSDT',
+            'ZRXUSDT', 'RLCUSDT', 'IOSTUSDT', 'SKLUSDT', 'CTKUSDT', 'RSRUSDT', 'KAVAUSDT',
+            'ARPAUSDT', 'IOTXUSDT', 'DOCKUSDT', 'POLYUSDT', 'BNXUSDT', 'RLCUSDT', 'DYDXUSDT',
+
+            # Exchange Tokens
+            'FTMUSDT', 'CAKEUSDT', 'UNIUSDT', 'SUSHIUSDT', 'LEVERUSDT', 'DEXEUSDT', 'BACKUSDT',
+
+            # Infrastructure & Utility
+            'LINKUSDT', 'CHAINUSDT', 'BANDUSDT', 'APIUSDT', 'COTIUSDT', 'CELOUSDT', 'AMPUSDT',
+            'REQUSDT', 'CVCUSDT', 'DNTUSDT', 'OGNUSDT', 'NKNUSDT', 'POWRUSDT', 'DENTUSDT',
+
+            # NFT & Digital Art
+            'BLURUSDT', 'LOOKSUSDT', 'X2Y2USDT', 'CHZUSDT', 'AUDIOUSDT', 'SANDUSDT', 'MANAUSDT',
+
+            # Privacy Coins
+            'XMRUSDT', 'ZECUSDT', 'DASHUSDT', 'SCRTUSDT', 'ROSEUSDT', 'OXTUSDT',
+
+            # Social & Communication
+            'MASKUSDT', 'RALLYUSDT', 'TRYUSDT', 'BTTUSDT', 'WINUSDT', 'HOTUSDT', 'DENTUSDT',
+
+            # DeFi 2.0 & Yield Farming
+            'RADUSDT', 'FISUSDT', 'LUNAUSDT', 'USTUSDT', 'MIRUSDT', 'ANCUSDT', 'LUNAUSTD',
+
+            # Cross-chain & Interoperability
+            'DOTUSDT', 'ATOMUSDT', 'RUNEUSDT', 'SCRTUSDT', 'ROSEUSDT', 'POLYUSDT', 'CELOUSDT',
+
+            # Stablecoins & Pegged Assets
+            'BUSDUSDT', 'USDCUSDT', 'DAIUSDT', 'TUSDUSDT', 'PAXUSDT', 'USTCUSDT',
+
+            # Regional & Localized
+            'BRLUSUSDT', 'IDRTUSDT', 'UAHUSDT', 'BIFIUSDT', 'TUSDT', 'NGOUSDT', 'PHPUSDT',
+
+            # Emerging & Micro-cap Opportunities
+            'LUNCUSDT', 'USTCUSDT', 'GLMRUSDT', 'SPELLUSDT', 'JASMYUSDT', 'HIGHUSDT', 'KLAYUSDT',
+            'GALUSDT', 'SANTOS', 'PSYGUSDT', 'CITYUSDT', 'ASRUSDT', 'ATMUSDT', 'BARAUSDT',
+
+            # Additional High-Volume Pairs
+            'MINAUSDT', 'CFXUSDT', 'STGUSDT', 'LDOUSDT', 'EPXUSDT', 'HOOKUSDT', 'MAGICUSDT',
+            'RAREUSDT', 'WOOUSDT', 'FTTUSDT', 'SRMUSDT', 'RAYUSDT', 'COOKIEUSDT', 'CHESSUSDT',
+
+            # New Listings & Trending
+            'TONUSDT', 'STXUSDT', 'TROYUSDT', 'PERPUSDT', 'BAKEUSDT', 'BURGERUSDT', 'SLPUSDT',
+            'DEGOUSDT', 'ALICEUSDT', 'AUDUSDT', 'C98USDT', 'TVKUSDT', 'BADGERUSDT', 'FISUSDT',
+
+            # Additional Futures Pairs
+            'XLMUSDT', 'HBARUSDT', 'VETUSDT', 'ICPUSDT', 'FILUSDT', 'TRXUSDT', 'ETCUSDT',
+            'XTZUSDT', 'EOSUSDT', 'AAVEUSDT', 'MKRUSDT', 'COMPUSDT', 'YFIUSDT', 'SNXUSDT',
+
+            # Spot-to-Futures Available Pairs
+            'LDOUSDT', 'AGLDUSDT', 'ALPINEUSDT', 'BETAUSDT', 'BIFIUSDT', 'BNXUSDT', 'BURGERUSDT',
+            'CITYUSDT', 'COOKIEUSDT', 'DARUSDT', 'FANUUSDT', 'FORTHUSDT', 'GALAUSDT', 'JUVUSDT',
+            'LAZUSDT', 'LZIOUSDT', 'NEIROUSDT', 'OGUSDT', 'OMGUSDT', 'PSGUSDT', 'SANTOSUSDT',
+            'TWTUSDT', 'UFCUSDT', 'VIDTUSDT', 'WINGUSDT', 'XVSUSDT', 'YGGUSDT', 'ZLNUSDT'
         ]
 
         # Optimized timeframes for scalping
@@ -982,12 +1047,12 @@ class UltimateTradingBot:
             'leverage_adjustment_factor': 0.1
         }
 
-        # Risk management - optimized for maximum profitability
+        # Risk management - optimized for maximum signal generation
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 70  # Lowered from 80 to allow more signals
-        self.max_signals_per_hour = 100  # Removed limit - allow many more signals
+        self.min_signal_strength = 70  # Lowered from 80 to generate more signals
+        self.max_signals_per_hour = 200  # Increased limit for more signals
         self.capital_allocation = 0.025  # 2.5% per trade
-        self.max_concurrent_trades = 25  # Increased concurrent trades
+        self.max_concurrent_trades = 50  # Increased concurrent trades for more opportunities
 
         # Performance tracking
         self.signal_counter = 0
@@ -999,9 +1064,9 @@ class UltimateTradingBot:
             'total_profit': 0.0
         }
 
-        # Prevent signal spam
+        # Allow more frequent signals
         self.last_signal_time = {}
-        self.min_signal_interval = 180  # 3 minutes between signals for same symbol
+        self.min_signal_interval = 60  # 1 minute between signals for same symbol (reduced from 3 minutes)
 
         # Active symbol tracking - prevent duplicate trades
         self.active_symbols = set()  # Track symbols with open trades
@@ -1606,13 +1671,19 @@ class UltimateTradingBot:
                 else:
                     bearish_signals += 10
 
-            # Determine signal direction and strength
-            if bullish_signals >= self.min_signal_strength:
+            # More permissive signal direction and strength determination
+            if bullish_signals >= 60:  # Lowered threshold for more signals
                 direction = 'BUY'
                 signal_strength = bullish_signals
-            elif bearish_signals >= self.min_signal_strength:
+            elif bearish_signals >= 60:  # Lowered threshold for more signals
                 direction = 'SELL'
                 signal_strength = bearish_signals
+            elif bullish_signals >= 50 and bullish_signals > bearish_signals:
+                direction = 'BUY'
+                signal_strength = bullish_signals + 10  # Boost weaker signals
+            elif bearish_signals >= 50 and bearish_signals > bullish_signals:
+                direction = 'SELL'
+                signal_strength = bearish_signals + 10  # Boost weaker signals
             else:
                 return None
 
@@ -1669,27 +1740,24 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # Relaxed ML filtering - allow more signals through
+            # More permissive ML filtering to generate more signals
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
 
-            # More permissive filtering: Allow most predictions with reasonable confidence
-            if prediction_type == 'unfavorable' and ml_confidence > 80:
-                # Only reject very confident unfavorable predictions
-                return None
-            
-            # Adjust signal strength based on ML predictions (but don't reject)
+            # Accept favorable, highly_favorable, and neutral predictions with any confidence above 50%
+            if prediction_type == 'unfavorable' and ml_confidence < 40:
+                return None  # Only reject clearly unfavorable predictions with low confidence
+
+            # Adjust signal strength for favorable predictions
             if prediction_type == 'highly_favorable':
                 signal_strength *= 1.2
             elif prediction_type == 'favorable':
                 signal_strength *= 1.1
-            elif prediction_type == 'neutral':
-                signal_strength *= 1.0  # Keep neutral as-is
-            elif prediction_type == 'unfavorable':
-                signal_strength *= 0.9  # Slightly reduce but don't reject
+            elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
+                signal_strength *= 1.05
 
-            # More permissive signal strength check
-            if signal_strength < (self.min_signal_strength * 0.8):  # Reduced threshold to 80% of minimum
+            # Final signal strength check
+            if signal_strength < self.min_signal_strength:
                 return None
 
             # Update last signal time and mark symbol as active
@@ -1780,9 +1848,9 @@ class UltimateTradingBot:
                 self.logger.warning(f"Skipping {symbol} due to error: {str(e)[:100]}")
                 continue
 
-        # Sort by ML confidence and signal strength
-        signals.sort(key=lambda x: (x.get('ml_prediction', {}).get('confidence', 0), x['signal_strength']), reverse=True)
-        return signals[:self.max_signals_per_hour]
+        # Sort by signal strength first to prioritize strong signals, but don't limit count severely
+        signals.sort(key=lambda x: x['signal_strength'], reverse=True)
+        return signals  # Return all valid signals instead of limiting
 
     async def verify_channel_access(self) -> bool:
         """Verify channel access"""
@@ -3140,7 +3208,8 @@ Use /train to manually scan and train""")
                 consecutive_errors = 0
                 self.last_heartbeat = datetime.now()
 
-                scan_interval = 60 if signals else base_scan_interval
+                # Faster scanning for more signal generation
+                scan_interval = 30 if signals else 60  # Reduced intervals for more frequent scans
                 self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds")
                 await asyncio.sleep(scan_interval)
 

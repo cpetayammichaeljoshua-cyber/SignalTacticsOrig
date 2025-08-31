@@ -1,0 +1,41 @@
+[
+  {
+    "symbol": "FLOWUSDT",
+    "direction": "BUY",
+    "entry_price": 0.428,
+    "exit_price": null,
+    "stop_loss": 0.42158,
+    "take_profit_1": 0.4301186,
+    "take_profit_2": 0.4323014,
+    "take_profit_3": 0.43442,
+    "signal_strength": 99.00000000000001,
+    "leverage": 40,
+    "profit_loss": 0.0,
+    "trade_result": "OPEN",
+    "duration_minutes": 0,
+    "market_volatility": 0.02,
+    "volume_ratio": 1.0,
+    "rsi_value": 50,
+    "macd_signal": "neutral",
+    "ema_alignment": false,
+    "cvd_trend": "neutral",
+    "indicators_data": [
+      "ML-Enhanced SuperTrend",
+      "EMA Confluence",
+      "CVD Analysis",
+      "VWAP Position",
+      "Volume Surge",
+      "RSI Analysis",
+      "MACD Signals"
+    ],
+    "ml_prediction": "favorable",
+    "ml_confidence": 85,
+    "entry_time": "2025-08-31T08:09:50.074959",
+    "exit_time": null,
+    "trade_status": "ACTIVE",
+    "last_update": "2025-08-31T08:09:50.074959",
+    "logged_at": "2025-08-31T08:09:50.075347",
+    "bot_version": "Ultimate_Trading_Bot_v1.0",
+    "session_id": "9f6619e3"
+  }
+]

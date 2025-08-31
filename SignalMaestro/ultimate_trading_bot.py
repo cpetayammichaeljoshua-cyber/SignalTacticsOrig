@@ -183,7 +183,7 @@ class AdvancedMLTradeAnalyzer:
             if isinstance(entry_time, str):
                 entry_time = datetime.fromisoformat(entry_time)
 
-            time_session = self.ml_analyzer._get_time_session(entry_time)
+            time_session = self._get_time_session(entry_time)
 
             cursor.execute('''
                 INSERT OR REPLACE INTO ml_trades (
@@ -257,7 +257,7 @@ class AdvancedMLTradeAnalyzer:
             if isinstance(last_update, str):
                 last_update = datetime.fromisoformat(last_update)
 
-            time_session = self.ml_analyzer._get_time_session(entry_time)
+            time_session = self._get_time_session(entry_time)
 
             # Use INSERT OR REPLACE to update existing records
             cursor.execute('''

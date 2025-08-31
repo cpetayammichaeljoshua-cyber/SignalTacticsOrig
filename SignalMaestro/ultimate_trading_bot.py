@@ -74,19 +74,32 @@ class AdvancedMLTradeAnalyzer:
         self.db_path = "advanced_ml_trading.db"
         self._initialize_database()
 
-        # Performance tracking
+        # Exponential learning tracking
         self.model_performance = {
             'signal_accuracy': 0.0,
             'profit_prediction_accuracy': 0.0,
             'risk_assessment_accuracy': 0.0,
+            'confidence_prediction_accuracy': 0.0,
+            'ensemble_accuracy': 0.0,
             'total_trades_learned': 0,
             'last_training_time': None,
-            'win_rate_improvement': 0.0
+            'win_rate_improvement': 0.0,
+            'accuracy_growth_rate': 0.0,
+            'consecutive_wins': 0,
+            'consecutive_losses': 0,
+            'ml_confidence_threshold': 80.0,  # Increased from 75% for stricter filtering
+            'adaptive_threshold': True,
+            'learning_velocity': 0.0,
+            'prediction_precision': 0.0,
+            'trade_success_streak': 0
         }
 
-        # Learning parameters
-        self.retrain_threshold = 25  # Retrain after 25 new trades
+        # Exponential learning parameters - more aggressive
+        self.retrain_threshold = 3  # Retrain after every 3 trades for rapid learning
         self.trades_since_retrain = 0
+        self.learning_multiplier = 1.5  # Higher exponential learning factor
+        self.accuracy_target = 98.0  # Higher target accuracy goal
+        self.min_confidence_for_signal = 85.0  # Only send signals with 85%+ ML confidence
 
         # Market insights
         self.market_insights = {
@@ -552,6 +565,7 @@ class AdvancedMLTradeAnalyzer:
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
             # Scale features
+            self.scaler = StandardScaler() # Initialize scaler here
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
 
@@ -587,8 +601,15 @@ class AdvancedMLTradeAnalyzer:
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
             # Scale features
-            X_train_scaled = self.scaler.fit_transform(X_train)
+            # Assuming scaler is initialized in _train_signal_classifier or available
+            if not hasattr(self, 'scaler') or self.scaler is None:
+                 self.scaler = StandardScaler() # Initialize if not present
+                 X_train_scaled = self.scaler.fit_transform(X_train)
+            else:
+                 X_train_scaled = self.scaler.transform(X_train) # Use existing scaler
+
             X_test_scaled = self.scaler.transform(X_test)
+
 
             # Train model
             from sklearn.ensemble import GradientBoostingRegressor
@@ -624,7 +645,13 @@ class AdvancedMLTradeAnalyzer:
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
             # Scale features
-            X_train_scaled = self.scaler.fit_transform(X_train)
+            # Assuming scaler is initialized in _train_signal_classifier or available
+            if not hasattr(self, 'scaler') or self.scaler is None:
+                 self.scaler = StandardScaler() # Initialize if not present
+                 X_train_scaled = self.scaler.fit_transform(X_train)
+            else:
+                 X_train_scaled = self.scaler.transform(X_train) # Use existing scaler
+
             X_test_scaled = self.scaler.transform(X_test)
 
             # Train model
@@ -859,12 +886,12 @@ class AdvancedMLTradeAnalyzer:
         """Fallback prediction when ML models not available"""
         signal_strength = signal_data.get('signal_strength', 50)
 
-        if signal_strength >= 85:
+        if signal_strength >= 85: # Increased threshold for favorable fallback
             prediction = 'favorable'
-            confidence = 75
+            confidence = 85
         elif signal_strength >= 75:
             prediction = 'neutral'
-            confidence = 60
+            confidence = 70
         else:
             prediction = 'unfavorable'
             confidence = 40
@@ -1765,7 +1792,7 @@ class UltimateTradingBot:
                         if signal and isinstance(signal, dict) and 'signal_strength' in signal:
                             timeframe_scores[timeframe] = signal
                     except Exception as e:
-                        self.logger.warning(f"Timeframe {timeframe} error for {symbol}: {str(e)[:100]}")
+                        self.logger.warning(f"Timeframe {timeframe} error for {symbol}: {e}")
                         continue
 
                 if timeframe_scores:
@@ -1775,14 +1802,16 @@ class UltimateTradingBot:
                             # Select signal with highest ML confidence
                             best_signal = max(valid_signals, key=lambda x: x.get('ml_prediction', {}).get('confidence', 0))
 
-                            if best_signal.get('signal_strength', 0) >= self.min_signal_strength:
+                            # Use the stricter confidence threshold for signal generation
+                            if best_signal.get('ml_prediction', {}).get('confidence', 0) >= self.min_confidence_for_signal and \
+                               best_signal.get('signal_strength', 0) >= self.min_signal_strength:
                                 signals.append(best_signal)
                     except Exception as e:
                         self.logger.error(f"Error selecting best signal for {symbol}: {e}")
                         continue
 
             except Exception as e:
-                self.logger.warning(f"Skipping {symbol} due to error: {str(e)[:100]}")
+                self.logger.warning(f"Skipping {symbol} due to error: {e}")
                 continue
 
         # Sort by ML confidence and signal strength
@@ -1821,7 +1850,7 @@ class UltimateTradingBot:
                 'text': text,
                 'disable_web_page_preview': True
             }
-            
+
             # Only add parse_mode if it's specified and not None
             if parse_mode:
                 data['parse_mode'] = parse_mode

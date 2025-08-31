@@ -183,7 +183,7 @@ class AdvancedMLTradeAnalyzer:
             if isinstance(entry_time, str):
                 entry_time = datetime.fromisoformat(entry_time)
 
-            time_session = self._get_time_session(entry_time)
+            time_session = self.ml_analyzer._get_time_session(entry_time)
 
             cursor.execute('''
                 INSERT OR REPLACE INTO ml_trades (
@@ -257,7 +257,7 @@ class AdvancedMLTradeAnalyzer:
             if isinstance(last_update, str):
                 last_update = datetime.fromisoformat(last_update)
 
-            time_session = self._get_time_session(entry_time)
+            time_session = self.ml_analyzer._get_time_session(entry_time)
 
             # Use INSERT OR REPLACE to update existing records
             cursor.execute('''
@@ -810,7 +810,7 @@ class AdvancedMLTradeAnalyzer:
         try:
             # Get current time for session
             current_time = datetime.now()
-            time_session = self._get_time_session(current_time)
+            time_session = self.ml_analyzer._get_time_session(current_time)
 
             # Map categorical values
             direction_map = {'BUY': 1, 'SELL': 0}
@@ -851,7 +851,7 @@ class AdvancedMLTradeAnalyzer:
             adjusted_confidence = base_confidence
 
             # Time session adjustment
-            current_session = self._get_time_session(datetime.now())
+            current_session = self.ml_analyzer._get_time_session(datetime.now())
             if 'best_time_sessions' in self.market_insights:
                 session_data = self.market_insights['best_time_sessions']
                 if current_session in session_data.get('mean', {}):
@@ -1803,7 +1803,7 @@ class UltimateTradingBot:
                             best_signal = max(valid_signals, key=lambda x: x.get('ml_prediction', {}).get('confidence', 0))
 
                             # Use the stricter confidence threshold for signal generation
-                            if best_signal.get('ml_prediction', {}).get('confidence', 0) >= self.min_confidence_for_signal and \
+                            if best_signal.get('ml_prediction', {}).get('confidence', 0) >= self.ml_analyzer.min_confidence_for_signal and \
                                best_signal.get('signal_strength', 0) >= self.min_signal_strength:
                                 signals.append(best_signal)
                     except Exception as e:
@@ -2213,7 +2213,7 @@ Auto Management:
 ✅ Full close at TP3""")
 
             elif text.startswith('/session'):
-                current_session = self._get_time_session(datetime.now())
+                current_session = self.ml_analyzer._get_time_session(datetime.now())
                 await self.send_message(chat_id, f"""🕐 **TRADING SESSION**
 
 Current: {current_session}
@@ -2239,7 +2239,7 @@ Divergence: {'⚠️ Yes' if self.cvd_data['cvd_divergence'] else '✅ No'}
             elif text.startswith('/market'):
                 await self.send_message(chat_id, f"""🌍 **MARKET CONDITIONS**
 
-Session: {self._get_time_session(datetime.now())}
+Session: {self.ml_analyzer._get_time_session(datetime.now())}
 CVD: {self.cvd_data['cvd_trend'].title()}
 Volatility: Normal
 Volume: Active

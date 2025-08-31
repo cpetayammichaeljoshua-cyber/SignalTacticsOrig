@@ -1013,7 +1013,7 @@ class UltimateTradingBot:
             'recent_losses': 0,
             'consecutive_wins': 0,
             'consecutive_losses': 0,
-            'performance_window': 50,  # Increased for more stable statistics
+            'performance_window': 20,
             'leverage_adjustment_factor': 0.1
         }
 
@@ -1476,7 +1476,7 @@ class UltimateTradingBot:
             final_leverage = max(min_leverage, min(max_leverage, final_leverage))
             final_leverage = round(final_leverage / 5) * 5
 
-            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f}, Win rate: {indicators.get('win_rate', 'N/A')})")
+            self.logger.info(f"🎯 Adaptive leverage calculated: {int(final_leverage)}x (Performance factor: {performance_factor:.2f})")
             return int(final_leverage)
 
         except Exception as e:
@@ -1504,24 +1504,14 @@ class UltimateTradingBot:
             if not recent_trades:
                 return 0.0  # No performance adjustment if no data
 
-            # Calculate performance metrics with better null handling
-            wins = sum(1 for trade in recent_trades if trade[0] is not None and trade[0] > 0)
-            total_trades = len(recent_trades)
-            losses = total_trades - wins
+            # Calculate performance metrics
+            wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
+            losses = len(recent_trades) - wins
 
-            # Handle edge cases
-            if total_trades == 0:
-                self.logger.debug("📊 No recent trades found, using neutral performance factor")
+            if len(recent_trades) == 0:
                 return 0.0
-            
-            if total_trades < 5:
-                self.logger.debug(f"📊 Only {total_trades} trades available, using conservative factor")
-                return 0.05  # Small positive bias for new systems
 
-            win_rate = wins / total_trades
-            
-            # Log performance statistics for debugging
-            self.logger.debug(f"📊 Performance Stats: {wins}/{total_trades} wins ({win_rate:.1%} win rate)")
+            win_rate = wins / len(recent_trades)
 
             # Calculate consecutive performance
             consecutive_wins = 0
@@ -1549,36 +1539,32 @@ class UltimateTradingBot:
                 'consecutive_losses': consecutive_losses
             })
 
-            # Calculate performance factor (-1 to +1) with improved sensitivity
+            # Calculate performance factor (-1 to +1)
             performance_factor = 0.0
 
-            # Win rate adjustment with dead zone to avoid tiny negative adjustments
-            if win_rate >= 0.65:  # Strong win rate - increase leverage
-                performance_factor += 0.4
-            elif win_rate <= 0.35:  # Poor win rate - decrease leverage  
-                performance_factor -= 0.4
-            elif win_rate >= 0.55:  # Good win rate - small boost
-                performance_factor += 0.2
-            elif win_rate <= 0.45:  # Below average - small penalty
-                performance_factor -= 0.1
+            # Win rate adjustment
+            if win_rate >= 0.7:  # High win rate - increase leverage
+                performance_factor += 0.5
+            elif win_rate <= 0.4:  # Low win rate - decrease leverage
+                performance_factor -= 0.5
             else:
-                # Dead zone (45-55%) - no adjustment for minor variations
-                performance_factor = 0.0
+                # Moderate performance gets a small boost
+                performance_factor += (win_rate - 0.5) * 0.4
 
             # Consecutive performance adjustment
             if consecutive_wins >= 3:
-                performance_factor += 0.2
+                performance_factor += 0.3
             elif consecutive_losses >= 3:
-                performance_factor -= 0.3
-            elif consecutive_wins >= 2:
+                performance_factor -= 0.5
+            elif consecutive_wins >= 1:
                 performance_factor += 0.1
 
-            # Add small base performance factor only if we have insufficient data
-            if len(recent_trades) < 10:
-                performance_factor = 0.1  # Conservative positive bias for new systems
+            # Add base performance factor to avoid 0.0
+            if performance_factor == 0.0:
+                performance_factor = 0.25  # Default positive factor
 
             # Limit performance factor
-            performance_factor = max(-0.8, min(0.8, performance_factor))
+            performance_factor = max(-1.0, min(1.0, performance_factor))
 
             return performance_factor
 

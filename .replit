@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Project"
+runButton = "Ultimate Trading Bot"
 
 [[workflows.workflow]]
 name = "Project"
@@ -22,12 +22,12 @@ args = "Signal Bot"
 name = "Signal Bot"
 author = "agent"
 
-[workflows.workflow.metadata]
-outputType = "console"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python SignalMaestro/automated_signal_bot.py"
+args = "python automated_signal_bot.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"

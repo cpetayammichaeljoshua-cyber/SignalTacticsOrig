@@ -58,83 +58,35 @@ from io import BytesIO
 import base64
 
 class AdvancedMLTradeAnalyzer:
-    """Advanced ML Trade Analyzer with exponential accuracy improvement"""
+    """Advanced ML Trade Analyzer with comprehensive learning capabilities"""
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
-        # Enhanced ML Models with Exponential Learning
+        # ML Models
         self.signal_classifier = None
         self.profit_predictor = None
         self.risk_assessor = None
         self.market_regime_detector = None
-        self.confidence_booster = None
-        self.accuracy_optimizer = None
-        
-        # Exponential Learning Components
-        self.learning_rate_multiplier = 1.5  # Exponential learning factor
-        self.accuracy_boost_rate = 0.95  # 95% accuracy target
-        self.confidence_threshold = 90.0  # High confidence requirement
-        
-        # Real-time Learning System
-        self.real_time_learning = True
-        self.adaptive_threshold_adjustment = True
-        self.exponential_weight_decay = 0.98  # Prioritize recent trades
+        # Removed StandardScaler to avoid compatibility issues
 
         # Learning database
         self.db_path = "advanced_ml_trading.db"
         self._initialize_database()
 
-        # Enhanced Performance tracking with exponential metrics
+        # Performance tracking
         self.model_performance = {
-            'signal_accuracy': 0.75,  # Start with higher baseline
-            'profit_prediction_accuracy': 0.72,
-            'risk_assessment_accuracy': 0.78,
-            'confidence_accuracy': 0.80,
-            'exponential_learning_rate': 1.5,
-            'accuracy_improvement_rate': 0.0,
+            'signal_accuracy': 0.0,
+            'profit_prediction_accuracy': 0.0,
+            'risk_assessment_accuracy': 0.0,
             'total_trades_learned': 0,
             'last_training_time': None,
-            'win_rate_improvement': 0.0,
-            'recent_accuracy_trend': [],
-            'confidence_boost_factor': 1.0,
-            'learning_velocity': 0.0
+            'win_rate_improvement': 0.0
         }
 
-        # Exponential Learning Parameters with strict ML requirements
-        self.retrain_threshold = 8  # Frequent retraining for rapid exponential improvement
+        # Learning parameters
+        self.retrain_threshold = 25  # Retrain after 25 new trades
         self.trades_since_retrain = 0
-        self.min_confidence_for_signal = 88.0  # Higher confidence requirement for exponential accuracy
-        self.accuracy_history = []
-        self.exponential_learning_active = True
-        
-        # Advanced ML Accuracy Tracking
-        self.ml_accuracy_targets = {
-            'signal_accuracy_target': 0.985,      # 98.5% signal accuracy target
-            'confidence_accuracy_target': 0.990,   # 99% confidence accuracy target  
-            'risk_assessment_target': 0.988,      # 98.8% risk assessment target
-            'win_rate_target': 0.88,              # 88% win rate target
-            'exponential_improvement_rate': 0.15   # 15% exponential improvement rate
-        }
-        
-        # Exponential Learning Velocity Tracking
-        self.learning_metrics = {
-            'accuracy_velocity': 0.0,
-            'confidence_velocity': 0.0, 
-            'win_rate_velocity': 0.0,
-            'learning_acceleration': 1.0,
-            'exponential_factor': 1.1,
-            'ml_optimization_cycles': 0
-        }
-        
-        # Strict ML Requirements
-        self.ml_requirements = {
-            'min_model_accuracy': 82.0,           # Minimum 82% model accuracy required
-            'min_ensemble_agreement': 80.0,       # 80% ensemble agreement required
-            'min_expected_win_rate': 85.0,        # 85% expected win rate required
-            'min_confidence_threshold': 88.0,     # 88% minimum confidence required
-            'exponential_filtering_active': True   # Strict exponential filtering
-        }
 
         # Market insights
         self.market_insights = {
@@ -208,7 +160,7 @@ class AdvancedMLTradeAnalyzer:
             self.logger.error(f"Error initializing ML database: {e}")
 
     async def record_trade_outcome(self, trade_data: Dict[str, Any]):
-        """Record trade outcome for exponential ML learning"""
+        """Record trade outcome for ML learning"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -263,716 +215,19 @@ class AdvancedMLTradeAnalyzer:
             conn.commit()
             conn.close()
 
-            # Exponential Learning - Learn from EVERY trade immediately
-            await self.exponential_learning_from_trade(trade_data)
-
             # Only increment counters for completed trades to avoid double counting
             if trade_data.get('trade_status') == 'COMPLETED':
                 self.trades_since_retrain += 1
                 self.model_performance['total_trades_learned'] += 1
-                
-                # Boost accuracy exponentially with each completed trade
-                await self.boost_accuracy_exponentially(trade_data)
 
-            self.logger.info(f"🧠 ML Trade recorded with exponential learning: {trade_data.get('symbol')} - {trade_data.get('trade_result')}")
+            self.logger.info(f"📝 ML Trade recorded: {trade_data.get('symbol')} - {trade_data.get('trade_result')}")
 
-            # More frequent retraining for exponential improvement
+            # Auto-retrain if threshold reached (only for completed trades)
             if trade_data.get('trade_status') == 'COMPLETED' and self.trades_since_retrain >= self.retrain_threshold:
-                await self.retrain_models_exponentially()
-
-            # Immediate accuracy optimization after each trade
-            await self.optimize_accuracy_realtime(trade_data)
+                await self.retrain_models()
 
         except Exception as e:
             self.logger.error(f"Error recording ML trade: {e}")
-
-    async def exponential_learning_from_trade(self, trade_data: Dict[str, Any]):
-        """Learn exponentially from each individual trade with proper ML accuracy improvement"""
-        try:
-            # Extract learning signals from the trade
-            profit_loss = trade_data.get('profit_loss', 0)
-            ml_prediction = trade_data.get('ml_prediction', 'unknown')
-            ml_confidence = trade_data.get('ml_confidence', 0)
-            signal_strength = trade_data.get('signal_strength', 0)
-            
-            # Controlled exponential learning to prevent overflow
-            current_accuracy = self.model_performance['signal_accuracy']
-            
-            if profit_loss > 0:  # Winning trade - EXPONENTIAL ACCURACY BOOST
-                # Calculate exponential improvement factor based on profit magnitude
-                profit_factor = min(3.0, max(0.1, profit_loss / 2.0))  # Clamp profit factor
-                
-                # Exponential learning formula: New accuracy approaches target exponentially
-                target_accuracy = 0.985  # 98.5% target accuracy
-                accuracy_gap = target_accuracy - current_accuracy
-                
-                # Exponential improvement rate (faster learning for bigger wins)
-                exponential_rate = 0.15 * (1.1 ** profit_factor)  # Controlled exponential rate
-                exponential_improvement = accuracy_gap * exponential_rate
-                
-                # Apply improvement with safeguards
-                new_accuracy = min(target_accuracy, current_accuracy + exponential_improvement)
-                self.model_performance['signal_accuracy'] = new_accuracy
-                
-                # Boost other ML accuracies proportionally
-                improvement_ratio = new_accuracy / max(0.01, current_accuracy)
-                
-                self.model_performance['profit_prediction_accuracy'] = min(0.985, 
-                    self.model_performance['profit_prediction_accuracy'] * (1 + (improvement_ratio - 1) * 0.8))
-                self.model_performance['risk_assessment_accuracy'] = min(0.985,
-                    self.model_performance['risk_assessment_accuracy'] * (1 + (improvement_ratio - 1) * 0.7))
-                self.model_performance['confidence_accuracy'] = min(0.985,
-                    self.model_performance['confidence_accuracy'] * (1 + (improvement_ratio - 1) * 0.9))
-                
-                # Update confidence boost factor exponentially
-                confidence_boost = 1.0 + (profit_factor * 0.05)  # 5% max boost per trade
-                self.model_performance['confidence_boost_factor'] = min(1.5, 
-                    self.model_performance['confidence_boost_factor'] * confidence_boost)
-                
-                # Calculate controlled learning velocity
-                accuracy_improvement = new_accuracy - current_accuracy
-                self.model_performance['learning_velocity'] = accuracy_improvement * profit_factor
-                
-                self.logger.info(f"🚀 EXPONENTIAL WIN LEARNING: Accuracy {current_accuracy:.4f} → {new_accuracy:.4f} (+{accuracy_improvement:.4f}), Profit: {profit_loss:.2f}%")
-                
-            else:  # Losing trade - EXPONENTIAL PATTERN LEARNING
-                # Learn from losses to prevent similar mistakes exponentially
-                loss_magnitude = abs(profit_loss)
-                
-                # Exponential loss learning - improve prediction accuracy for similar patterns
-                risk_learning_factor = min(2.0, 1.0 + (loss_magnitude / 10.0))
-                
-                # Slightly reduce signal accuracy but EXPONENTIALLY boost risk assessment
-                accuracy_retention = max(0.98, 1.0 - (loss_magnitude / 1000.0))  # Minimal accuracy loss
-                self.model_performance['signal_accuracy'] *= accuracy_retention
-                
-                # EXPONENTIALLY improve risk assessment from losses
-                risk_improvement = (1.1 ** risk_learning_factor) - 1.0
-                self.model_performance['risk_assessment_accuracy'] = min(0.985,
-                    self.model_performance['risk_assessment_accuracy'] * (1 + risk_improvement))
-                
-                # Exponentially improve loss pattern recognition
-                loss_learning_boost = (1.08 ** risk_learning_factor) - 1.0
-                if 'loss_pattern_accuracy' not in self.model_performance:
-                    self.model_performance['loss_pattern_accuracy'] = 0.75
-                
-                self.model_performance['loss_pattern_accuracy'] = min(0.985,
-                    self.model_performance['loss_pattern_accuracy'] * (1 + loss_learning_boost))
-                
-                self.logger.info(f"🔍 EXPONENTIAL LOSS LEARNING: Risk accuracy boosted by {risk_improvement:.4f}, Loss patterns: {self.model_performance['loss_pattern_accuracy']:.4f}")
-            
-            # Store accuracy in controlled history
-            self.accuracy_history.append(self.model_performance['signal_accuracy'])
-            if len(self.accuracy_history) > 100:
-                self.accuracy_history = self.accuracy_history[-100:]
-            
-            # Update recent accuracy trend for ML optimization
-            self.model_performance['recent_accuracy_trend'] = self.accuracy_history[-10:]
-            
-            # Exponentially increase learning rate multiplier (controlled)
-            if profit_loss > 1.0:  # Good profit
-                self.learning_rate_multiplier = min(3.0, self.learning_rate_multiplier * 1.02)
-            elif profit_loss < -1.0:  # Significant loss
-                self.learning_rate_multiplier = min(3.0, self.learning_rate_multiplier * 1.05)  # Learn faster from mistakes
-            
-        except Exception as e:
-            self.logger.error(f"Error in exponential learning: {e}")
-
-    async def boost_accuracy_exponentially(self, trade_data: Dict[str, Any]):
-        """Boost ML accuracy exponentially with proper mathematical bounds"""
-        try:
-            profit_loss = trade_data.get('profit_loss', 0)
-            ml_confidence = trade_data.get('ml_confidence', 0)
-            signal_strength = trade_data.get('signal_strength', 0)
-            
-            current_accuracy = self.model_performance['signal_accuracy']
-            
-            if profit_loss > 0:  # Winning trade - EXPONENTIAL ACCURACY IMPROVEMENT
-                # Calculate controlled profit factor
-                profit_factor = min(5.0, max(0.1, profit_loss))  # Clamp profit between 0.1 and 5.0
-                
-                # Exponential accuracy improvement with mathematical bounds
-                # Formula: New accuracy approaches 98.5% asymptotically
-                target_accuracy = 0.985
-                accuracy_gap = target_accuracy - current_accuracy
-                
-                # Exponential learning rate based on profit and ML confidence
-                confidence_factor = min(2.0, ml_confidence / 50.0)  # 1.0 to 2.0 multiplier
-                exponential_rate = 0.08 * confidence_factor * np.log(1 + profit_factor)  # Logarithmic scaling
-                
-                # Calculate exponential improvement
-                exponential_improvement = accuracy_gap * (1 - np.exp(-exponential_rate))
-                
-                # Apply improvement with strict bounds
-                new_accuracy = min(target_accuracy, current_accuracy + exponential_improvement)
-                self.model_performance['signal_accuracy'] = new_accuracy
-                
-                # PROPORTIONAL BOOST for other ML models
-                improvement_factor = 1.0 + (exponential_improvement * 5.0)  # 5x amplification for other models
-                
-                self.model_performance['profit_prediction_accuracy'] = min(0.985, 
-                    self.model_performance['profit_prediction_accuracy'] * improvement_factor ** 0.8)
-                self.model_performance['risk_assessment_accuracy'] = min(0.985,
-                    self.model_performance['risk_assessment_accuracy'] * improvement_factor ** 0.7)
-                self.model_performance['confidence_accuracy'] = min(0.985,
-                    self.model_performance['confidence_accuracy'] * improvement_factor ** 0.9)
-                
-                # EXPONENTIAL CONFIDENCE BOOST with bounds
-                confidence_boost = 1.0 + (profit_factor * 0.02)  # 2% max boost per profit point
-                self.model_performance['confidence_boost_factor'] = min(2.0, 
-                    self.model_performance['confidence_boost_factor'] * confidence_boost)
-                
-                # WIN RATE TRACKING for exponential improvement
-                if 'recent_wins' not in self.model_performance:
-                    self.model_performance['recent_wins'] = []
-                
-                self.model_performance['recent_wins'].append(profit_loss)
-                if len(self.model_performance['recent_wins']) > 50:
-                    self.model_performance['recent_wins'] = self.model_performance['recent_wins'][-50:]
-                
-                # Calculate exponential win rate improvement
-                recent_win_rate = sum(1 for w in self.model_performance['recent_wins'] if w > 0) / len(self.model_performance['recent_wins'])
-                if recent_win_rate > 0.8:  # 80%+ recent win rate
-                    # Exponentially boost all accuracies
-                    exponential_win_boost = (recent_win_rate) ** 1.5
-                    for key in ['signal_accuracy', 'profit_prediction_accuracy', 'risk_assessment_accuracy', 'confidence_accuracy']:
-                        if key in self.model_performance:
-                            self.model_performance[key] = min(0.985, self.model_performance[key] * exponential_win_boost)
-                
-                accuracy_improvement = new_accuracy - current_accuracy
-                self.logger.info(f"🚀 EXPONENTIAL ML BOOST: Accuracy {current_accuracy:.4f} → {new_accuracy:.4f} (+{accuracy_improvement:.4f}), Win Rate: {recent_win_rate:.2%}")
-                
-            else:  # Losing trade - EXPONENTIAL LOSS PREVENTION LEARNING
-                loss_magnitude = abs(profit_loss)
-                
-                # Exponential loss learning - dramatically improve pattern recognition
-                loss_factor = min(3.0, loss_magnitude)
-                
-                # Minimal accuracy reduction, maximum learning from patterns
-                accuracy_retention = max(0.995, 1.0 - (loss_magnitude / 2000.0))  # Tiny accuracy loss
-                self.model_performance['signal_accuracy'] *= accuracy_retention
-                
-                # EXPONENTIALLY improve loss prevention models
-                loss_prevention_boost = 1.0 + (0.1 * np.log(1 + loss_factor))  # Logarithmic improvement
-                
-                self.model_performance['risk_assessment_accuracy'] = min(0.985,
-                    self.model_performance['risk_assessment_accuracy'] * loss_prevention_boost)
-                
-                # Initialize and improve loss pattern recognition
-                if 'loss_pattern_accuracy' not in self.model_performance:
-                    self.model_performance['loss_pattern_accuracy'] = 0.80
-                
-                pattern_boost = 1.0 + (0.15 * np.log(1 + loss_factor))
-                self.model_performance['loss_pattern_accuracy'] = min(0.985,
-                    self.model_performance['loss_pattern_accuracy'] * pattern_boost)
-                
-                # Track losses for pattern analysis
-                if 'recent_losses' not in self.model_performance:
-                    self.model_performance['recent_losses'] = []
-                
-                self.model_performance['recent_losses'].append(loss_magnitude)
-                if len(self.model_performance['recent_losses']) > 20:
-                    self.model_performance['recent_losses'] = self.model_performance['recent_losses'][-20:]
-                
-                self.logger.info(f"🔍 EXPONENTIAL LOSS LEARNING: Risk accuracy boosted to {self.model_performance['risk_assessment_accuracy']:.4f}, Loss pattern accuracy: {self.model_performance['loss_pattern_accuracy']:.4f}")
-            
-            # EXPONENTIAL LEARNING RATE ADAPTATION
-            total_trades = self.model_performance.get('total_trades_learned', 0)
-            if total_trades > 0:
-                # Increase learning rate multiplier exponentially based on overall performance
-                win_rate = len(self.model_performance.get('recent_wins', [])) / min(50, total_trades) if total_trades > 0 else 0
-                if win_rate > 0.75:  # High win rate
-                    self.learning_rate_multiplier = min(5.0, self.learning_rate_multiplier * 1.05)
-                elif win_rate < 0.6:  # Low win rate - learn faster
-                    self.learning_rate_multiplier = min(5.0, self.learning_rate_multiplier * 1.08)
-                
-        except Exception as e:
-            self.logger.error(f"Error in exponential accuracy boost: {e}")
-
-    async def optimize_accuracy_realtime(self, trade_data: Dict[str, Any]):
-        """Real-time accuracy optimization with each trade"""
-        try:
-            # Calculate real-time accuracy metrics
-            recent_trades_count = min(20, self.model_performance['total_trades_learned'])
-            if recent_trades_count < 5:
-                return
-            
-            # Get recent trade outcomes
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT profit_loss, ml_confidence, ml_prediction 
-                FROM ml_trades 
-                ORDER BY created_at DESC 
-                LIMIT ?
-            ''', (recent_trades_count,))
-            
-            recent_outcomes = cursor.fetchall()
-            conn.close()
-            
-            # Calculate real-time win rate
-            wins = sum(1 for outcome in recent_outcomes if outcome[0] and outcome[0] > 0)
-            current_win_rate = wins / len(recent_outcomes) if recent_outcomes else 0
-            
-            # Exponential confidence adjustment based on recent performance
-            if current_win_rate > 0.8:  # High win rate
-                # Exponentially boost confidence
-                confidence_multiplier = (1.1 ** (current_win_rate * 10))
-                self.model_performance['confidence_boost_factor'] *= confidence_multiplier
-                
-                # Lower minimum confidence threshold for high-performing patterns
-                self.min_confidence_for_signal = max(75.0, self.min_confidence_for_signal - 1.0)
-                
-                self.logger.info(f"🎯 High performance detected: Win rate {current_win_rate:.2%}, confidence boosted {confidence_multiplier:.3f}x")
-                
-            elif current_win_rate < 0.6:  # Low win rate
-                # Be more selective - increase confidence requirements
-                self.min_confidence_for_signal = min(95.0, self.min_confidence_for_signal + 2.0)
-                
-                # Apply accuracy correction
-                correction_factor = 0.95 ** (0.6 - current_win_rate) * 10
-                self.model_performance['signal_accuracy'] *= correction_factor
-                
-                self.logger.info(f"🔧 Performance correction: Win rate {current_win_rate:.2%}, increasing selectivity")
-            
-            # Update learning velocity based on recent trends
-            if len(self.accuracy_history) >= 5:
-                recent_trend = np.polyfit(range(5), self.accuracy_history[-5:], 1)[0]  # Linear trend
-                self.model_performance['learning_velocity'] = recent_trend * self.learning_rate_multiplier
-                
-                # If trend is positive, increase learning rate
-                if recent_trend > 0:
-                    self.learning_rate_multiplier = min(2.5, self.learning_rate_multiplier * 1.02)
-                    self.logger.info(f"📊 Positive learning trend detected: {recent_trend:.6f}, boosting learning rate to {self.learning_rate_multiplier:.3f}")
-            
-        except Exception as e:
-            self.logger.error(f"Error in real-time accuracy optimization: {e}")
-
-    async def retrain_models_exponentially(self):
-        """Retrain models with exponential learning and strict accuracy improvement"""
-        try:
-            if not ML_AVAILABLE:
-                self.logger.warning("ML libraries not available")
-                return
-
-            self.logger.info("🚀 EXPONENTIAL ML RETRAINING - Strict Accuracy Improvement Mode")
-
-            # Get training data with exponential weighting
-            training_data = self._get_exponentially_weighted_training_data()
-
-            if len(training_data) < 30:
-                self.logger.warning(f"Insufficient training data for exponential learning: {len(training_data)} trades")
-                return
-
-            # Prepare features with exponential importance weighting
-            features, targets = self._prepare_exponential_ml_features(training_data)
-
-            if features is None or len(features) == 0:
-                return
-
-            # Store pre-training accuracy for comparison
-            accuracy_before = self.model_performance['signal_accuracy']
-            confidence_before = self.model_performance.get('confidence_accuracy', 0.80)
-            risk_before = self.model_performance.get('risk_assessment_accuracy', 0.75)
-            
-            # EXPONENTIAL MODEL TRAINING with advanced algorithms
-            await self._train_exponential_signal_classifier(features, targets)
-            await self._train_exponential_profit_predictor(features, targets)
-            await self._train_exponential_risk_assessor(features, targets)
-            await self._train_confidence_booster(features, targets)
-            await self._train_accuracy_optimizer(features, targets)
-            
-            # Advanced ensemble training for exponential accuracy
-            await self._train_exponential_ensemble_models(features, targets)
-
-            # Calculate comprehensive accuracy improvements
-            accuracy_after = self.model_performance['signal_accuracy']
-            confidence_after = self.model_performance.get('confidence_accuracy', confidence_before)
-            risk_after = self.model_performance.get('risk_assessment_accuracy', risk_before)
-            
-            # Exponential improvement calculations
-            signal_improvement = (accuracy_after / max(0.01, accuracy_before)) ** 1.2 - 1.0
-            confidence_improvement = (confidence_after / max(0.01, confidence_before)) ** 1.2 - 1.0
-            risk_improvement = (risk_after / max(0.01, risk_before)) ** 1.2 - 1.0
-            
-            # Update exponential learning parameters based on improvements
-            total_improvement = (signal_improvement + confidence_improvement + risk_improvement) / 3
-            
-            if total_improvement > 0.02:  # 2%+ improvement
-                # Exponentially boost learning rate
-                self.learning_rate_multiplier = min(5.0, self.learning_rate_multiplier * 1.15)
-                
-                # Increase learning velocity exponentially
-                new_velocity = total_improvement * self.learning_rate_multiplier
-                self.model_performance['learning_velocity'] = min(0.1, new_velocity)
-                
-                # Boost confidence thresholds for higher standards
-                self.min_confidence_for_signal = max(75.0, self.min_confidence_for_signal - 1.0)
-                
-                self.logger.info(f"🚀 EXPONENTIAL LEARNING ACCELERATION: Total improvement {total_improvement:.4f}, Learning rate: {self.learning_rate_multiplier:.3f}")
-            
-            elif total_improvement < -0.01:  # Performance degradation
-                # Adaptive recovery - focus on learning from mistakes
-                self.learning_rate_multiplier = min(5.0, self.learning_rate_multiplier * 1.3)  # Learn faster from mistakes
-                self.min_confidence_for_signal = min(95.0, self.min_confidence_for_signal + 2.0)  # Be more selective
-                
-                self.logger.info(f"🔧 ADAPTIVE RECOVERY: Increasing selectivity and learning rate")
-            
-            # EXPONENTIAL MARKET INSIGHTS with advanced pattern detection
-            await self._analyze_exponential_market_insights(training_data)
-            
-            # EXPONENTIAL WIN RATE TRACKING
-            winning_trades = training_data[training_data['profit_loss'] > 0]
-            if len(training_data) > 0:
-                current_win_rate = len(winning_trades) / len(training_data)
-                
-                # Exponential win rate improvement targeting
-                target_win_rate = 0.85  # 85% target win rate
-                win_rate_gap = target_win_rate - current_win_rate
-                
-                if current_win_rate > 0.8:  # High win rate - exponentially boost confidence
-                    win_rate_boost = (current_win_rate) ** 1.5
-                    self.model_performance['confidence_boost_factor'] *= win_rate_boost
-                    self.logger.info(f"🎯 HIGH WIN RATE BOOST: {current_win_rate:.2%} → Confidence boost: {win_rate_boost:.3f}x")
-                
-                elif current_win_rate < 0.65:  # Low win rate - exponentially improve filtering
-                    # Dramatically increase ML filtering strictness
-                    self.min_confidence_for_signal = min(98.0, self.min_confidence_for_signal * 1.1)
-                    
-                    # Exponentially boost risk assessment training
-                    risk_boost_factor = (0.65 / max(0.01, current_win_rate)) ** 0.5
-                    self.model_performance['risk_assessment_accuracy'] = min(0.985,
-                        self.model_performance['risk_assessment_accuracy'] * risk_boost_factor)
-                    
-                    self.logger.info(f"🔧 LOW WIN RATE CORRECTION: {current_win_rate:.2%} → Strictness boost, Risk accuracy: {self.model_performance['risk_assessment_accuracy']:.4f}")
-
-            # Save enhanced models with exponential improvements
-            self._save_exponential_ml_models()
-
-            self.trades_since_retrain = 0
-            self.model_performance['last_training_time'] = datetime.now().isoformat()
-
-            # Comprehensive logging of exponential improvements
-            self.logger.info(f"✅ EXPONENTIAL RETRAINING COMPLETE:")
-            self.logger.info(f"   Signal Accuracy: {accuracy_before:.4f} → {accuracy_after:.4f} ({signal_improvement:.4f})")
-            self.logger.info(f"   Confidence Accuracy: {confidence_before:.4f} → {confidence_after:.4f} ({confidence_improvement:.4f})")
-            self.logger.info(f"   Risk Assessment: {risk_before:.4f} → {risk_after:.4f} ({risk_improvement:.4f})")
-            self.logger.info(f"   Learning Rate Multiplier: {self.learning_rate_multiplier:.3f}")
-            self.logger.info(f"   Learning Velocity: {self.model_performance['learning_velocity']:.6f}")
-
-        except Exception as e:
-            self.logger.error(f"Error in exponential retraining: {e}")
-    
-    async def _train_exponential_ensemble_models(self, features: pd.DataFrame, targets: Dict):
-        """Train advanced ensemble models for exponential accuracy improvement"""
-        try:
-            X = features
-            y = targets['profitable']
-            sample_weights = targets.get('exponential_weights', None)
-
-            if len(X) < 20:
-                return
-
-            # Advanced ensemble with multiple algorithms
-            from sklearn.ensemble import VotingClassifier, AdaBoostClassifier
-            from sklearn.neural_network import MLPClassifier
-            
-            # Create ensemble of different ML algorithms
-            rf_model = RandomForestClassifier(n_estimators=300, max_depth=25, random_state=42)
-            gb_model = GradientBoostingClassifier(n_estimators=200, learning_rate=0.1, random_state=42)
-            ada_model = AdaBoostClassifier(n_estimators=150, learning_rate=self.learning_rate_multiplier * 0.1, random_state=42)
-            
-            # Neural network for complex pattern recognition
-            try:
-                nn_model = MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=500, random_state=42)
-                ensemble_models = [('rf', rf_model), ('gb', gb_model), ('ada', ada_model), ('nn', nn_model)]
-            except:
-                ensemble_models = [('rf', rf_model), ('gb', gb_model), ('ada', ada_model)]
-            
-            # Voting classifier with exponential weighting
-            ensemble_classifier = VotingClassifier(estimators=ensemble_models, voting='soft')
-            
-            # Split data for ensemble training
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-            
-            # Train ensemble with sample weights
-            if sample_weights is not None:
-                train_weights = sample_weights.loc[X_train.index]
-            else:
-                train_weights = None
-            
-            # Fit individual models first for better ensemble performance
-            for name, model in ensemble_models:
-                try:
-                    if hasattr(model, 'fit'):
-                        if train_weights is not None and hasattr(model, 'fit') and 'sample_weight' in model.fit.__code__.co_varnames:
-                            model.fit(X_train, y_train, sample_weight=train_weights)
-                        else:
-                            model.fit(X_train, y_train)
-                except Exception as model_error:
-                    self.logger.warning(f"Error training {name} model: {model_error}")
-            
-            # Train ensemble
-            try:
-                ensemble_classifier.fit(X_train, y_train)
-                
-                # Evaluate ensemble performance
-                y_pred = ensemble_classifier.predict(X_test)
-                y_proba = ensemble_classifier.predict_proba(X_test)[:, 1]
-                
-                ensemble_accuracy = accuracy_score(y_test, y_pred)
-                
-                # Update ensemble accuracy with exponential improvement
-                current_ensemble_accuracy = self.model_performance.get('ensemble_accuracy', 0.75)
-                improvement_factor = max(1.0, ensemble_accuracy / max(0.01, current_ensemble_accuracy))
-                exponential_ensemble_accuracy = min(0.985, current_ensemble_accuracy * (improvement_factor ** 1.3))
-                
-                self.model_performance['ensemble_accuracy'] = exponential_ensemble_accuracy
-                
-                # Store ensemble model for predictions
-                self.ensemble_classifier = ensemble_classifier
-                
-                self.logger.info(f"🤖 EXPONENTIAL ENSEMBLE: Accuracy {ensemble_accuracy:.4f} → Enhanced {exponential_ensemble_accuracy:.4f}")
-                
-            except Exception as ensemble_error:
-                self.logger.warning(f"Ensemble training error: {ensemble_error}")
-            
-        except Exception as e:
-            self.logger.error(f"Error training exponential ensemble: {e}")
-
-    def _get_exponentially_weighted_training_data(self) -> pd.DataFrame:
-        """Get training data with exponential weighting for recent trades"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            
-            # Get all trades with timestamp weighting
-            query = """
-                SELECT *, 
-                       julianday('now') - julianday(created_at) as days_ago
-                FROM ml_trades 
-                WHERE profit_loss IS NOT NULL 
-                ORDER BY created_at DESC 
-                LIMIT 2000
-            """
-            df = pd.read_sql_query(query, conn)
-            conn.close()
-
-            if len(df) == 0:
-                return df
-
-            # Apply exponential weighting - recent trades get exponentially higher importance
-            df['exponential_weight'] = np.exp(-df['days_ago'] * 0.1)  # Exponential decay with time
-            
-            # Boost weights for profitable trades exponentially
-            profit_mask = df['profit_loss'] > 0
-            df.loc[profit_mask, 'exponential_weight'] *= (1 + df.loc[profit_mask, 'profit_loss'] / 50) ** 2
-            
-            # Sort by exponential weight (most important trades first)
-            df = df.sort_values('exponential_weight', ascending=False)
-
-            # Parse JSON fields
-            if 'indicators_data' in df.columns:
-                df['indicators_data'] = df['indicators_data'].apply(
-                    lambda x: json.loads(x) if x else {}
-                )
-
-            self.logger.info(f"📊 Exponential training data prepared: {len(df)} trades with exponential weighting")
-            return df
-
-        except Exception as e:
-            self.logger.error(f"Error getting exponential training data: {e}")
-            return pd.DataFrame()
-
-    async def _train_exponential_signal_classifier(self, features: pd.DataFrame, targets: Dict):
-        """Train signal classifier with exponential learning"""
-        try:
-            X = features
-            y = targets['profitable']
-            sample_weights = targets.get('exponential_weights', None)
-
-            if len(X) < 10:
-                return
-
-            # Split data with stratification
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-            
-            # Get sample weights for training set
-            if sample_weights is not None:
-                train_weights = sample_weights.loc[X_train.index]
-                test_weights = sample_weights.loc[X_test.index]
-            else:
-                train_weights = None
-                test_weights = None
-
-            # Enhanced Random Forest with exponential learning parameters
-            self.signal_classifier = RandomForestClassifier(
-                n_estimators=200,  # More trees for better accuracy
-                max_depth=20,      # Deeper trees for complex patterns
-                min_samples_split=3,  # More sensitive to patterns
-                min_samples_leaf=1,   # Allow precise fitting
-                max_features='sqrt',
-                random_state=42,
-                class_weight='balanced',
-                bootstrap=True,
-                n_jobs=-1  # Use all CPU cores
-            )
-            
-            # Train with sample weights for exponential learning
-            self.signal_classifier.fit(X_train, y_train, sample_weight=train_weights)
-
-            # Enhanced evaluation with confidence intervals
-            y_pred = self.signal_classifier.predict(X_test)
-            y_proba = self.signal_classifier.predict_proba(X_test)[:, 1]
-            
-            accuracy = accuracy_score(y_test, y_pred, sample_weight=test_weights)
-            
-            # Calculate confidence-weighted accuracy
-            high_confidence_mask = y_proba >= 0.8
-            if high_confidence_mask.sum() > 0:
-                high_conf_accuracy = accuracy_score(y_test[high_confidence_mask], y_pred[high_confidence_mask])
-                # Exponentially weight high-confidence accuracy
-                final_accuracy = accuracy * 0.3 + high_conf_accuracy * 0.7
-            else:
-                final_accuracy = accuracy
-
-            # Apply exponential learning boost
-            exponential_boost = self.learning_rate_multiplier ** (final_accuracy * 2)
-            boosted_accuracy = min(0.98, final_accuracy * exponential_boost)
-
-            self.model_performance['signal_accuracy'] = boosted_accuracy
-            self.logger.info(f"🎯 Exponential signal classifier: {accuracy:.3f} → {boosted_accuracy:.3f} (boost: {exponential_boost:.3f}x)")
-
-        except Exception as e:
-            self.logger.error(f"Error training exponential signal classifier: {e}")
-
-    async def _train_confidence_booster(self, features: pd.DataFrame, targets: Dict):
-        """Train specialized confidence boosting model"""
-        try:
-            X = features
-            y = targets['high_confidence_wins'] = ((targets['profitable'] == 1) & 
-                                                   (targets.get('profit_amount', pd.Series([0]*len(targets['profitable']))) > 1.0)).astype(int)
-
-            if len(X) < 10 or y.sum() < 3:
-                return
-
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-            # Specialized confidence booster model
-            from sklearn.ensemble import AdaBoostClassifier
-            self.confidence_booster = AdaBoostClassifier(
-                n_estimators=150,
-                learning_rate=self.learning_rate_multiplier,  # Use exponential learning rate
-                random_state=42
-            )
-            
-            self.confidence_booster.fit(X_train, y_train)
-
-            # Evaluate confidence boosting accuracy
-            y_pred = self.confidence_booster.predict(X_test)
-            conf_accuracy = accuracy_score(y_test, y_pred)
-            
-            self.model_performance['confidence_accuracy'] = conf_accuracy
-            self.logger.info(f"🔥 Confidence booster trained: {conf_accuracy:.3f} accuracy")
-
-        except Exception as e:
-            self.logger.error(f"Error training confidence booster: {e}")
-
-    async def _train_accuracy_optimizer(self, features: pd.DataFrame, targets: Dict):
-        """Train accuracy optimization model for continuous improvement"""
-        try:
-            # Create target for accuracy optimization - trades that exceeded expected performance
-            X = features
-            profit_data = targets.get('profit_amount', pd.Series([0]*len(features)))
-            
-            # Target: trades that performed better than ML prediction
-            y = (profit_data > 2.0).astype(int)  # Significantly profitable trades
-
-            if len(X) < 10 or y.sum() < 2:
-                return
-
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-            # Gradient Boosting for accuracy optimization
-            from sklearn.ensemble import GradientBoostingClassifier
-            self.accuracy_optimizer = GradientBoostingClassifier(
-                n_estimators=200,
-                learning_rate=min(0.2, 0.05 * self.learning_rate_multiplier),  # Adaptive learning rate
-                max_depth=12,
-                subsample=0.9,
-                random_state=42
-            )
-            
-            self.accuracy_optimizer.fit(X_train, y_train)
-
-            # Evaluate accuracy optimization
-            y_pred = self.accuracy_optimizer.predict(X_test)
-            opt_accuracy = accuracy_score(y_test, y_pred)
-            
-            # Store accuracy optimization performance
-            self.model_performance['accuracy_optimization'] = opt_accuracy
-            self.logger.info(f"⚡ Accuracy optimizer trained: {opt_accuracy:.3f} accuracy")
-
-        except Exception as e:
-            self.logger.error(f"Error training accuracy optimizer: {e}")
-
-    def _prepare_exponential_ml_features(self, df: pd.DataFrame) -> tuple:
-        """Prepare features with exponential weighting and enhanced importance"""
-        try:
-            if len(df) == 0:
-                return None, None
-
-            # Create feature matrix with exponential importance
-            features = pd.DataFrame()
-
-            # Enhanced features with exponential scaling
-            features['signal_strength'] = df['signal_strength'].fillna(0)
-            features['leverage'] = df['leverage'].fillna(35)
-            features['market_volatility'] = df['market_volatility'].fillna(0.02)
-            features['volume_ratio'] = df['volume_ratio'].fillna(1.0)
-            features['rsi_value'] = df['rsi_value'].fillna(50)
-
-            # Add exponential feature transformations
-            features['signal_strength_exp'] = np.power(features['signal_strength'] / 100, 2)  # Exponential signal strength
-            features['volume_strength'] = features['volume_ratio'] * features['signal_strength'] / 100
-            features['volatility_signal_ratio'] = features['signal_strength'] / (features['market_volatility'] * 1000)
-
-            # Encode categorical features
-            direction_map = {'BUY': 1, 'SELL': 0}
-            macd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
-            cvd_map = {'bullish': 1, 'neutral': 0, 'bearish': -1}
-            session_map = {
-                'LONDON_OPEN': 0, 'LONDON_MAIN': 1, 'NY_OVERLAP': 2,
-                'NY_MAIN': 3, 'NY_CLOSE': 4, 'ASIA_MAIN': 5, 'TRANSITION': 6
-            }
-
-            features['direction_encoded'] = df['direction'].fillna('BUY').map(direction_map).fillna(1)
-            features['macd_signal_encoded'] = df['macd_signal'].fillna('neutral').map(macd_map).fillna(0)
-            features['cvd_trend_encoded'] = df['cvd_trend'].fillna('neutral').map(cvd_map).fillna(0)
-            features['time_session_encoded'] = df['time_session'].fillna('NY_MAIN').map(session_map).fillna(3)
-            features['ema_alignment'] = df['ema_alignment'].fillna(False).astype(int)
-
-            # Time features
-            features['hour_of_day'] = df['hour_of_day'].fillna(12)
-            features['day_of_week'] = df['day_of_week'].fillna(1)
-
-            # Enhanced targets with exponential weighting
-            targets = {
-                'profitable': (df['profit_loss'] > 0).astype(int),
-                'profit_amount': df['profit_loss'].fillna(0),
-                'high_risk': (abs(df['profit_loss']) > 2.0).astype(int),
-                'quick_profit': ((df['profit_loss'] > 0) & (df['duration_minutes'] < 30)).astype(int),
-                'exponential_weights': df.get('exponential_weight', pd.Series([1.0] * len(df))),
-                'high_confidence_wins': ((df['profit_loss'] > 1.0) & (df['ml_confidence'] > 80)).astype(int)
-            }
-
-            # Remove NaN values
-            features = features.fillna(0)
-
-            return features, targets
-
-        except Exception as e:
-            self.logger.error(f"Error preparing exponential ML features: {e}")
-            return None, None
 
     async def update_open_trade_data(self, trade_data: Dict[str, Any]):
         """Update open trade data for continuous ML learning"""
@@ -1477,212 +732,51 @@ class AdvancedMLTradeAnalyzer:
             self.logger.error(f"Error loading ML models: {e}")
 
     def predict_trade_outcome(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """EXPONENTIAL ML prediction with strict accuracy and confidence requirements"""
+        """Advanced ML prediction for trade outcome"""
         try:
-            if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor]):
-                return self._exponential_fallback_prediction(signal_data)
+            if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
+                return self._fallback_prediction(signal_data)
 
             # Prepare features as DataFrame
             features_df = self._prepare_prediction_features(signal_data)
             if features_df is None or features_df.empty:
-                return self._exponential_fallback_prediction(signal_data)
+                return self._fallback_prediction(signal_data)
 
-            # ADVANCED ML PREDICTIONS with ensemble modeling
-            profit_prob = self.signal_classifier.predict_proba(features_df)[0][1] if hasattr(self.signal_classifier, 'predict_proba') else 0.75
-            profit_amount = self.profit_predictor.predict(features_df)[0] if hasattr(self.profit_predictor, 'predict') else 1.5
-            risk_prob = self.risk_assessor.predict_proba(features_df)[0][1] if hasattr(self.risk_assessor, 'predict_proba') else 0.25
+            # Scale features - now using DataFrame
+            features_scaled = self.scaler.transform(features_df)
 
-            # EXPONENTIAL ENSEMBLE CONFIDENCE CALCULATION
-            # Combine multiple ML model predictions exponentially
-            model_confidence_scores = [profit_prob]
-            
-            if self.confidence_booster and hasattr(self.confidence_booster, 'predict_proba'):
-                boost_prob = self.confidence_booster.predict_proba(features_df)[0][1]
-                model_confidence_scores.append(boost_prob)
-            
-            if self.accuracy_optimizer and hasattr(self.accuracy_optimizer, 'predict_proba'):
-                accuracy_prob = self.accuracy_optimizer.predict_proba(features_df)[0][1]
-                model_confidence_scores.append(accuracy_prob)
-            
-            # Exponential ensemble weighting - models that agree get exponentially higher weight
-            ensemble_agreement = np.std(model_confidence_scores)  # Lower std = higher agreement
-            agreement_boost = np.exp(-ensemble_agreement * 5)  # Exponential agreement bonus
-            
-            # Base confidence with exponential ensemble boost
-            base_confidence = np.mean(model_confidence_scores) * 100 * agreement_boost
-            
-            # EXPONENTIAL MODEL ACCURACY BOOST
-            model_accuracy = self.model_performance['signal_accuracy']
-            accuracy_boost = (model_accuracy) ** 1.2  # Exponential accuracy influence
-            base_confidence *= accuracy_boost
-            
-            # EXPONENTIAL LEARNING VELOCITY BOOST
-            learning_velocity = abs(self.model_performance.get('learning_velocity', 0.0))
-            if learning_velocity > 0.001:  # Active learning
-                velocity_factor = 1.0 + min(0.3, learning_velocity * 100)  # Cap at 30% boost
-                base_confidence *= velocity_factor
-            
-            # EXPONENTIAL CONFIDENCE BOOST FACTOR
-            confidence_boost_factor = self.model_performance.get('confidence_boost_factor', 1.0)
-            exponential_confidence_boost = confidence_boost_factor ** 1.1  # Slightly exponential
-            base_confidence *= exponential_confidence_boost
-            
-            # RECENT PERFORMANCE EXPONENTIAL BOOST
-            recent_wins = self.model_performance.get('recent_wins', [])
-            if len(recent_wins) >= 5:
-                recent_win_rate = sum(1 for w in recent_wins[-10:] if w > 0) / min(10, len(recent_wins))
-                if recent_win_rate > 0.8:  # 80%+ recent win rate
-                    performance_boost = (recent_win_rate) ** 2  # Exponential performance boost
-                    base_confidence *= performance_boost
-            
-            # Apply market insights with exponential weighting
-            final_confidence = self._adjust_confidence_exponentially(signal_data, base_confidence)
-            
-            # Cap confidence at realistic maximum
-            final_confidence = min(98.5, max(10.0, final_confidence))
+            # Get predictions
+            profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
+            profit_amount = self.profit_predictor.predict(features_scaled)[0]
+            risk_prob = self.risk_assessor.predict_proba(features_scaled)[0][1]
 
-            # STRICT ML-BASED PREDICTION CLASSIFICATION
-            signal_strength = signal_data.get('signal_strength', 0)
-            
-            # Exponential prediction thresholds based on ML accuracy
-            model_accuracy_factor = (model_accuracy) ** 0.5
-            
-            if (final_confidence >= 95 * model_accuracy_factor and profit_amount > 2.0 and 
-                risk_prob < 0.15 and signal_strength >= 90):
-                prediction = 'extremely_favorable'
-            elif (final_confidence >= 90 * model_accuracy_factor and profit_amount > 1.5 and 
-                  risk_prob < 0.2 and signal_strength >= 85):
+            # Calculate overall confidence
+            confidence = profit_prob * 100
+
+            # Adjust based on market insights
+            confidence = self._adjust_confidence_with_insights(signal_data, confidence)
+
+            # Determine prediction
+            if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3:
                 prediction = 'highly_favorable'
-            elif (final_confidence >= 85 * model_accuracy_factor and profit_amount > 1.0 and 
-                  risk_prob < 0.3 and signal_strength >= 80):
+            elif confidence >= 65 and profit_amount > 0:
                 prediction = 'favorable'
-            elif final_confidence >= 75 * model_accuracy_factor and profit_amount > 0.5:
-                prediction = 'moderate'
             else:
-                prediction = 'neutral'
-
-            # EXPONENTIAL WIN RATE CALCULATION
-            ensemble_win_probability = (profit_prob * (1 - risk_prob) * agreement_boost * model_accuracy)
-            exponential_win_rate = (ensemble_win_probability ** 0.8) * 100  # Slightly conservative
+                prediction = 'neutral' # Default to neutral if not meeting specific criteria
 
             return {
                 'prediction': prediction,
-                'confidence': final_confidence,
-                'base_confidence': profit_prob * 100,
-                'exponential_boost_applied': final_confidence / max(1, profit_prob * 100),
+                'confidence': confidence,
                 'expected_profit': profit_amount,
                 'risk_probability': risk_prob * 100,
-                'expected_win_rate': exponential_win_rate,
-                'ensemble_agreement': agreement_boost,
-                'model_accuracy': model_accuracy * 100,
-                'confidence_accuracy': self.model_performance.get('confidence_accuracy', 80) * 100,
-                'learning_velocity': self.model_performance.get('learning_velocity', 0.0),
-                'accuracy_trend': 'exponentially_improving' if learning_velocity > 0.001 else 'stable',
-                'trades_learned_from': self.model_performance['total_trades_learned'],
-                'exponential_learning_active': True,
-                'ml_validation_score': ensemble_agreement * model_accuracy * agreement_boost,
-                'recommendation': self._get_exponential_ml_recommendation(prediction, final_confidence, profit_amount, risk_prob)
+                'recommendation': self._get_ml_recommendation(prediction, confidence, profit_amount, risk_prob),
+                'model_accuracy': self.model_performance['signal_accuracy'] * 100,
+                'trades_learned_from': self.model_performance['total_trades_learned']
             }
 
         except Exception as e:
-            self.logger.error(f"Error in exponential ML prediction: {e}")
-            return self._exponential_fallback_prediction(signal_data)
-
-    def _adjust_confidence_exponentially(self, signal_data: Dict[str, Any], base_confidence: float) -> float:
-        """Adjust confidence with exponential market insights weighting"""
-        try:
-            adjusted_confidence = base_confidence
-
-            # Exponential time session adjustment
-            current_session = self._get_time_session(datetime.now())
-            if 'best_time_sessions' in self.market_insights:
-                session_data = self.market_insights['best_time_sessions']
-                if current_session in session_data.get('mean', {}):
-                    session_performance = session_data['mean'][current_session]
-                    if session_performance > 0:
-                        # Exponential boost for good sessions
-                        session_boost = (1 + session_performance / 10) ** self.learning_rate_multiplier
-                        adjusted_confidence *= session_boost
-                    elif session_performance < -0.5:
-                        # Conservative reduction for poor sessions
-                        adjusted_confidence *= 0.95
-
-            # Exponential symbol performance adjustment
-            symbol = signal_data.get('symbol', '')
-            if 'symbol_performance' in self.market_insights:
-                symbol_data = self.market_insights['symbol_performance']
-                if symbol in symbol_data.get('mean', {}):
-                    symbol_performance = symbol_data['mean'][symbol]
-                    if symbol_performance > 0:
-                        # Exponential boost for strong symbols
-                        symbol_boost = (1 + symbol_performance / 20) ** (self.learning_rate_multiplier * 0.5)
-                        adjusted_confidence *= symbol_boost
-
-            # Apply exponential learning rate multiplier
-            if self.learning_rate_multiplier > 1.0:
-                exponential_factor = 1 + ((self.learning_rate_multiplier - 1.0) * 0.2)
-                adjusted_confidence *= exponential_factor
-
-            return min(98.0, max(10.0, adjusted_confidence))
-
-        except Exception as e:
-            self.logger.error(f"Error adjusting confidence exponentially: {e}")
-            return base_confidence
-
-    def _get_exponential_ml_recommendation(self, prediction: str, confidence: float, profit: float, risk: float) -> str:
-        """Get enhanced ML recommendation with exponential confidence"""
-        accuracy = self.model_performance['signal_accuracy'] * 100
-        learning_rate = self.learning_rate_multiplier
-        
-        if prediction == 'extremely_favorable':
-            return f"🚀 EXCEPTIONAL OPPORTUNITY - {accuracy:.1f}% ML Accuracy (Learning: {learning_rate:.2f}x)"
-        elif prediction == 'highly_favorable':
-            return f"🔥 HIGHLY FAVORABLE - {accuracy:.1f}% ML Accuracy, High Confidence"
-        elif prediction == 'favorable':
-            return f"✅ FAVORABLE - {accuracy:.1f}% ML Accuracy, Good Setup"
-        elif prediction == 'moderate':
-            return f"⚖️ MODERATE - {accuracy:.1f}% ML Accuracy, Proceed with Caution"
-        else:
-            return f"📊 NEUTRAL - {accuracy:.1f}% ML Accuracy, Standard Risk"
-
-    def _exponential_fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Enhanced fallback prediction with exponential learning principles"""
-        signal_strength = signal_data.get('signal_strength', 50)
-        
-        # Apply exponential scaling to signal strength
-        exponential_strength = signal_strength * (self.learning_rate_multiplier ** 0.5)
-        
-        # Enhanced fallback logic with high confidence
-        if exponential_strength >= 95:
-            prediction = 'highly_favorable'
-            confidence = min(95, exponential_strength)
-        elif exponential_strength >= 85:
-            prediction = 'favorable'
-            confidence = min(88, exponential_strength * 0.95)
-        elif exponential_strength >= 75:
-            prediction = 'moderate'
-            confidence = min(80, exponential_strength * 0.9)
-        else:
-            prediction = 'neutral'
-            confidence = min(70, exponential_strength * 0.85)
-
-        # Apply model performance boost
-        accuracy_factor = max(0.75, self.model_performance['signal_accuracy'])
-        confidence *= accuracy_factor
-
-        return {
-            'prediction': prediction,
-            'confidence': confidence,
-            'base_confidence': signal_strength,
-            'exponential_boost_applied': confidence / max(1, signal_strength),
-            'expected_profit': max(1.0, exponential_strength / 50),
-            'risk_probability': max(15, 100 - exponential_strength),
-            'recommendation': f"Exponential Fallback: {prediction.title()} ({confidence:.1f}%)",
-            'model_accuracy': self.model_performance['signal_accuracy'] * 100,
-            'trades_learned_from': self.model_performance['total_trades_learned'],
-            'exponential_learning_active': True,
-            'fallback_mode': True
-        }
+            self.logger.error(f"Error in ML prediction: {e}")
+            return self._fallback_prediction(signal_data)
 
     def _prepare_prediction_features(self, signal_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Prepare features for prediction as DataFrame to match training data"""
@@ -1762,29 +856,37 @@ class AdvancedMLTradeAnalyzer:
         return "Signal Strength Based: Favorable"
 
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback prediction when ML models not available - more permissive"""
+        """Fallback prediction when ML models not available"""
         signal_strength = signal_data.get('signal_strength', 50)
 
-        # More permissive fallback - allow most signals through
-        if signal_strength >= 80:
+        if signal_strength >= 85:
             prediction = 'favorable'
             confidence = 75
-        elif signal_strength >= 70:
+        elif signal_strength >= 75:
             prediction = 'neutral'
-            confidence = 65
-        elif signal_strength >= 60:
-            prediction = 'neutral'
-            confidence = 55
+            confidence = 60
         else:
             prediction = 'unfavorable'
-            confidence = 45
+            confidence = 40
+
+        # Only return favorable predictions in fallback
+        if signal_strength < 85:  # Only favorable signals
+            return {
+                'prediction': 'unfavorable',
+                'confidence': confidence,
+                'expected_profit': 0.0,
+                'risk_probability': 50.0,
+                'recommendation': "Signal Strength Based: Favorable",
+                'model_accuracy': 0.0,
+                'trades_learned_from': 0
+            }
 
         return {
-            'prediction': prediction,
+            'prediction': 'favorable',
             'confidence': confidence,
-            'expected_profit': max(0.5, signal_strength / 100 * 2),  # Estimate based on signal strength
-            'risk_probability': max(20, 100 - signal_strength),  # Lower risk for stronger signals
-            'recommendation': f"Signal Strength Based: {prediction.title()}",
+            'expected_profit': 0.0,
+            'risk_probability': 50.0,
+            'recommendation': "Signal Strength Based: Favorable",
             'model_accuracy': 0.0,
             'trades_learned_from': 0
         }
@@ -1888,12 +990,12 @@ class UltimateTradingBot:
             'leverage_adjustment_factor': 0.1
         }
 
-        # Enhanced Risk management with ML optimization
+        # Risk management - optimized for maximum profitability
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 85  # Higher threshold for ML-filtered quality
-        self.max_signals_per_hour = 50  # Quality over quantity approach
+        self.min_signal_strength = 80
+        self.max_signals_per_hour = 100  # Removed limit - allow many more signals
         self.capital_allocation = 0.025  # 2.5% per trade
-        self.max_concurrent_trades = 15  # Focused on high-quality concurrent trades
+        self.max_concurrent_trades = 25  # Increased concurrent trades
 
         # Performance tracking
         self.signal_counter = 0
@@ -2559,7 +1661,7 @@ class UltimateTradingBot:
             placeholder_df = pd.DataFrame({'close': [current_price] * 20}) if df is None or len(df) < 20 else df
             optimal_leverage = self.calculate_adaptive_leverage(indicators, placeholder_df)
 
-            # STRICT ML PREDICTION with exponential accuracy requirements
+            # ML prediction
             ml_signal_data = {
                 'symbol': symbol,
                 'direction': direction,
@@ -2570,133 +1672,30 @@ class UltimateTradingBot:
                 'rsi': indicators.get('rsi', 50),
                 'cvd_trend': cvd_trend,
                 'macd_signal': 'bullish' if indicators.get('macd_bullish') else 'bearish' if indicators.get('macd_bearish') else 'neutral',
-                'ema_bullish': indicators.get('ema_bullish', False),
-                'exponential_learning_active': True,
-                'require_high_accuracy': True,
-                'min_win_rate_required': 85.0
+                'ema_bullish': indicators.get('ema_bullish', False)
             }
 
-            # Get ML prediction with exponential requirements
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
-            
-            # EXPONENTIAL PRE-VALIDATION - Check ML readiness
-            model_accuracy = ml_prediction.get('model_accuracy', 75)
-            if model_accuracy < 80:  # Require high model accuracy
-                self.logger.debug(f"🚫 ML MODEL ACCURACY TOO LOW {symbol}: {model_accuracy:.1f}% < 80%")
-                return None
-            
-            # EXPONENTIAL ENSEMBLE VALIDATION if available
-            if hasattr(self, 'ensemble_classifier') and self.ensemble_classifier is not None:
-                try:
-                    # Get ensemble prediction for additional validation
-                    features_df = self._prepare_prediction_features(ml_signal_data)
-                    if features_df is not None:
-                        ensemble_proba = self.ensemble_classifier.predict_proba(features_df)[0][1]
-                        ensemble_confidence = ensemble_proba * 100
-                        
-                        # Require ensemble agreement for exponential accuracy
-                        if ensemble_confidence < 82:
-                            self.logger.debug(f"🚫 ENSEMBLE FILTER {symbol}: Ensemble confidence {ensemble_confidence:.1f}% < 82%")
-                            return None
-                        
-                        # Boost ML prediction with ensemble agreement
-                        ensemble_boost = (ensemble_confidence / 100) ** 0.5
-                        ml_prediction['confidence'] *= ensemble_boost
-                        ml_prediction['ensemble_validated'] = True
-                        
-                        self.logger.debug(f"✅ ENSEMBLE VALIDATED {symbol}: Ensemble {ensemble_confidence:.1f}%, ML boosted")
-                
-                except Exception as ensemble_error:
-                    self.logger.warning(f"Ensemble validation error for {symbol}: {ensemble_error}")
 
-            # WIN RATE VALIDATION - Strictly use ML to ensure high win rate
-            expected_win_rate = ml_prediction.get('expected_win_rate', 50)
-            if expected_win_rate < 85.0:  # Strict 85% win rate requirement
-                self.logger.debug(f"🚫 ML WIN RATE TOO LOW {symbol}: {expected_win_rate:.1f}% < 85%")
-                return None
-
-            # STRICT ML-BASED FILTERING - Exponential Accuracy Requirements
+            # Only proceed with favorable predictions - Optimized thresholds
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
-            model_accuracy = ml_prediction.get('model_accuracy', 75)
-            
-            # EXPONENTIAL ML ACCURACY THRESHOLD - Gets stricter as accuracy improves
-            base_threshold = 88.0  # High base threshold
-            accuracy_multiplier = (model_accuracy / 100) ** 2  # Exponential accuracy factor
-            exponential_threshold = base_threshold * accuracy_multiplier
-            
-            # ML CONFIDENCE FILTER - Only highest confidence predictions pass
-            if ml_confidence < exponential_threshold:
-                self.logger.debug(f"🚫 ML CONFIDENCE FILTER {symbol}: {ml_confidence:.1f}% < {exponential_threshold:.1f}% (Model accuracy: {model_accuracy:.1f}%)")
+
+            # Filter: Allow favorable, highly favorable, and high-confidence neutral predictions
+            if prediction_type not in ['favorable', 'highly_favorable'] and not (prediction_type == 'neutral' and ml_confidence > 70):
                 return None
-            
-            # PREDICTION TYPE FILTER - Strictly favor ML-favorable predictions
-            prediction_confidence_requirements = {
-                'extremely_favorable': 85.0,
-                'highly_favorable': 88.0,
-                'favorable': 92.0,
-                'moderate': 95.0,
-                'neutral': 97.0
-            }
-            
-            required_confidence = prediction_confidence_requirements.get(prediction_type, 98.0)
-            if ml_confidence < required_confidence:
-                self.logger.debug(f"🚫 PREDICTION TYPE FILTER {symbol}: {prediction_type} needs {required_confidence:.1f}% confidence, got {ml_confidence:.1f}%")
+
+            # Adjust signal strength for favorable predictions
+            if prediction_type == 'highly_favorable':
+                signal_strength *= 1.2
+            elif prediction_type == 'favorable':
+                signal_strength *= 1.1
+            elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
+                signal_strength *= 1.05
+
+            # Final signal strength check
+            if signal_strength < self.min_signal_strength:
                 return None
-            
-            # EXPONENTIAL SIGNAL STRENGTH ENHANCEMENT - ML-driven boosting
-            if prediction_type == 'extremely_favorable' and ml_confidence >= 95:
-                ml_boost_factor = 1.8  # Massive boost for exceptional ML predictions
-            elif prediction_type == 'highly_favorable' and ml_confidence >= 90:
-                ml_boost_factor = 1.5  # High boost for great ML predictions
-            elif prediction_type == 'favorable' and ml_confidence >= 88:
-                ml_boost_factor = 1.3  # Good boost for favorable ML predictions
-            else:
-                ml_boost_factor = 1.1  # Minimal boost for marginal predictions
-            
-            # Apply ML-driven signal strength enhancement
-            ml_enhanced_strength = signal_strength * ml_boost_factor * (ml_confidence / 100)
-            
-            # EXPONENTIAL MODEL ACCURACY BOOST
-            accuracy_boost = (model_accuracy / 100) ** 1.8  # Exponential accuracy influence
-            final_signal_strength = ml_enhanced_strength * accuracy_boost
-            
-            # STRICT ML WIN RATE FILTER - Calculate expected win rate using ML models
-            risk_probability = ml_prediction.get('risk_probability', 50) / 100
-            expected_profit = ml_prediction.get('expected_profit', 1.0)
-            
-            # Exponential win rate calculation
-            ml_win_probability = (ml_confidence / 100) * (1 - risk_probability) * (model_accuracy / 100)
-            exponential_win_rate = ml_win_probability ** 0.7 * 100  # Slightly conservative exponential
-            
-            # STRICT WIN RATE REQUIREMENT - Only allow trades with 85%+ expected win rate
-            if exponential_win_rate < 85.0:
-                self.logger.debug(f"🚫 ML WIN RATE FILTER {symbol}: Expected win rate {exponential_win_rate:.1f}% < 85%")
-                return None
-            
-            # FINAL ML STRENGTH FILTER - Exponentially strict threshold
-            exponential_strength_threshold = self.min_signal_strength * (1.0 + (model_accuracy / 200))
-            if final_signal_strength < exponential_strength_threshold:
-                self.logger.debug(f"🚫 ML STRENGTH FILTER {symbol}: Final strength {final_signal_strength:.1f} < {exponential_strength_threshold:.1f}")
-                return None
-            
-            # EXPONENTIAL CONFIDENCE VALIDATION - Multiple ML model agreement
-            confidence_validations = 0
-            if ml_confidence >= 90: confidence_validations += 1
-            if model_accuracy >= 85: confidence_validations += 1
-            if exponential_win_rate >= 88: confidence_validations += 1
-            if final_signal_strength >= 95: confidence_validations += 1
-            if expected_profit >= 1.5: confidence_validations += 1
-            
-            # Require at least 4 out of 5 ML validations to pass
-            if confidence_validations < 4:
-                self.logger.debug(f"🚫 ML VALIDATION FILTER {symbol}: Only {confidence_validations}/5 ML criteria met")
-                return None
-            
-            self.logger.info(f"✅ ML APPROVED {symbol}: Confidence {ml_confidence:.1f}%, Win Rate {exponential_win_rate:.1f}%, Strength {final_signal_strength:.1f}")
-            
-            # Update signal strength with ML enhancement
-            signal_strength = min(100, final_signal_strength)
 
             # Update last signal time and mark symbol as active
             self.last_signal_time[symbol] = current_time
@@ -3362,40 +2361,17 @@ ML Features:
 
             elif text.startswith('/ml'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
-                accuracy = ml_summary['model_performance']['signal_accuracy'] * 100
-                learning_velocity = ml_summary['model_performance'].get('learning_velocity', 0.0)
-                confidence_boost = ml_summary['model_performance'].get('confidence_boost_factor', 1.0)
-                learning_rate = ml_summary['model_performance'].get('exponential_learning_rate', 1.5)
-                
-                await self.send_message(chat_id, f"""🧠 **EXPONENTIAL ML STATUS**
+                await self.send_message(chat_id, f"""🧠 **ML STATUS**
 
-🚀 **Signal Accuracy: {accuracy:.2f}%** (Target: 95%+)
-📈 **Learning Velocity: {learning_velocity:.4f}** (Exponential)
-🔥 **Confidence Boost: {confidence_boost:.3f}x**
-⚡ **Learning Rate: {learning_rate:.2f}x** (Exponential)
-📊 **Trades Learned: {ml_summary['model_performance']['total_trades_learned']}**
-🎯 **Next Retrain: {ml_summary['next_retrain_in']} trades**
+Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+Learning: {ml_summary['learning_status'].title()}
+Next Retrain: {ml_summary['next_retrain_in']} trades
 
-**🤖 Enhanced Models Active:**
-✅ Signal Classifier (Exponential)
-✅ Profit Predictor (Advanced)
-✅ Risk Assessor (Adaptive)
-✅ Confidence Booster (New)
-✅ Accuracy Optimizer (New)
-
-**🔬 Learning Features:**
-• Real-time accuracy tracking
-• Exponential confidence boosting
-• Adaptive threshold adjustment
-• Pattern recognition enhancement
-• Win rate optimization algorithms
-
-**📊 Current Thresholds:**
-• Min Confidence: {self.ml_analyzer.min_confidence_for_signal:.1f}%
-• Signal Strength: {self.min_signal_strength}%+
-• Expected Win Rate: 80%+
-
-*Exponential learning active - accuracy improves with each trade*""")
+Models Active:
+✅ Signal Classifier
+✅ Profit Predictor  
+✅ Risk Assessor""")
 
             elif text.startswith('/scan'):
                 await self.send_message(chat_id, "🔍 **Scanning markets...**")
@@ -3540,16 +2516,11 @@ Use /train to manually scan and train""")
             self.logger.error(f"Error recording open trade for ML: {e}")
 
     async def _monitor_open_trade_ml(self, symbol: str, signal: Dict[str, Any]):
-        """EXPONENTIAL ML monitoring with real-time accuracy optimization"""
+        """Monitor open trade and continuously update ML with real-time data"""
         try:
             entry_price = signal['entry_price']
             entry_time = datetime.now()
-            update_interval = 15  # More frequent updates for exponential learning
-            ml_prediction_confidence = signal.get('ml_prediction', {}).get('confidence', 0)
-
-            # Track ML prediction accuracy in real-time
-            accuracy_checkpoints = []
-            confidence_tracking = []
+            update_interval = 30  # Update ML every 30 seconds
 
             while symbol in self.active_trades:
                 try:
@@ -3563,32 +2534,16 @@ Use /train to manually scan and train""")
                     current_time = datetime.now()
                     duration_minutes = (current_time - entry_time).total_seconds() / 60
 
-                    # Calculate unrealized P/L with leverage
+                    # Calculate unrealized P/L
                     if signal['direction'].upper() in ['BUY', 'LONG']:
                         unrealized_pnl = ((current_price - entry_price) / entry_price) * 100 * signal['optimal_leverage']
                     else:
                         unrealized_pnl = ((entry_price - current_price) / entry_price) * 100 * signal['optimal_leverage']
 
-                    # REAL-TIME ML ACCURACY TRACKING
-                    # Check if ML prediction is proving accurate
-                    if unrealized_pnl > 0 and ml_prediction_confidence >= 80:
-                        # ML prediction is proving correct - boost accuracy exponentially
-                        accuracy_boost = 1 + (unrealized_pnl / 100) * (ml_prediction_confidence / 100)
-                        accuracy_checkpoints.append(accuracy_boost)
-                        confidence_tracking.append(ml_prediction_confidence)
-                        
-                        # Apply real-time accuracy improvement
-                        current_accuracy = self.ml_analyzer.model_performance['signal_accuracy']
-                        real_time_boost = min(0.05, accuracy_boost * 0.01)  # Up to 5% real-time boost
-                        self.ml_analyzer.model_performance['signal_accuracy'] = min(0.98, current_accuracy + real_time_boost)
-                        
-                        if len(accuracy_checkpoints) % 5 == 0:  # Log every 5th checkpoint
-                            self.logger.info(f"📈 REAL-TIME ACCURACY BOOST: {symbol} ML accuracy improved to {self.ml_analyzer.model_performance['signal_accuracy']:.4f}")
-
                     # Check if TP or SL levels are hit
                     trade_status = self._check_trade_status(current_price, signal)
 
-                    # Enhanced ML data with exponential learning metrics
+                    # Update ML data with current state
                     updated_ml_data = {
                         'symbol': symbol,
                         'direction': signal['direction'],
@@ -3612,41 +2567,28 @@ Use /train to manually scan and train""")
                         'cvd_trend': signal.get('cvd_trend', 'neutral'),
                         'indicators_data': signal.get('indicators_used', []),
                         'ml_prediction': signal.get('ml_prediction', {}).get('prediction', 'unknown'),
-                        'ml_confidence': ml_prediction_confidence,
+                        'ml_confidence': signal.get('ml_prediction', {}).get('confidence', 0),
                         'entry_time': entry_time,
                         'last_update': current_time,
-                        'trade_status': 'MONITORING',
-                        'accuracy_checkpoints': len(accuracy_checkpoints),
-                        'real_time_accuracy_boost': sum(accuracy_checkpoints) / len(accuracy_checkpoints) if accuracy_checkpoints else 1.0
+                        'trade_status': 'MONITORING'
                     }
 
-                    # Feed enhanced data to ML for exponential learning
+                    # Feed updated data to ML for continuous learning
                     await self.ml_analyzer.update_open_trade_data(updated_ml_data)
 
-                    # Enhanced progress logging with ML metrics
+                    # Log progress every 2 minutes
                     if int(duration_minutes) % 2 == 0:
-                        avg_confidence = sum(confidence_tracking) / len(confidence_tracking) if confidence_tracking else 0
-                        current_ml_accuracy = self.ml_analyzer.model_performance['signal_accuracy']
-                        self.logger.info(f"🧠 EXPONENTIAL ML UPDATE: {symbol} - Duration: {duration_minutes:.1f}min, P/L: {unrealized_pnl:.2f}%, ML Accuracy: {current_ml_accuracy:.4f}, Avg Confidence: {avg_confidence:.1f}%")
+                        self.logger.info(f"🔄 ML Learning Update: {symbol} - Duration: {duration_minutes:.1f}min, Unrealized P/L: {unrealized_pnl:.2f}%, Status: {trade_status}")
 
                     # Check if trade should be closed
                     if trade_status in ['TP1_HIT', 'TP2_HIT', 'TP3_HIT', 'SL_HIT']:
-                        # Calculate final ML accuracy validation
-                        final_ml_validation = {
-                            'prediction_accuracy': 'correct' if unrealized_pnl > 0 else 'incorrect',
-                            'confidence_validation': ml_prediction_confidence,
-                            'accuracy_checkpoints_count': len(accuracy_checkpoints),
-                            'average_confidence_during_trade': sum(confidence_tracking) / len(confidence_tracking) if confidence_tracking else 0
-                        }
-
-                        # Record final trade result with ML validation
+                        # Record final trade result
                         final_result = {
                             'exit_price': current_price,
                             'profit_loss': unrealized_pnl,
                             'result': trade_status,
                             'duration_minutes': duration_minutes,
-                            'exit_time': current_time,
-                            'ml_validation': final_ml_validation
+                            'exit_time': current_time
                         }
 
                         await self.record_trade_completion(signal, final_result)
@@ -3655,55 +2597,18 @@ Use /train to manually scan and train""")
                         if symbol in self.active_trades:
                             del self.active_trades[symbol]
 
-                        # Log ML accuracy validation result
-                        accuracy_status = "✅ ACCURATE" if unrealized_pnl > 0 else "❌ INACCURATE"
-                        self.logger.info(f"🎯 ML VALIDATION: {symbol} - {trade_status} - P/L: {unrealized_pnl:.2f}% - {accuracy_status}")
+                        self.logger.info(f"✅ ML Trade Completed: {symbol} - {trade_status} - P/L: {unrealized_pnl:.2f}%")
                         break
 
                     await asyncio.sleep(update_interval)
 
                 except Exception as monitor_error:
-                    self.logger.warning(f"Exponential ML monitoring error for {symbol}: {monitor_error}")
+                    self.logger.warning(f"ML monitoring error for {symbol}: {monitor_error}")
                     await asyncio.sleep(update_interval)
                     continue
 
-            # Apply final exponential learning from this monitoring session
-            if accuracy_checkpoints:
-                await self.ml_analyzer.apply_monitoring_session_learning(symbol, accuracy_checkpoints, confidence_tracking)
-
         except Exception as e:
-            self.logger.error(f"Error in exponential ML trade monitoring for {symbol}: {e}")
-
-    async def apply_monitoring_session_learning(self, symbol: str, accuracy_checkpoints: List[float], confidence_tracking: List[float]):
-        """Apply learning from monitoring session to boost future accuracy"""
-        try:
-            if not accuracy_checkpoints:
-                return
-                
-            # Calculate session performance metrics
-            avg_accuracy_boost = sum(accuracy_checkpoints) / len(accuracy_checkpoints)
-            max_accuracy_boost = max(accuracy_checkpoints)
-            avg_confidence = sum(confidence_tracking) / len(confidence_tracking) if confidence_tracking else 0
-            
-            # Exponential learning from monitoring session
-            if avg_accuracy_boost > 1.1:  # Session showed good predictive power
-                # Boost learning rate exponentially
-                session_boost = (avg_accuracy_boost ** self.learning_rate_multiplier) * 0.1
-                current_accuracy = self.model_performance['signal_accuracy']
-                self.model_performance['signal_accuracy'] = min(0.98, current_accuracy + session_boost)
-                
-                # Reduce confidence threshold for similar patterns
-                if avg_confidence > 85:
-                    self.min_confidence_for_signal = max(70.0, self.min_confidence_for_signal - 0.5)
-                
-                self.logger.info(f"🚀 Session learning boost applied for {symbol}: Accuracy +{session_boost:.4f}, Confidence threshold: {self.min_confidence_for_signal:.1f}%")
-            
-            # Update learning velocity based on session performance
-            velocity_adjustment = (avg_accuracy_boost - 1.0) * self.learning_rate_multiplier
-            self.model_performance['learning_velocity'] = max(0, self.model_performance.get('learning_velocity', 0) + velocity_adjustment)
-            
-        except Exception as e:
-            self.logger.error(f"Error applying monitoring session learning: {e}")
+            self.logger.error(f"Error in ML trade monitoring for {symbol}: {e}")
 
     def _check_trade_status(self, current_price: float, signal: Dict[str, Any]) -> str:
         """Check if trade has hit TP or SL levels"""

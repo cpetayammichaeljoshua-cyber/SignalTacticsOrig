@@ -47,7 +47,7 @@ except ImportError:
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.preprocessing import LabelEncoder
+    from sklearn.preprocessing import LabelEncoder, StandardScaler
     from sklearn.metrics import classification_report, accuracy_score
     from sklearn.linear_model import LogisticRegression
     ML_AVAILABLE = True

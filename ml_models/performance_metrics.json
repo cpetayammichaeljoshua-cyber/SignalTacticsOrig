@@ -1,8 +1,8 @@
 {
-  "signal_accuracy": 0.68,
-  "profit_prediction_accuracy": 0.49617359853266785,
-  "risk_assessment_accuracy": 0.7066666666666667,
-  "total_trades_learned": 725,
-  "last_training_time": "2025-08-30T01:54:50.305394",
+  "signal_accuracy": 0.6466666666666666,
+  "profit_prediction_accuracy": 0.2181210777049739,
+  "risk_assessment_accuracy": 0.46,
+  "total_trades_learned": 875,
+  "last_training_time": "2025-08-31T04:06:16.927493",
   "win_rate_improvement": 0.0
 }

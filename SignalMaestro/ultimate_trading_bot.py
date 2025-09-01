@@ -68,7 +68,12 @@ class AdvancedMLTradeAnalyzer:
         self.profit_predictor = None
         self.risk_assessor = None
         self.market_regime_detector = None
-        # Removed StandardScaler to avoid compatibility issues
+        # Initialize StandardScaler for ML models
+        if ML_AVAILABLE:
+            from sklearn.preprocessing import StandardScaler
+            self.scaler = StandardScaler()
+        else:
+            self.scaler = None
 
         # Learning database
         self.db_path = "advanced_ml_trading.db"
@@ -564,8 +569,9 @@ class AdvancedMLTradeAnalyzer:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-            # Scale features
-            self.scaler = StandardScaler() # Initialize scaler here
+            # Scale features - check if scaler exists
+            if not hasattr(self, 'scaler') or self.scaler is None:
+                self.scaler = StandardScaler()
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
 
@@ -1803,7 +1809,7 @@ class UltimateTradingBot:
                             best_signal = max(valid_signals, key=lambda x: x.get('ml_prediction', {}).get('confidence', 0))
 
                             # Use the stricter confidence threshold for signal generation
-                            if best_signal.get('ml_prediction', {}).get('confidence', 0) >= self.min_confidence_for_signal and \
+                            if best_signal.get('ml_prediction', {}).get('confidence', 0) >= self.ml_analyzer.min_confidence_for_signal and \
                                best_signal.get('signal_strength', 0) >= self.min_signal_strength:
                                 signals.append(best_signal)
                     except Exception as e:

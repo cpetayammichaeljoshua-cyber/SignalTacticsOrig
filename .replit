@@ -7,7 +7,27 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Project"
+runButton = "Ultimate Trading Bot"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Signal Bot"
+
+[[workflows.workflow]]
+name = "Signal Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python automated_signal_bot.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -152,26 +172,6 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_ultimate_bot.py"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Signal Bot"
-
-[[workflows.workflow]]
-name = "Signal Bot"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd SignalMaestro && python ultimate_trading_bot.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [[ports]]
 localPort = 3000

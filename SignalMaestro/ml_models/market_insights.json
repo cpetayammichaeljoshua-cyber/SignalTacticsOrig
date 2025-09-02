@@ -1,0 +1,79 @@
+{
+  "best_time_sessions": {
+    "mean": {
+      "ASIA_MAIN": 7.558321978500887
+    },
+    "count": {
+      "ASIA_MAIN": 81
+    },
+    "std": {
+      "ASIA_MAIN": 11.134121176016759
+    }
+  },
+  "symbol_performance": {
+    "mean": {
+      "AAVEUSDT": 9.073192549758774,
+      "ADAUSDT": 7.345113902491029,
+      "APTUSDT": 7.644131164717881,
+      "ARBUSDT": 6.79163270850313,
+      "ARKMUSDT": 7.606169448552758,
+      "BCHUSDT": 7.263112626029253,
+      "CAKEUSDT": 0.0,
+      "CHZUSDT": 7.4055373222249585,
+      "COMPUSDT": 0.0,
+      "FETUSDT": 12.286943571073857,
+      "IMXUSDT": 6.875578474150299,
+      "JUPUSDT": 6.940106877645921,
+      "SEIUSDT": 11.27415891195384,
+      "SOLUSDT": 7.586852313561364,
+      "TRXUSDT": 0.0,
+      "UNIUSDT": 11.422527763088322,
+      "WLDUSDT": 8.612769866789167
+    },
+    "count": {
+      "AAVEUSDT": 6,
+      "ADAUSDT": 7,
+      "APTUSDT": 3,
+      "ARBUSDT": 6,
+      "ARKMUSDT": 6,
+      "BCHUSDT": 7,
+      "CAKEUSDT": 2,
+      "CHZUSDT": 6,
+      "COMPUSDT": 2,
+      "FETUSDT": 4,
+      "IMXUSDT": 6,
+      "JUPUSDT": 6,
+      "SEIUSDT": 4,
+      "SOLUSDT": 7,
+      "TRXUSDT": 2,
+      "UNIUSDT": 4,
+      "WLDUSDT": 3
+    },
+    "std": {
+      "AAVEUSDT": 14.056129456859576,
+      "ADAUSDT": 12.544170088198491,
+      "APTUSDT": 13.240023557012028,
+      "ARBUSDT": 10.521552149436078,
+      "ARKMUSDT": 11.783427041070594,
+      "BCHUSDT": 12.40412624775688,
+      "CAKEUSDT": 0.0,
+      "CHZUSDT": 11.472609087477894,
+      "COMPUSDT": 0.0,
+      "FETUSDT": 14.187740356554468,
+      "IMXUSDT": 10.651600370370526,
+      "JUPUSDT": 10.751567343208885,
+      "SEIUSDT": 13.018277365406338,
+      "SOLUSDT": 12.957017020944994,
+      "TRXUSDT": 0.0,
+      "UNIUSDT": 13.189598957690032,
+      "WLDUSDT": 14.917755003177065
+    }
+  },
+  "indicator_effectiveness": {
+    "signal_strength": 0.40411128932267876,
+    "rsi_value": NaN,
+    "volume_ratio": NaN,
+    "profit_loss": 1.0
+  },
+  "risk_patterns": {}
+}

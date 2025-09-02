@@ -70,8 +70,12 @@ class AdvancedMLTradeAnalyzer:
         self.market_regime_detector = None
         # Initialize StandardScaler for ML models
         if ML_AVAILABLE:
-            from sklearn.preprocessing import StandardScaler
-            self.scaler = StandardScaler()
+            try:
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
+            except ImportError:
+                self.logger.warning("StandardScaler not available, using fallback")
+                self.scaler = None
         else:
             self.scaler = None
 
@@ -1496,10 +1500,13 @@ class UltimateTradingBot:
             conn = sqlite3.connect(self.ml_analyzer.db_path)
             cursor = conn.cursor()
 
-            # Get recent trades for performance analysis
+            # Get recent trades for performance analysis with proper error handling
             cursor.execute("""
                 SELECT profit_loss, trade_result 
                 FROM ml_trades 
+                WHERE profit_loss IS NOT NULL 
+                AND trade_result IS NOT NULL
+                AND trade_result != 'OPEN'
                 ORDER BY created_at DESC 
                 LIMIT ?
             """, (self.adaptive_leverage['performance_window'],))
@@ -1507,70 +1514,89 @@ class UltimateTradingBot:
             recent_trades = cursor.fetchall()
             conn.close()
 
-            if not recent_trades:
-                return 0.0  # No performance adjustment if no data
-
-            # Calculate performance metrics
-            wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
-            losses = len(recent_trades) - wins
-
-            if len(recent_trades) == 0:
+            if not recent_trades or len(recent_trades) < 3:
+                # Return neutral factor for insufficient data
                 return 0.0
 
-            win_rate = wins / len(recent_trades)
+            # Calculate performance metrics with proper validation
+            profitable_trades = []
+            losing_trades = []
+            
+            for trade in recent_trades:
+                profit_loss = trade[0]
+                if profit_loss is not None:
+                    if profit_loss > 0:
+                        profitable_trades.append(profit_loss)
+                    else:
+                        losing_trades.append(profit_loss)
 
-            # Calculate consecutive performance
+            total_trades = len(profitable_trades) + len(losing_trades)
+            if total_trades == 0:
+                return 0.0
+
+            win_rate = len(profitable_trades) / total_trades
+            avg_profit = sum(profitable_trades) / len(profitable_trades) if profitable_trades else 0
+            avg_loss = sum(losing_trades) / len(losing_trades) if losing_trades else 0
+
+            # Calculate consecutive performance from most recent trades
             consecutive_wins = 0
             consecutive_losses = 0
-
-            for trade in recent_trades:
-                if trade[0] and trade[0] > 0:  # Winning trade
-                    consecutive_wins += 1
-                    consecutive_losses = 0
-                else:  # Losing trade
-                    consecutive_losses += 1
-                    consecutive_wins = 0
-
-                # Only count the current streak
-                if consecutive_wins > 0 and consecutive_losses == 0:
-                    break
-                elif consecutive_losses > 0 and consecutive_wins == 0:
-                    break
+            
+            for trade in recent_trades[:10]:  # Check last 10 trades only
+                profit_loss = trade[0]
+                if profit_loss is None:
+                    continue
+                    
+                if profit_loss > 0:
+                    if consecutive_losses == 0:
+                        consecutive_wins += 1
+                    else:
+                        break
+                else:
+                    if consecutive_wins == 0:
+                        consecutive_losses += 1
+                    else:
+                        break
 
             # Update adaptive leverage tracking
             self.adaptive_leverage.update({
-                'recent_wins': wins,
-                'recent_losses': losses,
+                'recent_wins': len(profitable_trades),
+                'recent_losses': len(losing_trades),
                 'consecutive_wins': consecutive_wins,
                 'consecutive_losses': consecutive_losses
             })
 
-            # Calculate performance factor (-1 to +1)
+            # Calculate performance factor (-0.5 to +0.5 for more reasonable adjustments)
             performance_factor = 0.0
 
-            # Win rate adjustment
-            if win_rate >= 0.7:  # High win rate - increase leverage
-                performance_factor += 0.5
-            elif win_rate <= 0.4:  # Low win rate - decrease leverage
-                performance_factor -= 0.5
-            else:
-                # Moderate performance gets a small boost
-                performance_factor += (win_rate - 0.5) * 0.4
-
-            # Consecutive performance adjustment
-            if consecutive_wins >= 3:
+            # Win rate adjustment (more conservative)
+            if win_rate >= 0.75:  # Very high win rate
                 performance_factor += 0.3
-            elif consecutive_losses >= 3:
-                performance_factor -= 0.5
-            elif consecutive_wins >= 1:
+            elif win_rate >= 0.6:  # Good win rate
+                performance_factor += 0.15
+            elif win_rate <= 0.35:  # Poor win rate
+                performance_factor -= 0.3
+            elif win_rate <= 0.5:  # Below average
+                performance_factor -= 0.15
+
+            # Profit quality adjustment
+            if avg_profit > 2.0:  # High average profits
                 performance_factor += 0.1
+            elif avg_loss < -3.0:  # Large average losses
+                performance_factor -= 0.15
 
-            # Add base performance factor to avoid 0.0
-            if performance_factor == 0.0:
-                performance_factor = 0.25  # Default positive factor
+            # Consecutive performance adjustment (more conservative)
+            if consecutive_wins >= 5:
+                performance_factor += 0.2
+            elif consecutive_wins >= 3:
+                performance_factor += 0.1
+            elif consecutive_losses >= 3:
+                performance_factor -= 0.25
+            elif consecutive_losses >= 5:
+                performance_factor -= 0.4
 
-            # Limit performance factor
-            performance_factor = max(-1.0, min(1.0, performance_factor))
+            # Limit performance factor to reasonable range
+            performance_factor = max(-0.5, min(0.5, performance_factor))
 
             return performance_factor
 
@@ -2406,7 +2432,10 @@ Next Retrain: {ml_summary['next_retrain_in']} trades
 Models Active:
 ✅ Signal Classifier
 ✅ Profit Predictor  
-✅ Risk Assessor""")
+✅ Risk Assessor
+
+Performance Factor: {self._get_adaptive_performance_factor():.2f}
+Adaptive Leverage: ✅ Active""")
 
             elif text.startswith('/scan'):
                 await self.send_message(chat_id, "🔍 **Scanning markets...**")
@@ -2435,6 +2464,100 @@ Models Active:
                     await self.send_message(chat_id, f"✅ **{len(signals)} signals found**")
                 else:
                     await self.send_message(chat_id, "📊 **No signals found**\nML filtering for quality")
+
+            elif text.startswith('/predict'):
+                # ML prediction command
+                parts = text.split()
+                symbol = parts[1].upper() if len(parts) > 1 else 'BTCUSDT'
+                
+                try:
+                    df = await self.get_binance_data(symbol, '1h', 100)
+                    if df is not None:
+                        indicators = self.calculate_advanced_indicators(df)
+                        if indicators:
+                            ml_signal_data = {
+                                'symbol': symbol,
+                                'direction': 'BUY',
+                                'signal_strength': indicators.get('signal_strength', 85),
+                                'leverage': 35,
+                                'market_volatility': indicators.get('market_volatility', 0.02),
+                                'volume_ratio': indicators.get('volume_ratio', 1.0),
+                                'rsi': indicators.get('rsi', 50),
+                                'cvd_trend': indicators.get('cvd_trend', 'neutral'),
+                                'ema_bullish': indicators.get('ema_bullish', False)
+                            }
+                            
+                            prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
+                            
+                            await self.send_message(chat_id, f"""🤖 **ML PREDICTION - {symbol}**
+
+Prediction: {prediction.get('prediction', 'unknown').title()}
+Confidence: {prediction.get('confidence', 0):.1f}%
+Expected Profit: {prediction.get('expected_profit', 0):.2f}%
+Risk Level: {prediction.get('risk_probability', 50):.1f}%
+
+Recommendation: {prediction.get('recommendation', 'No recommendation')}
+
+Model Accuracy: {prediction.get('model_accuracy', 0):.1f}%
+Trades Learned: {prediction.get('trades_learned_from', 0)}""")
+                        else:
+                            await self.send_message(chat_id, f"❌ Could not analyze {symbol}")
+                    else:
+                        await self.send_message(chat_id, f"❌ Could not fetch data for {symbol}")
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ Error predicting {symbol}: {str(e)}")
+
+            elif text.startswith('/insights'):
+                try:
+                    ml_summary = self.ml_analyzer.get_ml_summary()
+                    performance_factor = self._get_adaptive_performance_factor()
+                    
+                    insights_msg = f"""🔍 **TRADING INSIGHTS**
+
+**🧠 ML Learning Status:**
+• Status: {ml_summary['learning_status'].title()}
+• Trades Analyzed: {ml_summary['model_performance']['total_trades_learned']}
+• Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+
+**📈 Performance Insights:**
+• Performance Factor: {performance_factor:.2f}
+• Consecutive Wins: {self.adaptive_leverage['consecutive_wins']}
+• Consecutive Losses: {self.adaptive_leverage['consecutive_losses']}
+• Recent Win Rate: {(self.adaptive_leverage['recent_wins'] / max(1, self.adaptive_leverage['recent_wins'] + self.adaptive_leverage['recent_losses']))*100:.1f}%
+
+**🎯 Adaptive Leverage:**
+• Current Range: {self.leverage_config['min_leverage']}x - {self.leverage_config['max_leverage']}x
+• Base Leverage: {self.leverage_config['base_leverage']}x
+• Performance Adjustment: {performance_factor * 10:.1f}x
+
+**🔄 Next Actions:**
+• Retrain in: {ml_summary.get('next_retrain_in', 0)} trades
+• Learning Velocity: Active
+• Model Optimization: Continuous
+
+*Insights improve with more trading data*"""
+                    
+                    await self.send_message(chat_id, insights_msg)
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ Error loading insights: {str(e)}")
+
+            elif text.startswith('/learning'):
+                # Same as /ml command for compatibility
+                ml_summary = self.ml_analyzer.get_ml_summary()
+                await self.send_message(chat_id, f"""🧠 **ML LEARNING STATUS**
+
+Signal Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
+Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+Learning: {ml_summary['learning_status'].title()}
+Next Retrain: {ml_summary['next_retrain_in']} trades
+
+Models Active:
+✅ Signal Classifier
+✅ Profit Predictor  
+✅ Risk Assessor
+
+Adaptive Performance: {self._get_adaptive_performance_factor():.2f}""")
 
             elif text.startswith('/train'):
                 await self.send_message(chat_id, "🧠 **Scanning channel for closed trades...**")

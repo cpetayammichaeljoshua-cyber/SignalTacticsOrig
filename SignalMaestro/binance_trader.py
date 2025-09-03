@@ -15,6 +15,10 @@ import ccxt.async_support as ccxt
 from typing import Dict, Any, List, Optional
 from decimal import Decimal, ROUND_DOWN
 import time
+import json
+import os
+from datetime import datetime
+import aiosqlite
 
 from config import Config
 from technical_analysis import TechnicalAnalysis
@@ -27,6 +31,9 @@ class BinanceTrader:
         self.logger = logging.getLogger(__name__)
         self.exchange = None
         self.technical_analysis = TechnicalAnalysis()
+        self.all_futures_symbols = []
+        self.trade_log_file = "trade_logs.json"
+        self.trade_db_file = "trade_database.db"
         
     async def initialize(self):
         """Initialize Binance exchange connection"""
@@ -44,7 +51,7 @@ class BinanceTrader:
                 'rateLimit': 1200,
                 'enableRateLimit': True,
                 'options': {
-                    'defaultType': 'spot',
+                    'defaultType': 'future',
                 }
             })
             
@@ -53,11 +60,349 @@ class BinanceTrader:
             
             # Test connection
             await self.exchange.load_markets()
-            self.logger.info("Binance exchange initialized successfully")
+            
+            # Load all futures symbols
+            await self.load_all_futures_symbols()
+            
+            # Initialize trade tracking database
+            await self.initialize_trade_database()
+            
+            self.logger.info("Binance futures exchange initialized successfully")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize Binance exchange: {e}")
             raise
+    
+    async def load_all_futures_symbols(self):
+        """Load all available futures trading symbols from Binance"""
+        try:
+            if not self.exchange:
+                self.logger.error("Exchange not initialized")
+                return
+            
+            markets = self.exchange.markets
+            futures_symbols = []
+            
+            for symbol, market in markets.items():
+                # Filter for futures markets that are active and USDT-settled
+                if (market.get('type') == 'future' and 
+                    market.get('active', False) and 
+                    market.get('quote') == 'USDT' and
+                    market.get('settle') == 'USDT'):
+                    futures_symbols.append(symbol)
+            
+            # Sort symbols by volume if available (most active first)
+            self.all_futures_symbols = sorted(futures_symbols)
+            
+            self.logger.info(f"Loaded {len(self.all_futures_symbols)} futures symbols")
+            return self.all_futures_symbols
+            
+        except Exception as e:
+            self.logger.error(f"Error loading futures symbols: {e}")
+            # Fallback to common futures symbols if API fails
+            self.all_futures_symbols = [
+                'BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT', 'SOL/USDT',
+                'DOGE/USDT', 'AVAX/USDT', 'DOT/USDT', 'MATIC/USDT', 'LINK/USDT', 'LTC/USDT'
+            ]
+            return self.all_futures_symbols
+    
+    def get_futures_symbols(self) -> List[str]:
+        """Get list of all available futures symbols"""
+        return self.all_futures_symbols
+    
+    async def initialize_trade_database(self):
+        """Initialize SQLite database for trade tracking"""
+        try:
+            async with aiosqlite.connect(self.trade_db_file) as db:
+                await db.execute('''
+                    CREATE TABLE IF NOT EXISTS trades (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        trade_id TEXT UNIQUE,
+                        symbol TEXT NOT NULL,
+                        side TEXT NOT NULL,
+                        amount REAL NOT NULL,
+                        entry_price REAL NOT NULL,
+                        exit_price REAL,
+                        pnl REAL,
+                        pnl_percentage REAL,
+                        signal_strength REAL,
+                        entry_time TEXT NOT NULL,
+                        exit_time TEXT,
+                        status TEXT DEFAULT 'open',
+                        technical_indicators TEXT,
+                        market_conditions TEXT,
+                        trade_duration REAL,
+                        commission REAL,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                await db.execute('''
+                    CREATE TABLE IF NOT EXISTS trade_performance (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT NOT NULL,
+                        total_trades INTEGER DEFAULT 0,
+                        winning_trades INTEGER DEFAULT 0,
+                        losing_trades INTEGER DEFAULT 0,
+                        win_rate REAL DEFAULT 0.0,
+                        total_pnl REAL DEFAULT 0.0,
+                        avg_win REAL DEFAULT 0.0,
+                        avg_loss REAL DEFAULT 0.0,
+                        max_win REAL DEFAULT 0.0,
+                        max_loss REAL DEFAULT 0.0,
+                        profit_factor REAL DEFAULT 0.0,
+                        last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                await db.commit()
+                self.logger.info("Trade database initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Error initializing trade database: {e}")
+    
+    async def log_trade_entry(self, trade_data: Dict[str, Any]) -> str:
+        """Log trade entry to database and file"""
+        try:
+            trade_id = f"{trade_data['symbol']}_{int(datetime.now().timestamp())}"
+            
+            # Log to database
+            async with aiosqlite.connect(self.trade_db_file) as db:
+                await db.execute('''
+                    INSERT INTO trades (
+                        trade_id, symbol, side, amount, entry_price, entry_time,
+                        signal_strength, technical_indicators, market_conditions
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    trade_id,
+                    trade_data['symbol'],
+                    trade_data['side'],
+                    trade_data['amount'],
+                    trade_data['entry_price'],
+                    datetime.now().isoformat(),
+                    trade_data.get('signal_strength', 0),
+                    json.dumps(trade_data.get('technical_indicators', {})),
+                    json.dumps(trade_data.get('market_conditions', {}))
+                ))
+                await db.commit()
+            
+            # Also log to JSON file for backup
+            await self._log_to_json_file('entry', trade_id, trade_data)
+            
+            self.logger.info(f"Trade entry logged: {trade_id}")
+            return trade_id
+            
+        except Exception as e:
+            self.logger.error(f"Error logging trade entry: {e}")
+            return ""
+    
+    async def log_trade_exit(self, trade_id: str, exit_data: Dict[str, Any]):
+        """Log trade exit and calculate PnL"""
+        try:
+            async with aiosqlite.connect(self.trade_db_file) as db:
+                # Get trade entry data
+                cursor = await db.execute(
+                    'SELECT * FROM trades WHERE trade_id = ?', (trade_id,)
+                )
+                trade = await cursor.fetchone()
+                
+                if not trade:
+                    self.logger.error(f"Trade {trade_id} not found for exit logging")
+                    return
+                
+                # Calculate PnL
+                entry_price = trade[5]  # entry_price column
+                exit_price = exit_data['exit_price']
+                amount = trade[4]  # amount column
+                side = trade[3]  # side column
+                
+                if side.upper() == 'LONG':
+                    pnl = (exit_price - entry_price) * amount
+                else:  # SHORT
+                    pnl = (entry_price - exit_price) * amount
+                
+                pnl_percentage = (pnl / (entry_price * amount)) * 100
+                
+                # Calculate trade duration
+                entry_time = datetime.fromisoformat(trade[9])  # entry_time column
+                exit_time = datetime.now()
+                trade_duration = (exit_time - entry_time).total_seconds() / 60  # in minutes
+                
+                # Update trade record
+                await db.execute('''
+                    UPDATE trades SET 
+                        exit_price = ?, exit_time = ?, pnl = ?, pnl_percentage = ?,
+                        status = 'closed', trade_duration = ?, commission = ?
+                    WHERE trade_id = ?
+                ''', (
+                    exit_price,
+                    exit_time.isoformat(),
+                    pnl,
+                    pnl_percentage,
+                    trade_duration,
+                    exit_data.get('commission', 0),
+                    trade_id
+                ))
+                
+                await db.commit()
+                
+                # Update performance metrics
+                await self._update_performance_metrics(trade[2], pnl)  # trade[2] is symbol
+                
+                # Log to JSON file
+                await self._log_to_json_file('exit', trade_id, {
+                    **exit_data,
+                    'pnl': pnl,
+                    'pnl_percentage': pnl_percentage,
+                    'trade_duration': trade_duration
+                })
+                
+                self.logger.info(f"Trade exit logged: {trade_id}, PnL: {pnl:.4f} ({pnl_percentage:.2f}%)")
+                
+        except Exception as e:
+            self.logger.error(f"Error logging trade exit: {e}")
+    
+    async def _update_performance_metrics(self, symbol: str, pnl: float):
+        """Update performance metrics for symbol"""
+        try:
+            async with aiosqlite.connect(self.trade_db_file) as db:
+                # Get current performance data
+                cursor = await db.execute(
+                    'SELECT * FROM trade_performance WHERE symbol = ?', (symbol,)
+                )
+                perf = await cursor.fetchone()
+                
+                if perf:
+                    # Update existing record
+                    total_trades = perf[2] + 1
+                    winning_trades = perf[3] + (1 if pnl > 0 else 0)
+                    losing_trades = perf[4] + (1 if pnl <= 0 else 0)
+                    total_pnl = perf[5] + pnl
+                    
+                    win_rate = (winning_trades / total_trades) * 100
+                    
+                    # Calculate averages and extremes
+                    if pnl > 0:
+                        avg_win = ((perf[6] * perf[3]) + pnl) / winning_trades if winning_trades > 0 else 0
+                        max_win = max(perf[8], pnl)
+                        avg_loss = perf[7]
+                        max_loss = perf[9]
+                    else:
+                        avg_loss = ((perf[7] * perf[4]) + pnl) / losing_trades if losing_trades > 0 else 0
+                        max_loss = min(perf[9], pnl)
+                        avg_win = perf[6]
+                        max_win = perf[8]
+                    
+                    profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+                    
+                    await db.execute('''
+                        UPDATE trade_performance SET
+                            total_trades = ?, winning_trades = ?, losing_trades = ?,
+                            win_rate = ?, total_pnl = ?, avg_win = ?, avg_loss = ?,
+                            max_win = ?, max_loss = ?, profit_factor = ?,
+                            last_updated = CURRENT_TIMESTAMP
+                        WHERE symbol = ?
+                    ''', (
+                        total_trades, winning_trades, losing_trades, win_rate,
+                        total_pnl, avg_win, avg_loss, max_win, max_loss,
+                        profit_factor, symbol
+                    ))
+                else:
+                    # Create new record
+                    await db.execute('''
+                        INSERT INTO trade_performance (
+                            symbol, total_trades, winning_trades, losing_trades,
+                            win_rate, total_pnl, avg_win, avg_loss, max_win, max_loss
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        symbol, 1, 1 if pnl > 0 else 0, 1 if pnl <= 0 else 0,
+                        100 if pnl > 0 else 0, pnl,
+                        pnl if pnl > 0 else 0, pnl if pnl <= 0 else 0,
+                        pnl if pnl > 0 else 0, pnl if pnl <= 0 else 0
+                    ))
+                
+                await db.commit()
+                
+        except Exception as e:
+            self.logger.error(f"Error updating performance metrics: {e}")
+    
+    async def _log_to_json_file(self, action: str, trade_id: str, data: Dict[str, Any]):
+        """Log trade data to JSON file for backup"""
+        try:
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'action': action,
+                'trade_id': trade_id,
+                'data': data
+            }
+            
+            # Read existing logs
+            if os.path.exists(self.trade_log_file):
+                with open(self.trade_log_file, 'r') as f:
+                    logs = json.load(f)
+            else:
+                logs = []
+            
+            # Append new log
+            logs.append(log_entry)
+            
+            # Keep only last 10000 logs to prevent file from getting too large
+            if len(logs) > 10000:
+                logs = logs[-10000:]
+            
+            # Write back to file
+            with open(self.trade_log_file, 'w') as f:
+                json.dump(logs, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Error logging to JSON file: {e}")
+    
+    async def get_trade_performance(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+        """Get trade performance statistics"""
+        try:
+            async with aiosqlite.connect(self.trade_db_file) as db:
+                if symbol:
+                    cursor = await db.execute(
+                        'SELECT * FROM trade_performance WHERE symbol = ?', (symbol,)
+                    )
+                    result = await cursor.fetchone()
+                    if result:
+                        return {
+                            'symbol': result[1],
+                            'total_trades': result[2],
+                            'winning_trades': result[3],
+                            'losing_trades': result[4],
+                            'win_rate': result[5],
+                            'total_pnl': result[6],
+                            'avg_win': result[7],
+                            'avg_loss': result[8],
+                            'max_win': result[9],
+                            'max_loss': result[10],
+                            'profit_factor': result[11]
+                        }
+                else:
+                    # Get overall performance
+                    cursor = await db.execute('SELECT * FROM trade_performance')
+                    results = await cursor.fetchall()
+                    
+                    if results:
+                        total_trades = sum(r[2] for r in results)
+                        winning_trades = sum(r[3] for r in results)
+                        total_pnl = sum(r[6] for r in results)
+                        
+                        return {
+                            'total_trades': total_trades,
+                            'winning_trades': winning_trades,
+                            'losing_trades': total_trades - winning_trades,
+                            'win_rate': (winning_trades / total_trades) * 100 if total_trades > 0 else 0,
+                            'total_pnl': total_pnl,
+                            'symbols_traded': len(results)
+                        }
+                
+            return {}
+            
+        except Exception as e:
+            self.logger.error(f"Error getting trade performance: {e}")
+            return {}
     
     async def close(self):
         """Close exchange connection"""

@@ -100,10 +100,68 @@ class PerfectScalpingBot:
         # Scalping parameters - optimized for scalping only
         self.timeframes = ['1m', '3m', '5m', '15m', '1h', '4h']  # Enhanced with 1m for ultra-scalping
 
-        # Symbols will be loaded dynamically from Binance futures API
-        self.symbols = []  # Will be populated after trader initialization
-        self.trade_log_file = "trade_logs.json"
-        self.trade_db_file = "trade_database.db"
+        # All major Binance pairs for maximum opportunities
+        self.symbols = [
+            # Top Market Cap
+            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT', 'DOGEUSDT',
+
+            # Layer 1 & Major Altcoins
+            'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'ETCUSDT',
+            'ATOMUSDT', 'ALGOUSDT', 'XLMUSDT', 'VETUSDT', 'TRXUSDT', 'EOSUSDT', 'THETAUSDT',
+
+            # DeFi Tokens
+            'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
+            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT', 'RAMPUSDT',
+
+            # Layer 2 & Scaling
+            'MATICUSDT', 'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
+
+            # Gaming & Metaverse
+            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
+            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT', 'STEPNUSDT',
+
+            # Infrastructure & Storage
+            'FILUSDT', 'ARUSDT', 'ICPUSDT', 'STORJUSDT', 'SCUSDT',
+
+            # Privacy & Security
+            'XMRUSDT', 'ZECUSDT', 'DASHUSDT', 'SCRTUSDT',
+
+            # Meme & Social
+            'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT',
+
+            # AI & Data
+            'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'RNDRУСDT', 'GRTUSDT',
+
+            # Oracles & Middleware
+            'LINKUSDT', 'BANDUSDT', 'APIUSDT', 'CHAIUSDT',
+
+            # Enterprise & Real World Assets
+            'HBARUSDT', 'XDCUSDT', 'QNTUSDT', 'NXMUSDT',
+
+            # High Volume Trading Pairs
+            'BTCDOMUSDT', 'DEFIUSDT', 'NFTUSDT',
+
+            # Additional High-Volume Pairs
+            'NEARUSDT', 'FTMUSDT', 'ONEUSDT', 'ZILUSDT', 'RVNUSDT', 'WAVESUSDT',
+            'ONTUSDT', 'QTUMУСDT', 'BATUSDT', 'IOTAUSDT', 'NEOУСDT', 'GASUSDT',
+            'OMGUSDT', 'ZRXUSDT', 'KNCUSDT', 'LRCUSDT', 'REPUSDT', 'BZRXUSDT',
+
+            # Emerging & High Volatility
+            'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'PYTHUSDT',
+            'WLDUSDT', 'PENDLEUSDT', 'ARKUSDT', 'JUPUSDT', 'WIFUSDT', 'BOMEUSDT',
+
+            # Cross-Chain & Bridges
+            'DOTUSDT', 'ATOMUSDT', 'OSMOUSDT', 'INJUSDT', 'KAVAUSDT', 'HARDUSDT',
+
+            # New Listings & Trending
+            'REZUSDT', 'BBUSDT', 'NOTUSDT', 'IOUSDT', 'TAPUSDT', 'ZROUSDT',
+            'LISAUSDT', 'OMNIUSDT', 'SAGAUSDT', 'TOKENUSDT', 'ETHFIUSDT',
+
+            # Additional Major Pairs
+            'KAVAUSDT', 'BANDUSDT', 'RLCUSDT', 'FETUSDT', 'CTSIUSDT', 'AKROUSDT',
+            'AXSUSDT', 'HARDUSDT', 'DUSKUSDT', 'UNFIUSDT', 'ROSEUSDT', 'AVAUSDT',
+            'XEMUSDT', 'SKLУСDT', 'GLMRУСDT', 'GMXУСDT', 'BLURUSDT', 'MAGICUSDT'
+        ]
 
         # CVD (Cumulative Volume Delta) tracking for BTC PERP
         self.cvd_data = {
@@ -165,12 +223,6 @@ class PerfectScalpingBot:
         else:
             self.ml_analyzer = None
             self.logger.warning("⚠️ ML Trade Analyzer not available")
-
-        # Load all futures symbols
-        asyncio.create_task(self.load_futures_symbols())
-
-        # Initialize trade tracking database
-        asyncio.create_task(self.initialize_trade_database())
 
         self.logger.info("Perfect Scalping Bot initialized")
 
@@ -378,153 +430,6 @@ class PerfectScalpingBot:
         except Exception as e:
             self.logger.error(f"Error calculating CVD for BTC PERP: {e}")
             return self.cvd_data
-
-    async def load_futures_symbols(self):
-        """Load all available futures symbols from Binance API"""
-        try:
-            self.logger.info("Loading all futures symbols from Binance...")
-            
-            # Get exchange info to find all futures symbols
-            url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        # Filter for active USDT-settled futures
-                        futures_symbols = []
-                        for symbol_info in data.get('symbols', []):
-                            if (symbol_info.get('status') == 'TRADING' and 
-                                symbol_info.get('quoteAsset') == 'USDT' and
-                                symbol_info.get('contractType') == 'PERPETUAL'):
-                                symbol = symbol_info['symbol']
-                                futures_symbols.append(symbol)
-                        
-                        # Sort by symbol name for consistency
-                        self.symbols = sorted(futures_symbols)
-                        
-                        self.logger.info(f"✅ Loaded {len(self.symbols)} futures symbols successfully")
-                        
-                        # Log first 10 symbols for verification
-                        if self.symbols:
-                            sample_symbols = self.symbols[:10]
-                            self.logger.info(f"Sample symbols: {', '.join(sample_symbols)}")
-                    else:
-                        self.logger.error(f"Failed to load symbols, status: {response.status}")
-                        # Fallback to common symbols
-                        self.symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 
-                                       'SOLUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT']
-                        self.logger.info(f"Using fallback symbols: {len(self.symbols)} symbols")
-                        
-        except Exception as e:
-            self.logger.error(f"Error loading futures symbols: {e}")
-            # Fallback to common symbols if API fails
-            self.symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 
-                           'SOLUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT']
-            self.logger.info(f"Using fallback symbols due to error: {len(self.symbols)} symbols")
-
-    async def initialize_trade_database(self):
-        """Initialize SQLite database for trade tracking"""
-        try:
-            import aiosqlite
-            
-            async with aiosqlite.connect(self.trade_db_file) as db:
-                await db.execute('''
-                    CREATE TABLE IF NOT EXISTS trades (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        trade_id TEXT UNIQUE,
-                        symbol TEXT NOT NULL,
-                        side TEXT NOT NULL,
-                        signal_strength REAL,
-                        entry_time TEXT NOT NULL,
-                        technical_indicators TEXT,
-                        market_conditions TEXT,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                
-                await db.execute('''
-                    CREATE TABLE IF NOT EXISTS trade_performance (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        symbol TEXT NOT NULL,
-                        total_signals INTEGER DEFAULT 0,
-                        successful_signals INTEGER DEFAULT 0,
-                        win_rate REAL DEFAULT 0.0,
-                        avg_signal_strength REAL DEFAULT 0.0,
-                        last_updated TEXT DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                
-                await db.commit()
-                self.logger.info("✅ Trade database initialized successfully")
-        except Exception as e:
-            self.logger.error(f"Error initializing trade database: {e}")
-
-    async def log_trade_signal(self, signal_data: Dict[str, Any]) -> str:
-        """Log trading signal to database and file"""
-        try:
-            import aiosqlite
-            
-            trade_id = f"{signal_data['symbol']}_{int(datetime.now().timestamp())}"
-            
-            # Log to database
-            async with aiosqlite.connect(self.trade_db_file) as db:
-                await db.execute('''
-                    INSERT INTO trades (
-                        trade_id, symbol, side, signal_strength, entry_time,
-                        technical_indicators, market_conditions
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    trade_id,
-                    signal_data['symbol'],
-                    signal_data.get('action', 'UNKNOWN'),
-                    signal_data.get('strength', 0),
-                    datetime.now().isoformat(),
-                    json.dumps(signal_data.get('technical_analysis', {})),
-                    json.dumps(signal_data.get('market_conditions', {}))
-                ))
-                await db.commit()
-            
-            # Also log to JSON file for backup
-            await self._log_signal_to_json_file(trade_id, signal_data)
-            
-            self.logger.info(f"📝 Signal logged: {trade_id}")
-            return trade_id
-            
-        except Exception as e:
-            self.logger.error(f"Error logging trade signal: {e}")
-            return ""
-
-    async def _log_signal_to_json_file(self, trade_id: str, signal_data: Dict[str, Any]):
-        """Log signal data to JSON file for backup"""
-        try:
-            log_entry = {
-                'timestamp': datetime.now().isoformat(),
-                'trade_id': trade_id,
-                'signal_data': signal_data
-            }
-            
-            # Read existing logs
-            if os.path.exists(self.trade_log_file):
-                with open(self.trade_log_file, 'r') as f:
-                    logs = json.load(f)
-            else:
-                logs = []
-            
-            # Append new log
-            logs.append(log_entry)
-            
-            # Keep only last 10000 logs to prevent file from getting too large
-            if len(logs) > 10000:
-                logs = logs[-10000:]
-            
-            # Write back to file
-            with open(self.trade_log_file, 'w') as f:
-                json.dump(logs, f, indent=2)
-                
-        except Exception as e:
-            self.logger.error(f"Error logging to JSON file: {e}")
 
     async def get_binance_data(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
         """Get USD-M futures market data from Binance Futures API"""
@@ -2568,9 +2473,6 @@ Please try again or use `/help` for available commands.
 
                             # Format and send signal
                             signal_msg = self.format_signal_message(signal)
-
-                            # Log the trade signal for learning and tracking
-                            trade_id = await self.log_trade_signal(signal)
 
                             # Send to Cornix first (if configured)
                             cornix_sent = await self.send_to_cornix(signal)

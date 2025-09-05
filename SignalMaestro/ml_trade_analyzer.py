@@ -203,42 +203,25 @@ class MLTradeAnalyzer:
                 self.logger.warning(f"Not enough trades for learning: {len(trades_df)}")
                 return
             
-            # Separate TP and SL trades for specialized training
-            tp_trades = trades_df[trades_df['trade_result'].str.contains('TP', na=False)]
-            sl_trades = trades_df[trades_df['trade_result'].str.contains('SL', na=False)]
-            
-            self.logger.info(f"📊 Found {len(tp_trades)} TP trades and {len(sl_trades)} SL trades")
-            
-            # 1. Train recurrent patterns from successful TP trades
-            if len(tp_trades) >= 5:
-                await self._train_tp_recurrence_model(tp_trades)
-            
-            # 2. Analyze SL trades to prevent future losses
-            if len(sl_trades) >= 3:
-                sl_prevention_insights = await self._analyze_sl_prevention(sl_trades)
-            else:
-                sl_prevention_insights = []
-            
-            # 3. Learn from losses (enhanced with SL focus)
+            # 1. Learn from losses
             loss_insights = await self._analyze_losses(trades_df)
             
-            # 4. Analyze successful patterns (TP-focused)
-            success_patterns = await self._analyze_successful_patterns(tp_trades if len(tp_trades) > 0 else trades_df)
+            # 2. Analyze successful patterns
+            success_patterns = await self._analyze_successful_patterns(trades_df)
             
-            # 5. Train prediction models with TP bias
-            await self._train_tp_optimized_models(tp_trades, sl_trades)
+            # 3. Train prediction models
+            await self._train_prediction_models(trades_df)
             
-            # 6. Generate trading insights
+            # 4. Generate trading insights
             insights = await self._generate_trading_insights(trades_df)
             
-            # 7. Update model performance metrics
+            # 5. Update model performance metrics
             self._update_performance_metrics(trades_df)
             
-            # 8. Store insights
-            all_insights = loss_insights + success_patterns + insights + sl_prevention_insights
-            await self._store_insights(all_insights)
+            # 6. Store insights
+            await self._store_insights(loss_insights + success_patterns + insights)
             
-            self.logger.info(f"✅ ML analysis complete. Analyzed {len(trades_df)} trades with TP/SL optimization")
+            self.logger.info(f"✅ ML analysis complete. Analyzed {len(trades_df)} trades")
             
         except Exception as e:
             self.logger.error(f"Error in ML analysis: {e}")
@@ -1088,106 +1071,6 @@ class MLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error recording trade: {e}")
     
-    async def _train_tp_recurrence_model(self, tp_trades: pd.DataFrame):
-        """Train model specifically on TP trades to identify recurrent patterns"""
-        try:
-            self.logger.info(f"🎯 Training TP recurrence model with {len(tp_trades)} successful trades")
-            
-            # Analyze patterns in successful TP trades
-            tp_patterns = {}
-            
-            # 1. Symbol success patterns
-            symbol_success = tp_trades['symbol'].value_counts()
-            tp_patterns['high_success_symbols'] = symbol_success.head(10).to_dict()
-            
-            # 2. Signal strength patterns for TP trades
-            successful_signal_strengths = tp_trades['signal_strength'].dropna()
-            if len(successful_signal_strengths) > 0:
-                tp_patterns['optimal_signal_strength'] = {
-                    'min': successful_signal_strengths.min(),
-                    'max': successful_signal_strengths.max(),
-                    'mean': successful_signal_strengths.mean(),
-                    'median': successful_signal_strengths.median()
-                }
-            
-            # Store TP patterns for recurrent use
-            self.tp_recurrence_patterns = tp_patterns
-            
-            # Save patterns to file
-            with open(self.model_dir / 'tp_recurrence_patterns.json', 'w') as f:
-                json.dump(tp_patterns, f, indent=2, default=str)
-            
-            self.logger.info("✅ TP recurrence patterns trained and saved")
-            
-        except Exception as e:
-            self.logger.error(f"Error training TP recurrence model: {e}")
-
-    async def _analyze_sl_prevention(self, sl_trades: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Analyze SL trades to identify prevention patterns"""
-        try:
-            self.logger.info(f"🛑 Analyzing {len(sl_trades)} SL trades for prevention patterns")
-            
-            prevention_insights = []
-            
-            # 1. Identify high-risk symbols
-            sl_symbols = sl_trades['symbol'].value_counts()
-            high_risk_symbols = sl_symbols.head(5).to_dict()
-            
-            if high_risk_symbols:
-                prevention_insights.append({
-                    'type': 'high_risk_symbols',
-                    'pattern': 'symbols_with_frequent_sl',
-                    'details': high_risk_symbols,
-                    'recommendation': f"Avoid or reduce position size on: {list(high_risk_symbols.keys())}",
-                    'confidence': 85
-                })
-            
-            # 2. Analyze signal strength patterns in SL trades
-            sl_signal_strengths = sl_trades['signal_strength'].dropna()
-            if len(sl_signal_strengths) > 0:
-                avg_sl_signal_strength = sl_signal_strengths.mean()
-                prevention_insights.append({
-                    'type': 'signal_strength_warning',
-                    'pattern': 'low_signal_strength_correlation',
-                    'details': {'avg_sl_signal_strength': avg_sl_signal_strength},
-                    'recommendation': f"Avoid signals below {avg_sl_signal_strength + 5:.1f}% strength",
-                    'confidence': 80
-                })
-            
-            return prevention_insights
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing SL prevention: {e}")
-            return []
-
-    async def _train_tp_optimized_models(self, tp_trades: pd.DataFrame, sl_trades: pd.DataFrame):
-        """Train models optimized specifically for TP success and SL prevention"""
-        try:
-            # Combine data but weight TP trades more heavily
-            all_trades = pd.concat([tp_trades, sl_trades], ignore_index=True)
-            
-            if len(all_trades) < 10:
-                self.logger.warning("Not enough data for TP-optimized training")
-                return
-            
-            # Create weighted target (TP trades get higher weight)
-            weights = []
-            targets = []
-            
-            for _, trade in all_trades.iterrows():
-                if 'TP' in str(trade.get('trade_result', '')):
-                    weights.append(3.0)  # Higher weight for TP trades
-                    targets.append(1)
-                else:
-                    weights.append(1.0)  # Lower weight for SL trades
-                    targets.append(0)
-            
-            # Train TP-optimized model
-            self.logger.info(f"🎯 TP-optimized model trained with {len(tp_trades)} TP and {len(sl_trades)} SL trades")
-            
-        except Exception as e:
-            self.logger.error(f"Error training TP-optimized models: {e}")
-
     def get_learning_summary(self) -> Dict[str, Any]:
         """Get ML learning summary"""
         return {

@@ -1490,267 +1490,92 @@ class UltimateTradingBot:
             return self.leverage_config['base_leverage']
 
     def _get_adaptive_performance_factor(self) -> float:
-        """Enhanced adaptive performance factor with market-aware algorithms"""
+        """Get performance factor for adaptive leverage adjustment"""
         try:
             # Load recent trades from ML database
             conn = sqlite3.connect(self.ml_analyzer.db_path)
             cursor = conn.cursor()
 
-            # Get both recent and historical trades for better analysis
+            # Get recent trades for performance analysis
             cursor.execute("""
-                SELECT profit_loss, trade_result, created_at
+                SELECT profit_loss, trade_result 
                 FROM ml_trades 
                 ORDER BY created_at DESC 
                 LIMIT ?
-            """, (self.adaptive_leverage['performance_window'] * 2,))
+            """, (self.adaptive_leverage['performance_window'],))
 
-            all_trades = cursor.fetchall()
+            recent_trades = cursor.fetchall()
             conn.close()
 
-            # If no trades, start with optimistic factor to enable trading
-            if not all_trades:
-                return 0.3  # Optimistic start for new bots
+            if not recent_trades:
+                return 0.0  # No performance adjustment if no data
 
-            # Split into recent and historical for comparison
-            recent_trades = all_trades[:self.adaptive_leverage['performance_window']]
-            historical_trades = all_trades[self.adaptive_leverage['performance_window']:]
+            # Calculate performance metrics
+            wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
+            losses = len(recent_trades) - wins
 
-            # Enhanced performance metrics calculation
-            performance_factor = 0.0
-            
-            # 1. Recent Performance Analysis (40% weight)
-            if recent_trades:
-                recent_wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
-                recent_total = len(recent_trades)
-                recent_win_rate = recent_wins / recent_total if recent_total > 0 else 0
-                
-                # Calculate average profit per trade
-                recent_profits = [trade[0] for trade in recent_trades if trade[0] is not None]
-                avg_profit = sum(recent_profits) / len(recent_profits) if recent_profits else 0
-                
-                # Dynamic win rate thresholds based on market conditions
-                volatility_adjusted_threshold = max(0.45, min(0.65, 0.55 + (avg_profit * 0.1)))
-                
-                if recent_win_rate >= 0.75:
-                    performance_factor += 0.4  # Excellent performance
-                elif recent_win_rate >= volatility_adjusted_threshold:
-                    performance_factor += 0.2 + (recent_win_rate - volatility_adjusted_threshold) * 0.5
-                elif recent_win_rate >= 0.35:
-                    performance_factor += (recent_win_rate - 0.5) * 0.3  # Gradual adjustment
-                else:
-                    performance_factor -= min(0.3, (0.5 - recent_win_rate) * 0.4)  # Limited downside
+            if len(recent_trades) == 0:
+                return 0.0
 
-            # 2. Trend Analysis (25% weight)
-            if len(recent_trades) >= 5 and len(historical_trades) >= 5:
-                historical_wins = sum(1 for trade in historical_trades[:10] if trade[0] and trade[0] > 0)
-                historical_win_rate = historical_wins / min(10, len(historical_trades))
-                
-                # Performance trend factor
-                trend_improvement = recent_win_rate - historical_win_rate
-                performance_factor += trend_improvement * 0.25
+            win_rate = wins / len(recent_trades)
 
-            # 3. Consecutive Performance with Decay (20% weight)
-            consecutive_factor = 0.0
-            streak_count = 0
-            
-            for i, trade in enumerate(recent_trades):
-                if i == 0:  # Most recent trade
-                    if trade[0] and trade[0] > 0:
-                        consecutive_factor += 0.05
-                        streak_count = 1
-                    else:
-                        consecutive_factor -= 0.03
-                        break
-                else:
-                    # Apply decay to older streaks
-                    decay = 0.9 ** i
-                    if trade[0] and trade[0] > 0:
-                        consecutive_factor += 0.03 * decay
-                        streak_count += 1
-                    else:
-                        break
-                        
-                # Bonus for longer streaks with diminishing returns
-                if streak_count >= 3:
-                    consecutive_factor += min(0.1, streak_count * 0.02)
+            # Calculate consecutive performance
+            consecutive_wins = 0
+            consecutive_losses = 0
 
-            performance_factor += consecutive_factor * 0.2
+            for trade in recent_trades:
+                if trade[0] and trade[0] > 0:  # Winning trade
+                    consecutive_wins += 1
+                    consecutive_losses = 0
+                else:  # Losing trade
+                    consecutive_losses += 1
+                    consecutive_wins = 0
 
-            # 4. Risk-Adjusted Returns (15% weight)
-            if recent_trades:
-                profitable_trades = [trade[0] for trade in recent_trades if trade[0] and trade[0] > 0]
-                losing_trades = [abs(trade[0]) for trade in recent_trades if trade[0] and trade[0] < 0]
-                
-                if profitable_trades and losing_trades:
-                    avg_win = sum(profitable_trades) / len(profitable_trades)
-                    avg_loss = sum(losing_trades) / len(losing_trades)
-                    risk_reward_ratio = avg_win / avg_loss if avg_loss > 0 else 2.0
-                    
-                    # Reward good risk management
-                    if risk_reward_ratio >= 2.0:
-                        performance_factor += 0.1
-                    elif risk_reward_ratio >= 1.5:
-                        performance_factor += 0.05
-                    elif risk_reward_ratio < 1.0:
-                        performance_factor -= 0.05
+                # Only count the current streak
+                if consecutive_wins > 0 and consecutive_losses == 0:
+                    break
+                elif consecutive_losses > 0 and consecutive_wins == 0:
+                    break
 
-            # 5. Market Adaptation Bonus (10% weight)
-            # Reward consistent performance across different market conditions
-            if len(recent_trades) >= 10:
-                # Check performance consistency
-                win_consistency = 1.0 - abs(recent_win_rate - 0.6)  # Target 60% win rate
-                performance_factor += win_consistency * 0.1
-
-            # 6. Adaptive Learning Mechanisms (10% weight)
-            learning_bonus = self._calculate_adaptive_learning_bonus(recent_trades)
-            performance_factor += learning_bonus * 0.1
-
-            # Apply intelligent bounds with market-aware limits
-            min_factor = -0.4  # Less aggressive downside limit
-            max_factor = 0.8   # Allow higher upside for good performance
-            
-            # Dynamic adjustment based on trade count
-            if len(recent_trades) < 5:
-                # For new bots or low activity, be more optimistic
-                performance_factor = max(0.1, performance_factor)
-            
-            performance_factor = max(min_factor, min(max_factor, performance_factor))
-
-            # 7. Market Condition Adjustment
-            market_adjustment = self._get_market_condition_adjustment()
-            performance_factor += market_adjustment
-
-            # Final bounds check after all adjustments
-            performance_factor = max(min_factor, min(max_factor, performance_factor))
-
-            # Update tracking with enhanced metrics
+            # Update adaptive leverage tracking
             self.adaptive_leverage.update({
-                'recent_wins': recent_wins if recent_trades else 0,
-                'recent_losses': (len(recent_trades) - recent_wins) if recent_trades else 0,
-                'recent_win_rate': recent_win_rate if recent_trades else 0,
-                'performance_trend': trend_improvement if len(historical_trades) >= 5 else 0,
-                'last_performance_factor': performance_factor,
-                'market_adjustment': market_adjustment,
-                'learning_bonus': learning_bonus
+                'recent_wins': wins,
+                'recent_losses': losses,
+                'consecutive_wins': consecutive_wins,
+                'consecutive_losses': consecutive_losses
             })
+
+            # Calculate performance factor (-1 to +1)
+            performance_factor = 0.0
+
+            # Win rate adjustment
+            if win_rate >= 0.7:  # High win rate - increase leverage
+                performance_factor += 0.5
+            elif win_rate <= 0.4:  # Low win rate - decrease leverage
+                performance_factor -= 0.5
+            else:
+                # Moderate performance gets a small boost
+                performance_factor += (win_rate - 0.5) * 0.4
+
+            # Consecutive performance adjustment
+            if consecutive_wins >= 3:
+                performance_factor += 0.3
+            elif consecutive_losses >= 3:
+                performance_factor -= 0.5
+            elif consecutive_wins >= 1:
+                performance_factor += 0.1
+
+            # Add base performance factor to avoid 0.0
+            if performance_factor == 0.0:
+                performance_factor = 0.25  # Default positive factor
+
+            # Limit performance factor
+            performance_factor = max(-1.0, min(1.0, performance_factor))
 
             return performance_factor
 
         except Exception as e:
-            self.logger.error(f"Error calculating enhanced performance factor: {e}")
-            # Return optimistic factor on error to prevent system stagnation
-            return 0.2
-
-    def _calculate_adaptive_learning_bonus(self, recent_trades: List) -> float:
-        """Calculate adaptive learning bonus based on pattern recognition and improvement"""
-        try:
-            if len(recent_trades) < 3:
-                return 0.0
-            
-            learning_bonus = 0.0
-            
-            # 1. Pattern Recognition Bonus
-            # Reward consistent improvement patterns
-            profit_trend = []
-            for i, trade in enumerate(recent_trades[:10]):  # Last 10 trades
-                if trade[0] is not None:
-                    profit_trend.append(trade[0])
-            
-            if len(profit_trend) >= 5:
-                # Check if there's an improving trend
-                recent_avg = sum(profit_trend[:3]) / 3 if len(profit_trend) >= 3 else 0
-                older_avg = sum(profit_trend[3:6]) / 3 if len(profit_trend) >= 6 else 0
-                
-                if recent_avg > older_avg and recent_avg > 0:
-                    learning_bonus += 0.3  # Improving trend bonus
-                elif recent_avg > 0 and older_avg <= 0:
-                    learning_bonus += 0.5  # Turned profitable bonus
-            
-            # 2. Volatility Adaptation Bonus
-            # Reward performance during different market conditions
-            if len(recent_trades) >= 8:
-                # Check performance consistency across trades
-                wins_in_first_half = sum(1 for trade in recent_trades[:4] if trade[0] and trade[0] > 0)
-                wins_in_second_half = sum(1 for trade in recent_trades[4:8] if trade[0] and trade[0] > 0)
-                
-                # Consistent performance across periods
-                if abs(wins_in_first_half - wins_in_second_half) <= 1:
-                    learning_bonus += 0.2
-            
-            # 3. Risk Management Improvement
-            # Reward if average loss is decreasing while maintaining wins
-            losses = [abs(trade[0]) for trade in recent_trades if trade[0] and trade[0] < 0]
-            if len(losses) >= 4:
-                recent_losses = losses[:2]
-                older_losses = losses[2:4]
-                
-                avg_recent_loss = sum(recent_losses) / len(recent_losses)
-                avg_older_loss = sum(older_losses) / len(older_losses)
-                
-                if avg_recent_loss < avg_older_loss:
-                    learning_bonus += 0.25  # Improving risk management
-            
-            # 4. Market Timing Bonus
-            # Reward for entering trades at optimal times (simulated based on profit distribution)
-            if len(recent_trades) >= 6:
-                profits = [trade[0] for trade in recent_trades[:6] if trade[0] and trade[0] > 0]
-                if len(profits) >= 3:
-                    # Check for consistent profit targets
-                    profit_consistency = 1.0 - (max(profits) - min(profits)) / max(profits) if max(profits) > 0 else 0
-                    if profit_consistency > 0.7:
-                        learning_bonus += 0.15  # Consistent execution bonus
-            
-            # 5. Adaptive Strategy Bonus
-            # Reward for maintaining performance across different symbols/timeframes
-            # This is a simplified version - in practice, you'd track per-symbol performance
-            total_recent_trades = len(recent_trades)
-            if total_recent_trades >= 10:
-                # Assume good diversification if we have many trades
-                learning_bonus += 0.1
-            
-            return min(0.8, learning_bonus)  # Cap the learning bonus
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating learning bonus: {e}")
-            return 0.0
-
-    def _get_market_condition_adjustment(self) -> float:
-        """Adjust performance expectations based on current market conditions"""
-        try:
-            # Get current market volatility from CVD data
-            cvd_strength = abs(self.cvd_data.get('cvd_strength', 0))
-            cvd_trend = self.cvd_data.get('cvd_trend', 'neutral')
-            
-            adjustment = 0.0
-            
-            # Adjust based on market volatility
-            if cvd_strength > 30:  # High volatility market
-                # In volatile markets, be more forgiving of performance
-                adjustment += 0.1
-            elif cvd_strength > 15:  # Medium volatility
-                # Normal adjustment
-                adjustment += 0.05
-            else:  # Low volatility
-                # In calm markets, expect better performance
-                adjustment -= 0.05
-            
-            # Trend-based adjustment
-            if cvd_trend in ['bullish', 'bearish']:  # Clear trend
-                # Clear trends should improve performance
-                adjustment += 0.05
-            else:  # Sideways/neutral market
-                # Sideways markets are harder to trade
-                adjustment -= 0.02
-            
-            # Time-based adjustment (simplified - in practice, you'd check actual market hours)
-            current_hour = datetime.now().hour
-            if 8 <= current_hour <= 16:  # Major market hours (simplified)
-                adjustment += 0.03  # Better conditions during active hours
-            
-            return max(-0.15, min(0.15, adjustment))  # Cap the adjustment
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating market adjustment: {e}")
+            self.logger.error(f"Error calculating performance factor: {e}")
             return 0.0
 
     def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:

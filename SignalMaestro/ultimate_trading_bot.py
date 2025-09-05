@@ -1606,7 +1606,7 @@ class UltimateTradingBot:
             performance_factor += learning_bonus * 0.1
 
             # Apply intelligent bounds with market-aware limits
-            min_factor = -0.4  # Less aggressive downside limit
+            min_factor = 0.0   # Never allow negative performance factor
             max_factor = 0.8   # Allow higher upside for good performance
             
             # Dynamic adjustment based on trade count
@@ -1620,8 +1620,8 @@ class UltimateTradingBot:
             market_adjustment = self._get_market_condition_adjustment()
             performance_factor += market_adjustment
 
-            # Final bounds check after all adjustments
-            performance_factor = max(min_factor, min(max_factor, performance_factor))
+            # Final bounds check after all adjustments - ensure never negative
+            performance_factor = max(0.0, min(max_factor, performance_factor))
 
             # Update tracking with enhanced metrics
             self.adaptive_leverage.update({

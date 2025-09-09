@@ -1023,12 +1023,12 @@ class UltimateTradingBot:
             'leverage_adjustment_factor': 0.1
         }
 
-        # Risk management - optimized for maximum profitability
+        # Risk management - optimized for maximum profitability and unlimited signals
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 80
-        self.max_signals_per_hour = 10  # Limited to 10 signals per hour
-        self.capital_allocation = 0.025  # 2.5% per trade
-        self.max_concurrent_trades = 25  # Increased concurrent trades
+        self.min_signal_strength = 75  # Lowered for more opportunities
+        self.max_signals_per_hour = 999  # Unlimited signals per hour
+        self.capital_allocation = 0.02  # 2% per trade for more trades
+        self.max_concurrent_trades = 50  # Increased concurrent trades for more volume
 
         # Performance tracking
         self.signal_counter = 0
@@ -1040,13 +1040,14 @@ class UltimateTradingBot:
             'total_profit': 0.0
         }
 
-        # Prevent signal spam
+        # Prevent signal spam - greatly reduced restrictions
         self.last_signal_time = {}
-        self.min_signal_interval = 180  # 3 minutes between signals for same symbol
+        self.min_signal_interval = 30  # 30 seconds between signals for same symbol
         
-        # Hourly signal tracking
+        # Hourly signal tracking - removed limitations
         self.hourly_signal_count = 0
         self.last_hour_reset = datetime.now().hour
+        self.unlimited_signals = True  # Flag for unlimited signal mode
 
         # Active symbol tracking - prevent duplicate trades
         self.active_symbols = set()  # Track symbols with open trades
@@ -1661,23 +1662,24 @@ class UltimateTradingBot:
         try:
             current_time = datetime.now()
 
-            # Check hourly signal limit
+            # Track hourly signals but don't limit them
             if current_time.hour != self.last_hour_reset:
                 self.hourly_signal_count = 0
                 self.last_hour_reset = current_time.hour
             
-            if self.hourly_signal_count >= self.max_signals_per_hour:
+            # No hourly limits - push unlimited signals
+            if False:  # Disabled limit check
                 self.logger.debug(f"⏰ Hourly signal limit reached: {self.hourly_signal_count}/{self.max_signals_per_hour}")
                 return None
 
-            # Check if symbol already has an active trade
-            if symbol in self.active_symbols:
+            # Allow multiple trades per symbol for maximum opportunity
+            if False:  # Disabled active symbol check
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
                 return None
 
             if symbol in self.last_signal_time:
                 time_diff = (current_time - self.last_signal_time[symbol]).total_seconds()
-                if time_diff < self.min_signal_interval:
+                if time_diff < self.min_signal_interval and not self.unlimited_signals:
                     return None
 
             signal_strength = 0
@@ -1821,13 +1823,13 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # Only proceed with favorable predictions - Optimized thresholds
+            # Allow more predictions for increased signal volume
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
 
-            # Filter: Allow favorable, highly favorable, and high-confidence neutral predictions
-            if prediction_type not in ['favorable', 'highly_favorable'] and not (prediction_type == 'neutral' and ml_confidence > 70):
-                return None
+            # Relaxed filter: Allow most predictions except clearly unfavorable ones
+            if prediction_type == 'unfavorable' and ml_confidence < 30:
+                return None  # Only block very low confidence unfavorable predictions
 
             # Adjust signal strength for favorable predictions
             if prediction_type == 'highly_favorable':
@@ -1837,14 +1839,16 @@ class UltimateTradingBot:
             elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
                 signal_strength *= 1.05
 
-            # Final signal strength check
-            if signal_strength < self.min_signal_strength:
+            # Relaxed signal strength check for more opportunities
+            if signal_strength < self.min_signal_strength and signal_strength < 70:
                 return None
 
-            # Update last signal time and mark symbol as active
+            # Update last signal time but allow multiple concurrent trades
             self.last_signal_time[symbol] = current_time
-            self.active_symbols.add(symbol)
-            self.symbol_trade_lock[symbol] = current_time
+            # Don't lock symbols - allow multiple concurrent trades
+            if len(self.active_symbols) < self.max_concurrent_trades:
+                self.active_symbols.add(symbol)
+                self.symbol_trade_lock[symbol] = current_time
             
             # Increment hourly signal counter
             self.hourly_signal_count += 1
@@ -1934,9 +1938,9 @@ class UltimateTradingBot:
                 self.logger.warning(f"Skipping {symbol} due to error: {e}")
                 continue
 
-        # Sort by ML confidence and signal strength
+        # Sort by ML confidence and signal strength but return more signals
         signals.sort(key=lambda x: (x.get('ml_prediction', {}).get('confidence', 0), x['signal_strength']), reverse=True)
-        return signals[:self.max_signals_per_hour]
+        return signals  # Return all signals instead of limiting
 
     async def verify_channel_access(self) -> bool:
         """Verify channel access"""
@@ -2036,7 +2040,7 @@ class UltimateTradingBot:
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
 🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}/10
 
-Auto SL Management Active"""
+Auto SL Management Active | 🚀 UNLIMITED MODE"""
 
         return message.strip()
 
@@ -3233,8 +3237,8 @@ Use /train to manually scan and train""")
                     signals_sent_count = 0
 
                     for signal in signals:
-                        # Check hourly limit before processing each signal
-                        if self.hourly_signal_count >= self.max_signals_per_hour:
+                        # No hourly limits - process all signals
+                        if False:  # Disabled hourly limit check
                             self.logger.info(f"⏰ Hourly signal limit reached ({self.max_signals_per_hour}). Skipping remaining signals.")
                             break
 
@@ -3303,8 +3307,8 @@ Use /train to manually scan and train""")
                 consecutive_errors = 0
                 self.last_heartbeat = datetime.now()
 
-                scan_interval = 60 if signals else base_scan_interval
-                self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds")
+                scan_interval = 30 if signals else 45  # Much more frequent scanning
+                self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds | 🚀 UNLIMITED MODE")
                 await asyncio.sleep(scan_interval)
 
             except Exception as e:
@@ -3378,7 +3382,13 @@ Use /train to manually scan and train""")
 • Cross margin configuration included
 • TradeTactics_bot integration
 
-*Ultimate ML bot with Adaptive Cross-Margin Trading*"""
+**🚀 UNLIMITED SIGNAL MODE ACTIVE:**
+• No hourly signal limits
+• Multiple trades per symbol allowed
+• Aggressive scanning intervals (30-45s)
+• Maximum trade volume optimization
+
+*Ultimate ML bot with Unlimited Signal Generation*"""
                 await self.send_message(self.admin_chat_id, startup_msg)
 
             auto_scan_task = asyncio.create_task(self.auto_scan_loop())

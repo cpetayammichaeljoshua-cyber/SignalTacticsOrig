@@ -1439,7 +1439,7 @@ class UltimateTradingBot:
             ha_high = np.maximum(df['high'], np.maximum(ha_open, ha_close))
             ha_low = np.minimum(df['low'], np.minimum(ha_open, ha_close))
             
-            # Determine trend
+            # Determine trend - using iloc for proper indexing
             last_ha_open = ha_open[-1]
             last_ha_close = ha_close.iloc[-1]
             prev_ha_open = ha_open[-2] if len(ha_open) > 1 else last_ha_open
@@ -1457,9 +1457,9 @@ class UltimateTradingBot:
             bullish_confirmation = current_bullish and prev_bullish
             bearish_confirmation = current_bearish and prev_bearish
             
-            # Calculate trend strength
+            # Calculate trend strength - using iloc for proper indexing
             body_size = abs(last_ha_close - last_ha_open)
-            candle_range = ha_high[-1] - ha_low[-1]
+            candle_range = ha_high.iloc[-1] - ha_low.iloc[-1]
             trend_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
             
             return {
@@ -1470,8 +1470,8 @@ class UltimateTradingBot:
                 'ha_confirmation': bullish_confirmation or bearish_confirmation,
                 'ha_open': last_ha_open,
                 'ha_close': last_ha_close,
-                'ha_high': ha_high[-1],
-                'ha_low': ha_low[-1]
+                'ha_high': ha_high.iloc[-1],
+                'ha_low': ha_low.iloc[-1]
             }
             
         except Exception as e:

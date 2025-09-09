@@ -1489,7 +1489,7 @@ class UltimateTradingBot:
                 
                 # Calculate enhanced trend strength
                 body_size = abs(current_ha_close - current_ha_open)
-                candle_range = ha_high[-1] - ha_low[-1]
+                candle_range = ha_high.iloc[-1] - ha_low.iloc[-1]
                 base_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
                 
                 # Boost strength based on consecutive confirmations
@@ -1517,8 +1517,8 @@ class UltimateTradingBot:
                     'ha_consecutive_bearish': bearish_candles,
                     'ha_open': current_ha_open,
                     'ha_close': current_ha_close,
-                    'ha_high': ha_high[-1],
-                    'ha_low': ha_low[-1]
+                    'ha_high': ha_high.iloc[-1],
+                    'ha_low': ha_low.iloc[-1]
                 }
             else:
                 return {}

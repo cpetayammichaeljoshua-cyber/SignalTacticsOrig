@@ -1026,7 +1026,7 @@ class UltimateTradingBot:
         # Risk management - optimized for maximum profitability
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 80
-        self.max_signals_per_hour = 100  # Removed limit - allow many more signals
+        self.max_signals_per_hour = 10  # Limited to 10 signals per hour
         self.capital_allocation = 0.025  # 2.5% per trade
         self.max_concurrent_trades = 25  # Increased concurrent trades
 
@@ -1043,6 +1043,10 @@ class UltimateTradingBot:
         # Prevent signal spam
         self.last_signal_time = {}
         self.min_signal_interval = 180  # 3 minutes between signals for same symbol
+        
+        # Hourly signal tracking
+        self.hourly_signal_count = 0
+        self.last_hour_reset = datetime.now().hour
 
         # Active symbol tracking - prevent duplicate trades
         self.active_symbols = set()  # Track symbols with open trades
@@ -1344,7 +1348,11 @@ class UltimateTradingBot:
             indicators['cvd_strength'] = cvd_data['cvd_strength']
             indicators['cvd_divergence'] = cvd_data['cvd_divergence']
 
-            # 9. Current price info
+            # 9. Heikin Ashi trend confirmation
+            ha_data = self._calculate_heikin_ashi(df)
+            indicators.update(ha_data)
+
+            # 10. Current price info
             indicators['current_price'] = close[-1]
             indicators['price_change'] = (close[-1] - close[-2]) / close[-2] * 100
             indicators['price_velocity'] = (close[-1] - close[-3]) / close[-3] * 100
@@ -1414,6 +1422,61 @@ class UltimateTradingBot:
         signal_line = self._calculate_ema(macd_line, 9)
         histogram = macd_line - signal_line
         return macd_line, signal_line, histogram
+
+    def _calculate_heikin_ashi(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate Heikin Ashi candles for trend confirmation"""
+        try:
+            if df.empty or len(df) < 2:
+                return {}
+            
+            ha_close = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+            ha_open = np.zeros(len(df))
+            ha_open[0] = (df['open'].iloc[0] + df['close'].iloc[0]) / 2
+            
+            for i in range(1, len(df)):
+                ha_open[i] = (ha_open[i-1] + ha_close.iloc[i-1]) / 2
+            
+            ha_high = np.maximum(df['high'], np.maximum(ha_open, ha_close))
+            ha_low = np.minimum(df['low'], np.minimum(ha_open, ha_close))
+            
+            # Determine trend
+            last_ha_open = ha_open[-1]
+            last_ha_close = ha_close.iloc[-1]
+            prev_ha_open = ha_open[-2] if len(ha_open) > 1 else last_ha_open
+            prev_ha_close = ha_close.iloc[-2] if len(ha_close) > 1 else last_ha_close
+            
+            # Current candle trend
+            current_bullish = last_ha_close > last_ha_open
+            current_bearish = last_ha_close < last_ha_open
+            
+            # Previous candle trend
+            prev_bullish = prev_ha_close > prev_ha_open
+            prev_bearish = prev_ha_close < prev_ha_open
+            
+            # Trend confirmation
+            bullish_confirmation = current_bullish and prev_bullish
+            bearish_confirmation = current_bearish and prev_bearish
+            
+            # Calculate trend strength
+            body_size = abs(last_ha_close - last_ha_open)
+            candle_range = ha_high[-1] - ha_low[-1]
+            trend_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
+            
+            return {
+                'ha_trend': 'bullish' if bullish_confirmation else 'bearish' if bearish_confirmation else 'neutral',
+                'ha_current_bullish': current_bullish,
+                'ha_current_bearish': current_bearish,
+                'ha_trend_strength': trend_strength,
+                'ha_confirmation': bullish_confirmation or bearish_confirmation,
+                'ha_open': last_ha_open,
+                'ha_close': last_ha_close,
+                'ha_high': ha_high[-1],
+                'ha_low': ha_low[-1]
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating Heikin Ashi: {e}")
+            return {}
 
     def calculate_adaptive_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
         """Calculate adaptive leverage based on market conditions and past performance"""
@@ -1583,6 +1646,15 @@ class UltimateTradingBot:
         try:
             current_time = datetime.now()
 
+            # Check hourly signal limit
+            if current_time.hour != self.last_hour_reset:
+                self.hourly_signal_count = 0
+                self.last_hour_reset = current_time.hour
+            
+            if self.hourly_signal_count >= self.max_signals_per_hour:
+                self.logger.debug(f"⏰ Hourly signal limit reached: {self.hourly_signal_count}/{self.max_signals_per_hour}")
+                return None
+
             # Check if symbol already has an active trade
             if symbol in self.active_symbols:
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
@@ -1647,6 +1719,22 @@ class UltimateTradingBot:
                 else:
                     bearish_signals += 10
 
+            # 8. Heikin Ashi trend confirmation (15% weight) - Critical for trend validation
+            ha_trend = indicators.get('ha_trend', 'neutral')
+            ha_confirmation = indicators.get('ha_confirmation', False)
+            ha_strength = indicators.get('ha_trend_strength', 0)
+            
+            if ha_trend == 'bullish' and ha_confirmation and ha_strength > 60:
+                bullish_signals += 15
+            elif ha_trend == 'bearish' and ha_confirmation and ha_strength > 60:
+                bearish_signals += 15
+            elif ha_trend != 'neutral' and ha_confirmation:
+                # Partial points for weaker Heikin Ashi signals
+                if ha_trend == 'bullish':
+                    bullish_signals += 8
+                elif ha_trend == 'bearish':
+                    bearish_signals += 8
+
             # Determine signal direction and strength
             if bullish_signals >= self.min_signal_strength:
                 direction = 'BUY'
@@ -1655,6 +1743,14 @@ class UltimateTradingBot:
                 direction = 'SELL'
                 signal_strength = bearish_signals
             else:
+                return None
+
+            # Additional Heikin Ashi validation - must confirm direction
+            if direction == 'BUY' and ha_trend == 'bearish':
+                self.logger.debug(f"❌ BUY signal rejected - Heikin Ashi shows bearish trend for {symbol}")
+                return None
+            elif direction == 'SELL' and ha_trend == 'bullish':
+                self.logger.debug(f"❌ SELL signal rejected - Heikin Ashi shows bullish trend for {symbol}")
                 return None
 
             # Calculate entry, stop loss, and take profits
@@ -1734,6 +1830,9 @@ class UltimateTradingBot:
             self.last_signal_time[symbol] = current_time
             self.active_symbols.add(symbol)
             self.symbol_trade_lock[symbol] = current_time
+            
+            # Increment hourly signal counter
+            self.hourly_signal_count += 1
 
             return {
                 'symbol': symbol,
@@ -1751,7 +1850,7 @@ class UltimateTradingBot:
                 'ml_prediction': ml_prediction,
                 'indicators_used': [
                     'ML-Enhanced SuperTrend', 'EMA Confluence', 'CVD Analysis',
-                    'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals'
+                    'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals', 'Heikin Ashi Confirmation'
                 ],
                 'timeframe': 'Multi-TF (1m-4h)',
                 'strategy': 'Ultimate ML-Enhanced Scalping',
@@ -1911,19 +2010,23 @@ class UltimateTradingBot:
         # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
 
+        # Get Heikin Ashi confirmation status
+        ha_status = "✅ Confirmed" if signal.get('ha_confirmation', False) else "⚠️ Neutral"
+
         message = f"""{cornix_signal}
 
 🧠 ML: {ml_prediction.get('prediction', 'unknown').title()} ({ml_prediction.get('confidence', 0):.0f}%)
 📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:1
+🕯️ Heikin Ashi: {ha_status}
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
-🕐 {datetime.now().strftime('%H:%M')} UTC
+🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}/10
 
 Auto SL Management Active"""
 
         return message.strip()
 
     def _format_cornix_signal(self, signal: Dict[str, Any]) -> str:
-        """Format signal in Cornix-compatible format"""
+        """Format signal in Cornix-compatible format with improved parsing"""
         try:
             symbol = signal['symbol']
             direction = signal['direction'].upper()
@@ -1934,38 +2037,40 @@ Auto SL Management Active"""
             tp3 = signal['tp3']
             optimal_leverage = signal.get('optimal_leverage', 35)
 
+            # Cornix-compatible format with clear parsing structure
             formatted_message = f"""#{symbol} {direction}
 
 Entry: {entry:.6f}
-Stop Loss: {stop_loss:.6f}
+StopLoss: {stop_loss:.6f}
 
-Take Profit:
-TP1: {tp1:.6f} (40%)
-TP2: {tp2:.6f} (35%) 
-TP3: {tp3:.6f} (25%)
+TakeProfit:
+TP1: {tp1:.6f}
+TP2: {tp2:.6f}
+TP3: {tp3:.6f}
 
 Leverage: {optimal_leverage}x
-Margin Type: Cross
-Exchange: Binance Futures
+MarginType: Cross
+Exchange: BinanceFutures
 
-Management:
-- Move SL to Entry after TP1
-- Move SL to TP1 after TP2  
-- Close all after TP3"""
+TradeManagement:
+- MoveSLtoEntry: AfterTP1
+- MoveSLtoTP1: AfterTP2
+- CloseAll: AfterTP3"""
 
             return formatted_message
 
         except Exception as e:
             self.logger.error(f"Error formatting Cornix signal: {e}")
             optimal_leverage = signal.get('optimal_leverage', 35)
+            # Fallback format that's still Cornix-compatible
             return f"""#{signal['symbol']} {signal['direction']}
 Entry: {signal['entry_price']:.6f}
-Stop Loss: {signal['stop_loss']:.6f}
+StopLoss: {signal['stop_loss']:.6f}
 TP1: {signal['tp1']:.6f}
 TP2: {signal['tp2']:.6f}
 TP3: {signal['tp3']:.6f}
 Leverage: {optimal_leverage}x
-Exchange: Binance Futures"""
+Exchange: BinanceFutures"""
 
     async def send_to_cornix(self, signal: Dict[str, Any]) -> bool:
         """Cornix integration disabled - signals sent via Telegram only"""
@@ -3108,12 +3213,15 @@ Use /train to manually scan and train""")
                 signals = await self.scan_for_signals()
 
                 if signals:
-                    self.logger.info(f"📊 Found {len(signals)} ML-validated signals")
+                    self.logger.info(f"📊 Found {len(signals)} ML-validated signals | Hour: {self.hourly_signal_count}/{self.max_signals_per_hour}")
 
                     signals_sent_count = 0
 
                     for signal in signals:
-                        # Removed hourly limit - process all quality signals
+                        # Check hourly limit before processing each signal
+                        if self.hourly_signal_count >= self.max_signals_per_hour:
+                            self.logger.info(f"⏰ Hourly signal limit reached ({self.max_signals_per_hour}). Skipping remaining signals.")
+                            break
 
                         try:
                             self.signal_counter += 1

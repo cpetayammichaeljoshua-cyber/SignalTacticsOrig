@@ -127,6 +127,7 @@ class MLTradePredictor:
             'tp3_accuracy': 0.0,
             'last_training': None
         }
+        self._previous_win_rate = 0.5 # Initialize previous win rate for incremental tracking
 
         self.logger.info("🧠 ML Trade Predictor initialized")
 
@@ -349,7 +350,7 @@ class MLTradePredictor:
                 df['market_conditions'] = df['market_conditions'].apply(
                     lambda x: json.loads(x) if x else {}
                 )
-            
+
             # Ensure timestamp is parsed correctly
             if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
@@ -635,7 +636,7 @@ class MLTradePredictor:
         """Prepare features for prediction"""
         try:
             entry_price = signal_data.get('entry_price', signal_data.get('current_price', 0))
-            
+
             # Ensure all required features are present and in the correct order
             features = [
                 entry_price,
@@ -824,7 +825,7 @@ class MLEnhancedTradingBot:
             'cooldown_blocks': 0
         }
 
-        # Advanced risk management with adaptive algorithms
+        # Adaptive risk management with adaptive algorithms
         self.risk_config = {
             'base_risk_percentage': 2.0,  # 2% base risk
             'max_risk_percentage': 5.0,   # 5% maximum risk

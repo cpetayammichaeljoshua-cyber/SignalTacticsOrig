@@ -1553,7 +1553,7 @@ class UltimateTradingBot:
             return self.leverage_config['base_leverage']
 
     def _get_adaptive_performance_factor(self) -> float:
-        """Get performance factor for adaptive leverage adjustment"""
+        """Get performance factor for adaptive leverage adjustment with absolute values and incremental win rate tracking"""
         try:
             # Load recent trades from ML database
             conn = sqlite3.connect(self.ml_analyzer.db_path)
@@ -1571,16 +1571,25 @@ class UltimateTradingBot:
             conn.close()
 
             if not recent_trades:
-                return 0.0  # No performance adjustment if no data
+                return 0.25  # Default positive factor (absolute value >= 0)
 
             # Calculate performance metrics
             wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
             losses = len(recent_trades) - wins
 
             if len(recent_trades) == 0:
-                return 0.0
+                return 0.25  # Default positive factor
 
-            win_rate = wins / len(recent_trades)
+            current_win_rate = wins / len(recent_trades)
+
+            # Get previous win rate for incremental tracking
+            previous_win_rate = getattr(self, '_previous_win_rate', 0.5)
+            
+            # Calculate win rate improvement (strictly incremental)
+            win_rate_increment = max(0, current_win_rate - previous_win_rate)
+            
+            # Store current win rate as previous for next calculation
+            self._previous_win_rate = current_win_rate
 
             # Calculate consecutive performance
             consecutive_wins = 0
@@ -1600,46 +1609,52 @@ class UltimateTradingBot:
                 elif consecutive_losses > 0 and consecutive_wins == 0:
                     break
 
-            # Update adaptive leverage tracking
+            # Update adaptive leverage tracking with incremental win rate
             self.adaptive_leverage.update({
                 'recent_wins': wins,
                 'recent_losses': losses,
                 'consecutive_wins': consecutive_wins,
-                'consecutive_losses': consecutive_losses
+                'consecutive_losses': consecutive_losses,
+                'current_win_rate': current_win_rate,
+                'win_rate_increment': win_rate_increment
             })
 
-            # Calculate performance factor (-1 to +1)
+            # Calculate performance factor (absolute value >= 0)
             performance_factor = 0.0
 
-            # Win rate adjustment
-            if win_rate >= 0.7:  # High win rate - increase leverage
-                performance_factor += 0.5
-            elif win_rate <= 0.4:  # Low win rate - decrease leverage
-                performance_factor -= 0.5
-            else:
-                # Moderate performance gets a small boost
-                performance_factor += (win_rate - 0.5) * 0.4
+            # Win rate adjustment with incremental bonus
+            base_win_factor = current_win_rate * 0.8  # Base factor from current win rate
+            increment_bonus = win_rate_increment * 2.0  # Bonus for improvement
+            
+            performance_factor += base_win_factor + increment_bonus
 
-            # Consecutive performance adjustment
+            # Consecutive performance adjustment (absolute values only)
             if consecutive_wins >= 3:
-                performance_factor += 0.3
-            elif consecutive_losses >= 3:
-                performance_factor -= 0.5
+                performance_factor += 0.4
             elif consecutive_wins >= 1:
-                performance_factor += 0.1
+                performance_factor += 0.15
+            
+            # Reduce factor for consecutive losses but keep >= 0
+            if consecutive_losses >= 3:
+                performance_factor = max(0.1, performance_factor * 0.5)
+            elif consecutive_losses >= 1:
+                performance_factor = max(0.2, performance_factor * 0.8)
 
-            # Add base performance factor to avoid 0.0
-            if performance_factor == 0.0:
-                performance_factor = 0.25  # Default positive factor
+            # Ensure minimum positive factor to maintain absolute value >= 0
+            performance_factor = max(0.1, performance_factor)
 
-            # Limit performance factor
-            performance_factor = max(-1.0, min(1.0, performance_factor))
+            # Cap at reasonable maximum
+            performance_factor = min(1.5, performance_factor)
+
+            # Log incremental tracking
+            self.logger.info(f"📊 Win Rate Tracking: Current: {current_win_rate:.3f}, Previous: {previous_win_rate:.3f}, Increment: {win_rate_increment:.3f}")
+            self.logger.info(f"🎯 Performance Factor: {performance_factor:.3f} (absolute value >= 0)")
 
             return performance_factor
 
         except Exception as e:
             self.logger.error(f"Error calculating performance factor: {e}")
-            return 0.0
+            return 0.25  # Default positive factor on error
 
     def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
         """Generate ML-enhanced scalping signal"""

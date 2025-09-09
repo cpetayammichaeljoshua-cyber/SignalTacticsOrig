@@ -1049,7 +1049,7 @@ class UltimateTradingBot:
         self.last_hour_reset = datetime.now().hour
         self.unlimited_signals = True  # Flag for unlimited signal mode
 
-        # Active symbol tracking - prevent duplicate trades
+        # Active symbol tracking - enforce single trade per symbol
         self.active_symbols = set()  # Track symbols with open trades
         self.symbol_trade_lock = {}  # Lock mechanism for each symbol
 
@@ -1672,8 +1672,8 @@ class UltimateTradingBot:
                 self.logger.debug(f"⏰ Hourly signal limit reached: {self.hourly_signal_count}/{self.max_signals_per_hour}")
                 return None
 
-            # Allow multiple trades per symbol for maximum opportunity
-            if False:  # Disabled active symbol check
+            # Prevent multiple trades per symbol
+            if symbol in self.active_symbols:
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
                 return None
 
@@ -1843,12 +1843,11 @@ class UltimateTradingBot:
             if signal_strength < self.min_signal_strength and signal_strength < 70:
                 return None
 
-            # Update last signal time but allow multiple concurrent trades
+            # Update last signal time and lock symbol for single trade per symbol
             self.last_signal_time[symbol] = current_time
-            # Don't lock symbols - allow multiple concurrent trades
-            if len(self.active_symbols) < self.max_concurrent_trades:
-                self.active_symbols.add(symbol)
-                self.symbol_trade_lock[symbol] = current_time
+            # Lock symbol to prevent multiple concurrent trades
+            self.active_symbols.add(symbol)
+            self.symbol_trade_lock[symbol] = current_time
             
             # Increment hourly signal counter
             self.hourly_signal_count += 1

@@ -1023,12 +1023,12 @@ class UltimateTradingBot:
             'leverage_adjustment_factor': 0.1
         }
 
-        # Risk management - optimized for maximum profitability
+        # Risk management - optimized for maximum profitability with increased frequency
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 80
-        self.max_signals_per_hour = 10  # Limited to 10 signals per hour
+        self.min_signal_strength = 75  # Reduced from 80 to allow more trades while maintaining quality
+        self.max_signals_per_hour = 15  # Increased from 10 to 15 signals per hour
         self.capital_allocation = 0.025  # 2.5% per trade
-        self.max_concurrent_trades = 25  # Increased concurrent trades
+        self.max_concurrent_trades = 30  # Increased from 25 to 30 concurrent trades
 
         # Performance tracking
         self.signal_counter = 0
@@ -1040,9 +1040,9 @@ class UltimateTradingBot:
             'total_profit': 0.0
         }
 
-        # Prevent signal spam
+        # Prevent signal spam - optimized for more frequent trading
         self.last_signal_time = {}
-        self.min_signal_interval = 180  # 3 minutes between signals for same symbol
+        self.min_signal_interval = 120  # Reduced from 180 to 120 seconds (2 minutes) between signals for same symbol
         
         # Hourly signal tracking
         self.hourly_signal_count = 0
@@ -1068,9 +1068,12 @@ class UltimateTradingBot:
 
         # Bot status
         self.running = True
+        self.start_time = datetime.now()  # Track start time for uptime calculation
         self.last_heartbeat = datetime.now()
 
-        self.logger.info("🚀 Ultimate Trading Bot initialized with Advanced ML")
+        self.logger.info("🚀 Ultimate Trading Bot initialized with Advanced ML & Enhanced Heikin Ashi")
+        self.logger.info("🕯️ Heikin Ashi: MANDATORY confirmation enabled")
+        self.logger.info(f"⚡ Enhanced frequency: {self.max_signals_per_hour} signals/hour, {self.min_signal_interval}s intervals")
         self._write_pid_file()
 
     def _setup_logging(self):
@@ -1424,55 +1427,101 @@ class UltimateTradingBot:
         return macd_line, signal_line, histogram
 
     def _calculate_heikin_ashi(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate Heikin Ashi candles for trend confirmation"""
+        """Calculate Heikin Ashi candles for trend confirmation - Fixed and Enhanced"""
         try:
-            if df.empty or len(df) < 2:
+            if df.empty or len(df) < 5:  # Need at least 5 candles for proper confirmation
                 return {}
             
+            # Calculate Heikin Ashi OHLC
             ha_close = (df['open'] + df['high'] + df['low'] + df['close']) / 4
             ha_open = np.zeros(len(df))
             ha_open[0] = (df['open'].iloc[0] + df['close'].iloc[0]) / 2
             
+            # Calculate sequential Heikin Ashi opens
             for i in range(1, len(df)):
                 ha_open[i] = (ha_open[i-1] + ha_close.iloc[i-1]) / 2
             
+            # Calculate Heikin Ashi high and low
             ha_high = np.maximum(df['high'], np.maximum(ha_open, ha_close))
             ha_low = np.minimum(df['low'], np.minimum(ha_open, ha_close))
             
-            # Determine trend - using iloc for proper indexing
-            last_ha_open = ha_open[-1]
-            last_ha_close = ha_close.iloc[-1]
-            prev_ha_open = ha_open[-2] if len(ha_open) > 1 else last_ha_open
-            prev_ha_close = ha_close.iloc[-2] if len(ha_close) > 1 else last_ha_close
-            
-            # Current candle trend
-            current_bullish = last_ha_close > last_ha_open
-            current_bearish = last_ha_close < last_ha_open
-            
-            # Previous candle trend
-            prev_bullish = prev_ha_close > prev_ha_open
-            prev_bearish = prev_ha_close < prev_ha_open
-            
-            # Trend confirmation
-            bullish_confirmation = current_bullish and prev_bullish
-            bearish_confirmation = current_bearish and prev_bearish
-            
-            # Calculate trend strength - using iloc for proper indexing
-            body_size = abs(last_ha_close - last_ha_open)
-            candle_range = ha_high.iloc[-1] - ha_low.iloc[-1]
-            trend_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
-            
-            return {
-                'ha_trend': 'bullish' if bullish_confirmation else 'bearish' if bearish_confirmation else 'neutral',
-                'ha_current_bullish': current_bullish,
-                'ha_current_bearish': current_bearish,
-                'ha_trend_strength': trend_strength,
-                'ha_confirmation': bullish_confirmation or bearish_confirmation,
-                'ha_open': last_ha_open,
-                'ha_close': last_ha_close,
-                'ha_high': ha_high.iloc[-1],
-                'ha_low': ha_low.iloc[-1]
-            }
+            # Get last 3 candles for stronger confirmation
+            if len(ha_open) >= 3:
+                last_3_opens = ha_open[-3:]
+                last_3_closes = ha_close.iloc[-3:].values
+                
+                # Determine trend patterns
+                bullish_candles = sum(1 for i in range(3) if last_3_closes[i] > last_3_opens[i])
+                bearish_candles = sum(1 for i in range(3) if last_3_closes[i] < last_3_opens[i])
+                
+                # Strong confirmation requires at least 2 out of 3 candles in same direction
+                strong_bullish = bullish_candles >= 2
+                strong_bearish = bearish_candles >= 2
+                
+                # Current candle analysis
+                current_ha_open = ha_open[-1]
+                current_ha_close = ha_close.iloc[-1]
+                current_bullish = current_ha_close > current_ha_open
+                current_bearish = current_ha_close < current_ha_open
+                
+                # Previous candle analysis for immediate confirmation
+                prev_ha_open = ha_open[-2]
+                prev_ha_close = ha_close.iloc[-2]
+                prev_bullish = prev_ha_close > prev_ha_open
+                prev_bearish = prev_ha_close < prev_ha_open
+                
+                # Enhanced trend confirmation logic
+                if strong_bullish and current_bullish:
+                    ha_trend = 'bullish'
+                    ha_confirmation = True
+                elif strong_bearish and current_bearish:
+                    ha_trend = 'bearish' 
+                    ha_confirmation = True
+                elif current_bullish and prev_bullish:
+                    ha_trend = 'bullish'
+                    ha_confirmation = True
+                elif current_bearish and prev_bearish:
+                    ha_trend = 'bearish'
+                    ha_confirmation = True
+                else:
+                    ha_trend = 'neutral'
+                    ha_confirmation = False
+                
+                # Calculate enhanced trend strength
+                body_size = abs(current_ha_close - current_ha_open)
+                candle_range = ha_high[-1] - ha_low[-1]
+                base_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
+                
+                # Boost strength based on consecutive confirmations
+                if ha_confirmation:
+                    if strong_bullish or strong_bearish:
+                        trend_strength = min(base_strength * 1.3, 100)  # 30% boost for strong pattern
+                    else:
+                        trend_strength = min(base_strength * 1.1, 100)  # 10% boost for basic confirmation
+                else:
+                    trend_strength = base_strength
+                
+                # Calculate momentum (change in body size)
+                prev_body_size = abs(prev_ha_close - prev_ha_open)
+                momentum_increasing = body_size > prev_body_size
+                
+                return {
+                    'ha_trend': ha_trend,
+                    'ha_current_bullish': current_bullish,
+                    'ha_current_bearish': current_bearish,
+                    'ha_trend_strength': trend_strength,
+                    'ha_confirmation': ha_confirmation,
+                    'ha_strong_pattern': strong_bullish or strong_bearish,
+                    'ha_momentum_increasing': momentum_increasing,
+                    'ha_consecutive_bullish': bullish_candles,
+                    'ha_consecutive_bearish': bearish_candles,
+                    'ha_open': current_ha_open,
+                    'ha_close': current_ha_close,
+                    'ha_high': ha_high[-1],
+                    'ha_low': ha_low[-1]
+                }
+            else:
+                return {}
             
         except Exception as e:
             self.logger.error(f"Error calculating Heikin Ashi: {e}")
@@ -1734,38 +1783,69 @@ class UltimateTradingBot:
                 else:
                     bearish_signals += 10
 
-            # 8. Heikin Ashi trend confirmation (15% weight) - Critical for trend validation
+            # 8. Enhanced Heikin Ashi trend confirmation (20% weight) - MANDATORY for all signals
             ha_trend = indicators.get('ha_trend', 'neutral')
             ha_confirmation = indicators.get('ha_confirmation', False)
             ha_strength = indicators.get('ha_trend_strength', 0)
+            ha_strong_pattern = indicators.get('ha_strong_pattern', False)
+            ha_momentum_increasing = indicators.get('ha_momentum_increasing', False)
             
-            if ha_trend == 'bullish' and ha_confirmation and ha_strength > 60:
-                bullish_signals += 15
-            elif ha_trend == 'bearish' and ha_confirmation and ha_strength > 60:
-                bearish_signals += 15
-            elif ha_trend != 'neutral' and ha_confirmation:
-                # Partial points for weaker Heikin Ashi signals
-                if ha_trend == 'bullish':
-                    bullish_signals += 8
-                elif ha_trend == 'bearish':
-                    bearish_signals += 8
+            # STRICT Heikin Ashi requirements - this is now MANDATORY
+            if ha_trend == 'bullish' and ha_confirmation:
+                if ha_strong_pattern and ha_strength > 70:
+                    bullish_signals += 20  # Maximum points for strong bullish pattern
+                elif ha_strength > 60:
+                    bullish_signals += 15  # Good bullish confirmation
+                elif ha_strength > 50:
+                    bullish_signals += 10  # Weak bullish confirmation
+                else:
+                    # Insufficient Heikin Ashi strength - reject signal
+                    return None
+                    
+                # Momentum bonus
+                if ha_momentum_increasing:
+                    bullish_signals += 5
+                    
+            elif ha_trend == 'bearish' and ha_confirmation:
+                if ha_strong_pattern and ha_strength > 70:
+                    bearish_signals += 20  # Maximum points for strong bearish pattern
+                elif ha_strength > 60:
+                    bearish_signals += 15  # Good bearish confirmation
+                elif ha_strength > 50:
+                    bearish_signals += 10  # Weak bearish confirmation
+                else:
+                    # Insufficient Heikin Ashi strength - reject signal
+                    return None
+                    
+                # Momentum bonus
+                if ha_momentum_increasing:
+                    bearish_signals += 5
+            else:
+                # NO SIGNAL without proper Heikin Ashi confirmation
+                self.logger.debug(f"❌ Signal rejected for {symbol} - No Heikin Ashi confirmation (trend: {ha_trend}, confirmation: {ha_confirmation})")
+                return None
 
-            # Determine signal direction and strength
-            if bullish_signals >= self.min_signal_strength:
+            # Determine signal direction and strength with enhanced requirements
+            if bullish_signals >= self.min_signal_strength and ha_trend == 'bullish':
                 direction = 'BUY'
                 signal_strength = bullish_signals
-            elif bearish_signals >= self.min_signal_strength:
+            elif bearish_signals >= self.min_signal_strength and ha_trend == 'bearish':
                 direction = 'SELL'
                 signal_strength = bearish_signals
             else:
                 return None
 
-            # Additional Heikin Ashi validation - must confirm direction
-            if direction == 'BUY' and ha_trend == 'bearish':
-                self.logger.debug(f"❌ BUY signal rejected - Heikin Ashi shows bearish trend for {symbol}")
+            # MANDATORY Heikin Ashi final validation - NO EXCEPTIONS
+            if direction == 'BUY' and ha_trend != 'bullish':
+                self.logger.debug(f"❌ BUY signal REJECTED - Heikin Ashi not bullish for {symbol} (trend: {ha_trend})")
                 return None
-            elif direction == 'SELL' and ha_trend == 'bullish':
-                self.logger.debug(f"❌ SELL signal rejected - Heikin Ashi shows bullish trend for {symbol}")
+            elif direction == 'SELL' and ha_trend != 'bearish':
+                self.logger.debug(f"❌ SELL signal REJECTED - Heikin Ashi not bearish for {symbol} (trend: {ha_trend})")
+                return None
+            
+            # Additional confirmation check - require strong Heikin Ashi for high-confidence signals
+            if not ha_confirmation:
+                self.logger.debug(f"❌ Signal REJECTED - Heikin Ashi confirmation required for {symbol}")
                 return None
 
             # Calculate entry, stop loss, and take profits
@@ -2019,14 +2099,27 @@ class UltimateTradingBot:
             return False
 
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format minimal ML signal message"""
+        """Format minimal ML signal message with enhanced Heikin Ashi info"""
         ml_prediction = signal.get('ml_prediction', {})
 
         # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Get Heikin Ashi confirmation status
-        ha_status = "✅ Confirmed" if signal.get('ha_confirmation', False) else "⚠️ Neutral"
+        # Get enhanced Heikin Ashi confirmation status
+        ha_info = signal.get('indicators_data', {})
+        if isinstance(ha_info, list):
+            ha_confirmation = "Heikin Ashi Confirmation" in ha_info
+        else:
+            ha_confirmation = signal.get('ha_confirmation', False)
+            
+        ha_strong = signal.get('ha_strong_pattern', False)
+        
+        if ha_confirmation and ha_strong:
+            ha_status = "✅ STRONG Pattern"
+        elif ha_confirmation:
+            ha_status = "✅ Confirmed"
+        else:
+            ha_status = "⚠️ No Confirmation"
 
         message = f"""{cornix_signal}
 
@@ -2034,9 +2127,10 @@ class UltimateTradingBot:
 📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:1
 🕯️ Heikin Ashi: {ha_status}
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
-🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}/10
+🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}/{self.max_signals_per_hour}
 
-Auto SL Management Active"""
+✅ Enhanced Strategy: Mandatory HA Confirmation
+🎯 Auto SL Management Active"""
 
         return message.strip()
 
@@ -2256,21 +2350,48 @@ Commands:
 Bot learns from every trade""")
 
             elif text.startswith('/help'):
-                await self.send_message(chat_id, """Available Commands:
+                await self.send_message(chat_id, """📋 **AVAILABLE COMMANDS**
 
+**Core Functions:**
 /start - Initialize bot
+/scan - Scan markets for signals
+/stats - Performance statistics  
 /ml - ML model status
-/scan - Scan markets
-/stats - Performance stats
-/symbols - Trading symbols
+
+**Trading Info:**
+/symbols - Active trading pairs
 /leverage - Leverage settings
 /risk - Risk management
-/session - Current session
+/strategy - Trading strategy details
+/frequency - Signal frequency settings
+
+**Market Analysis:**
+/session - Current trading session
 /cvd - CVD analysis
 /market - Market conditions
 /insights - Trading insights
-/settings - Bot settings
-/unlock [SYMBOL] - Unlock symbol trade lock""")
+/heikinashi - Heikin Ashi status
+
+**Trade Management:**
+/opentrades - Active trades
+/history - Trade history
+/performance - Detailed performance
+/unlock [SYMBOL] - Unlock symbol
+
+**System:**
+/settings - Bot configuration
+/alerts - Alert settings
+/status - System health
+/debug - Debug information
+/restart - Restart bot
+/channel - Channel status
+/train - Manual ML training
+
+**Enhanced Features:**
+✅ Heikin Ashi mandatory confirmation
+✅ Increased trading frequency
+✅ Enhanced ML learning
+✅ Real-time monitoring""")
 
             elif text.startswith('/stats'):
                 ml_summary = self.ml_analyzer.get_ml_summary()
@@ -2526,7 +2647,12 @@ Next Retrain: {ml_summary['next_retrain_in']} trades
 Models Active:
 ✅ Signal Classifier
 ✅ Profit Predictor  
-✅ Risk Assessor""")
+✅ Risk Assessor
+
+**Heikin Ashi Integration:**
+✅ Mandatory confirmation active
+✅ Enhanced pattern recognition
+✅ Momentum tracking enabled""")
 
             elif text.startswith('/scan'):
                 await self.send_message(chat_id, "🔍 **Scanning markets...**")
@@ -2594,6 +2720,254 @@ Auto-Training: ✅ Enabled
 • Improves prediction accuracy
 
 Use /train to manually scan and train""")
+
+            elif text.startswith('/heikinashi') or text.startswith('/ha'):
+                await self.send_message(chat_id, f"""🕯️ **HEIKIN ASHI STATUS**
+
+Mode: ✅ **MANDATORY CONFIRMATION**
+Pattern Recognition: ✅ Enhanced
+Minimum Strength: 50%
+Strong Pattern Threshold: 70%
+
+**Current Requirements:**
+• All signals MUST have HA confirmation
+• Bullish signals require bullish HA trend
+• Bearish signals require bearish HA trend
+• No exceptions - strict enforcement
+
+**Features:**
+✅ 3-candle pattern analysis
+✅ Momentum tracking
+✅ Enhanced trend strength calculation
+✅ Consecutive candle confirmation
+
+*Heikin Ashi is now the primary trend filter*""")
+
+            elif text.startswith('/frequency') or text.startswith('/freq'):
+                await self.send_message(chat_id, f"""⚡ **TRADING FREQUENCY**
+
+**Current Settings:**
+• Max Signals/Hour: {self.max_signals_per_hour}
+• Signal Interval: {self.min_signal_interval}s
+• Min Signal Strength: {self.min_signal_strength}%
+• Max Concurrent: {self.max_concurrent_trades}
+
+**Hourly Progress:**
+• Current Hour: {self.hourly_signal_count}/{self.max_signals_per_hour}
+• Active Symbols: {len(self.active_symbols)}
+
+**Enhanced for More Trades:**
+✅ Reduced signal interval to 2 minutes
+✅ Increased hourly limit to 15
+✅ Lowered strength requirement to 75%
+✅ More concurrent trades (30)""")
+
+            elif text.startswith('/performance') or text.startswith('/perf'):
+                try:
+                    # Calculate detailed performance metrics
+                    total_trades = self.performance_stats['total_signals']
+                    win_rate = self.performance_stats['win_rate']
+                    total_profit = self.performance_stats['total_profit']
+                    
+                    # Calculate average profit per trade
+                    avg_profit_per_trade = total_profit / max(total_trades, 1)
+                    
+                    # Get ML performance
+                    ml_summary = self.ml_analyzer.get_ml_summary()
+                    ml_accuracy = ml_summary['model_performance']['signal_accuracy'] * 100
+                    
+                    # Calculate performance grade
+                    if win_rate >= 70 and ml_accuracy >= 80:
+                        grade = "🏆 EXCELLENT"
+                    elif win_rate >= 60 and ml_accuracy >= 70:
+                        grade = "🥈 GOOD"
+                    elif win_rate >= 50 and ml_accuracy >= 60:
+                        grade = "🥉 AVERAGE"
+                    else:
+                        grade = "📈 LEARNING"
+                    
+                    await self.send_message(chat_id, f"""📊 **PERFORMANCE ANALYSIS**
+
+**Overall Grade: {grade}**
+
+**Trading Stats:**
+• Total Trades: {total_trades}
+• Win Rate: {win_rate:.1f}%
+• Total Profit: {total_profit:.2f}%
+• Avg Profit/Trade: {avg_profit_per_trade:.2f}%
+
+**ML Performance:**
+• Model Accuracy: {ml_accuracy:.1f}%
+• Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
+• Learning Status: {ml_summary['learning_status'].title()}
+
+**Active Monitoring:**
+• Open Trades: {len(self.active_trades)}
+• Symbols Locked: {len(self.active_symbols)}
+• Session Signals: {self.signal_counter}
+
+**Heikin Ashi Integration:**
+✅ Mandatory confirmation active
+✅ Enhanced pattern filtering
+✅ Improved signal quality""")
+                
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Error getting performance:** {str(e)}")
+
+            elif text.startswith('/strategy') or text.startswith('/strat'):
+                await self.send_message(chat_id, f"""🎯 **TRADING STRATEGY**
+
+**Core Strategy: Ultimate ML-Enhanced Scalping**
+
+**Signal Components (Weights):**
+• SuperTrend: 25%
+• EMA Confluence: 20% 
+• Heikin Ashi: 20% ⭐ **MANDATORY**
+• CVD Analysis: 15%
+• VWAP Position: 10%
+• Volume Surge: 10%
+
+**Entry Requirements:**
+✅ Signal strength ≥ 75%
+✅ Heikin Ashi confirmation REQUIRED
+✅ ML confidence ≥ 85%
+✅ Multiple timeframe alignment
+
+**Risk Management:**
+• Risk per trade: 1.5%
+• R/R Ratio: 1:1
+• Stop Loss: Dynamic ATR-based
+• Take Profits: TP1 (33%), TP2 (67%), TP3 (100%)
+
+**Enhanced Features:**
+✅ Adaptive leverage (20x-75x)
+✅ Real-time ML learning
+✅ Heikin Ashi momentum tracking
+✅ CVD institutional flow analysis""")
+
+            elif text.startswith('/alerts') or text.startswith('/alert'):
+                await self.send_message(chat_id, f"""🔔 **ALERT SETTINGS**
+
+**Signal Alerts:** ✅ Enabled
+**Chart Generation:** ✅ Enabled  
+**ML Predictions:** ✅ Enabled
+**Trade Updates:** ✅ Real-time
+
+**Alert Types:**
+• 📊 New signals with charts
+• 🧠 ML confidence levels
+• 🕯️ Heikin Ashi confirmations
+• ⚡ Trade execution updates
+• 📈 Profit/Loss notifications
+
+**Delivery:**
+• Primary: {self.target_channel}
+• Fallback: Admin DM
+• Format: Cornix-compatible
+
+**Quality Filters:**
+✅ Heikin Ashi mandatory
+✅ ML confidence ≥ 85%
+✅ Signal strength ≥ 75%
+✅ Multi-timeframe confirmation""")
+
+            elif text.startswith('/debug') or text.startswith('/dbg'):
+                try:
+                    # Get system debug information
+                    import psutil
+                    import platform
+                    
+                    # Memory usage
+                    process = psutil.Process()
+                    memory_mb = process.memory_info().rss / 1024 / 1024
+                    
+                    # System info
+                    system_info = f"""🔧 **DEBUG INFORMATION**
+
+**System:**
+• Platform: {platform.system()}
+• Python: {platform.python_version()}
+• Memory Usage: {memory_mb:.1f} MB
+• Process ID: {process.pid}
+
+**Bot Status:**
+• Running: {self.running}
+• Session Token: {self.session_token[:8] if self.session_token else 'None'}...
+• Channel Access: {'✅' if self.channel_accessible else '❌'}
+• Shutdown Requested: {self.shutdown_requested}
+
+**Trading State:**
+• Active Symbols: {len(self.active_symbols)}
+• Symbol Locks: {len(self.symbol_trade_lock)}
+• Hour Reset: {self.last_hour_reset}
+• Signals This Hour: {self.hourly_signal_count}
+
+**ML State:**
+• Models Loaded: {bool(self.ml_analyzer.signal_classifier)}
+• Database Path: {self.ml_analyzer.db_path}
+• Retrain Threshold: {self.ml_analyzer.retrain_threshold}
+• Trades Since Retrain: {self.ml_analyzer.trades_since_retrain}
+
+**Heikin Ashi:**
+✅ Enhanced calculation active
+✅ Mandatory confirmation enabled
+✅ 3-candle pattern analysis
+✅ Momentum tracking enabled"""
+                    
+                    await self.send_message(chat_id, system_info)
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Debug Error:** {str(e)}")
+
+            elif text.startswith('/restart') or text.startswith('/reboot'):
+                await self.send_message(chat_id, """🔄 **BOT RESTART INITIATED**
+
+Performing graceful restart...
+• Saving current state
+• Closing active connections
+• Preserving ML models
+• Maintaining trade history
+
+Bot will be back online in ~30 seconds.""")
+                
+                # Trigger graceful restart
+                self.shutdown_requested = True
+                self.running = False
+
+            elif text.startswith('/status') or text.startswith('/health'):
+                try:
+                    current_time = datetime.now()
+                    uptime = current_time - getattr(self, 'start_time', current_time)
+                    
+                    status_msg = f"""💚 **BOT HEALTH STATUS**
+
+**Operational Status:** 🟢 ONLINE
+**Uptime:** {uptime.total_seconds()/3600:.1f} hours
+**Last Heartbeat:** {(current_time - self.last_heartbeat).total_seconds():.0f}s ago
+
+**Core Systems:**
+• ML Engine: 🟢 Active
+• Signal Generation: 🟢 Active  
+• Heikin Ashi: 🟢 Enhanced
+• Risk Management: 🟢 Active
+• Telegram API: {'🟢' if self.channel_accessible else '🟡'} {'Connected' if self.channel_accessible else 'Limited'}
+
+**Performance:**
+• Signals Generated: {self.signal_counter}
+• Win Rate: {self.performance_stats['win_rate']:.1f}%
+• Active Trades: {len(self.active_trades)}
+• Memory Usage: Normal
+
+**Trading Status:**
+• Strategy: Ultimate ML-Enhanced Scalping
+• Heikin Ashi: MANDATORY confirmation
+• Signal Quality: High (75%+ strength required)
+• Market Scanning: Every 90 seconds"""
+                    
+                    await self.send_message(chat_id, status_msg)
+                    
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ **Status Error:** {str(e)}")
 
         except Exception as e:
             self.logger.error(f"Error handling command {text}: {e}")

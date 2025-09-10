@@ -765,7 +765,7 @@ class AdvancedMLTradeAnalyzer:
             self.logger.error(f"Error loading ML models: {e}")
 
     def predict_trade_outcome(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Advanced ML prediction for trade outcome"""
+        """Advanced ML prediction for trade outcome - only above neutral"""
         try:
             if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
                 return self._fallback_prediction(signal_data)
@@ -789,13 +789,24 @@ class AdvancedMLTradeAnalyzer:
             # Adjust based on market insights
             confidence = self._adjust_confidence_with_insights(signal_data, confidence)
 
-            # Determine prediction
-            if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3:
+            # ONLY CONSIDER ABOVE NEUTRAL - Strict filtering for high quality
+            if confidence >= 80 and profit_amount > 0 and risk_prob < 0.25:
                 prediction = 'highly_favorable'
-            elif confidence >= 65 and profit_amount > 0:
+            elif confidence >= 70 and profit_amount > 0 and risk_prob < 0.35:
                 prediction = 'favorable'
+            elif confidence >= 60 and profit_amount > 0:
+                prediction = 'above_neutral'
             else:
-                prediction = 'neutral' # Default to neutral if not meeting specific criteria
+                # Block all neutral and below predictions
+                return {
+                    'prediction': 'blocked_neutral_or_below',
+                    'confidence': confidence,
+                    'expected_profit': 0,
+                    'risk_probability': 100,
+                    'recommendation': 'Signal blocked - ML confidence below acceptable threshold',
+                    'model_accuracy': self.model_performance['signal_accuracy'] * 100,
+                    'trades_learned_from': self.model_performance['total_trades_learned']
+                }
 
             return {
                 'prediction': prediction,
@@ -889,25 +900,37 @@ class AdvancedMLTradeAnalyzer:
         return "Signal Strength Based: Favorable"
 
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback prediction when ML models not available"""
+        """Fallback prediction when ML models not available - only above neutral"""
         signal_strength = signal_data.get('signal_strength', 50)
 
-        if signal_strength >= 80:  # Lowered threshold for more signals
+        # ONLY ABOVE NEUTRAL - Strict filtering for high strength signals
+        if signal_strength >= 85:  # High threshold for favorable
+            prediction = 'highly_favorable'
+            confidence = min(signal_strength, 95)
+        elif signal_strength >= 75:  # Good threshold for favorable
             prediction = 'favorable'
             confidence = min(signal_strength, 85)
-        elif signal_strength >= 70:
-            prediction = 'neutral'
+        elif signal_strength >= 65:  # Minimum above neutral
+            prediction = 'above_neutral'
             confidence = min(signal_strength, 75)
         else:
-            prediction = 'unfavorable'
-            confidence = max(40, signal_strength * 0.8)
+            # Block all neutral and below signals
+            return {
+                'prediction': 'blocked_below_threshold',
+                'confidence': signal_strength,
+                'expected_profit': 0,
+                'risk_probability': 100,
+                'recommendation': 'Signal blocked - Strength below acceptable threshold',
+                'model_accuracy': 0.0,
+                'trades_learned_from': 0
+            }
 
         return {
             'prediction': prediction,
             'confidence': confidence,
-            'expected_profit': signal_strength / 100.0,
-            'risk_probability': max(10, 100 - signal_strength),
-            'recommendation': f"Signal Strength Based: {prediction.title()}",
+            'expected_profit': signal_strength / 100.0 * 1.2,  # Boost expected profit for high strength
+            'risk_probability': max(5, 100 - signal_strength),
+            'recommendation': f"High Strength Signal: {prediction.title()}",
             'model_accuracy': 0.0,
             'trades_learned_from': 0
         }
@@ -1413,15 +1436,19 @@ class UltimateTradingBot:
         return macd_line, signal_line, histogram
 
     def _calculate_heikin_ashi(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate Heikin Ashi candles for trend confirmation"""
+        """Calculate Heikin Ashi candles with doji detection for signal confirmation"""
         try:
-            if df.empty or len(df) < 2:
+            if df.empty or len(df) < 3:
                 return {
                     'ha_trend': 'neutral',
                     'ha_current_bullish': False,
                     'ha_current_bearish': False,
                     'ha_trend_strength': 0,
                     'ha_confirmation': False,
+                    'ha_doji_detected': False,
+                    'ha_doji_confirmation': False,
+                    'ha_bar_switch': False,
+                    'ha_signal_ready': False,
                     'ha_open': 0,
                     'ha_close': 0,
                     'ha_high': 0,
@@ -1438,11 +1465,13 @@ class UltimateTradingBot:
             ha_high = np.maximum(df['high'].values, np.maximum(ha_open, ha_close.values))
             ha_low = np.minimum(df['low'].values, np.minimum(ha_open, ha_close.values))
 
-            # Determine trend - using proper indexing
+            # Get last 3 candles for doji detection and bar switch confirmation
             last_ha_open = ha_open[-1]
             last_ha_close = ha_close.iloc[-1]
             prev_ha_open = ha_open[-2] if len(ha_open) > 1 else last_ha_open
             prev_ha_close = ha_close.iloc[-2] if len(ha_close) > 1 else last_ha_open
+            prev2_ha_open = ha_open[-3] if len(ha_open) > 2 else prev_ha_open
+            prev2_ha_close = ha_close.iloc[-3] if len(ha_close) > 2 else prev_ha_close
 
             # Current candle trend
             current_bullish = last_ha_close > last_ha_open
@@ -1452,21 +1481,69 @@ class UltimateTradingBot:
             prev_bullish = prev_ha_close > prev_ha_open
             prev_bearish = prev_ha_close < prev_ha_open
 
-            # Trend confirmation
-            bullish_confirmation = current_bullish and prev_bullish
-            bearish_confirmation = current_bearish and prev_bearish
+            # Detect doji patterns - small body relative to range
+            current_body_size = abs(last_ha_close - last_ha_open)
+            current_range = ha_high[-1] - ha_low[-1]
+            prev_body_size = abs(prev_ha_close - prev_ha_open)
+            prev_range = ha_high[-2] - ha_low[-2] if len(ha_high) > 1 else current_range
 
-            # Calculate trend strength - safe division
+            # Doji detection - body is less than 10% of the total range
+            current_is_doji = (current_body_size / current_range < 0.10) if current_range > 0 else False
+            prev_is_doji = (prev_body_size / prev_range < 0.10) if prev_range > 0 else False
+
+            # Bar switch detection - previous was doji, current shows direction
+            doji_to_bullish_switch = prev_is_doji and current_bullish and not current_is_doji
+            doji_to_bearish_switch = prev_is_doji and current_bearish and not current_is_doji
+
+            # Enhanced confirmation with doji pattern
+            bullish_confirmation = current_bullish and (prev_bullish or doji_to_bullish_switch)
+            bearish_confirmation = current_bearish and (prev_bearish or doji_to_bearish_switch)
+
+            # Special doji confirmation - when doji switches to directional bar
+            doji_confirmation = doji_to_bullish_switch or doji_to_bearish_switch
+
+            # Signal readiness - requires doji confirmation OR strong trend continuation
+            signal_ready = doji_confirmation or (bullish_confirmation and not prev_is_doji) or (bearish_confirmation and not prev_is_doji)
+
+            # Calculate trend strength - safe division with doji consideration
             body_size = abs(last_ha_close - last_ha_open)
             candle_range = ha_high[-1] - ha_low[-1]
-            trend_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
+            
+            if candle_range > 0:
+                trend_strength = (body_size / candle_range * 100)
+                # Boost strength if coming from doji pattern
+                if doji_confirmation:
+                    trend_strength *= 1.3  # 30% boost for doji confirmation
+            else:
+                trend_strength = 0
+
+            # Determine final trend with doji consideration
+            if doji_confirmation:
+                if doji_to_bullish_switch:
+                    final_trend = 'bullish_from_doji'
+                elif doji_to_bearish_switch:
+                    final_trend = 'bearish_from_doji'
+                else:
+                    final_trend = 'doji_transition'
+            elif bullish_confirmation:
+                final_trend = 'bullish'
+            elif bearish_confirmation:
+                final_trend = 'bearish'
+            else:
+                final_trend = 'neutral'
 
             return {
-                'ha_trend': 'bullish' if bullish_confirmation else 'bearish' if bearish_confirmation else 'neutral',
+                'ha_trend': final_trend,
                 'ha_current_bullish': current_bullish,
                 'ha_current_bearish': current_bearish,
-                'ha_trend_strength': trend_strength,
+                'ha_trend_strength': min(100, trend_strength),
                 'ha_confirmation': bullish_confirmation or bearish_confirmation,
+                'ha_doji_detected': current_is_doji or prev_is_doji,
+                'ha_doji_confirmation': doji_confirmation,
+                'ha_bar_switch': doji_to_bullish_switch or doji_to_bearish_switch,
+                'ha_signal_ready': signal_ready,
+                'ha_doji_to_bullish': doji_to_bullish_switch,
+                'ha_doji_to_bearish': doji_to_bearish_switch,
                 'ha_open': last_ha_open,
                 'ha_close': last_ha_close,
                 'ha_high': ha_high[-1],
@@ -1474,13 +1551,17 @@ class UltimateTradingBot:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating Heikin Ashi: {e}")
+            self.logger.error(f"Error calculating Heikin Ashi with doji detection: {e}")
             return {
                 'ha_trend': 'neutral',
                 'ha_current_bullish': False,
                 'ha_current_bearish': False,
                 'ha_trend_strength': 0,
                 'ha_confirmation': False,
+                'ha_doji_detected': False,
+                'ha_doji_confirmation': False,
+                'ha_bar_switch': False,
+                'ha_signal_ready': False,
                 'ha_open': 0,
                 'ha_close': 0,
                 'ha_high': 0,
@@ -1815,7 +1896,27 @@ class UltimateTradingBot:
             placeholder_df = pd.DataFrame({'close': [current_price] * 20}) if df is None or len(df) < 20 else df
             optimal_leverage = self.calculate_adaptive_leverage(indicators, placeholder_df)
 
-            # ML prediction
+            # STRICT HEIKIN ASHI DOJI CONFIRMATION REQUIRED
+            ha_signal_ready = indicators.get('ha_signal_ready', False)
+            ha_doji_confirmation = indicators.get('ha_doji_confirmation', False)
+            ha_doji_to_bullish = indicators.get('ha_doji_to_bullish', False)
+            ha_doji_to_bearish = indicators.get('ha_doji_to_bearish', False)
+
+            # First check: Heikin Ashi doji confirmation
+            direction_matches_doji = False
+            if direction == 'BUY' and ha_doji_to_bullish:
+                direction_matches_doji = True
+                self.logger.info(f"✅ BUY signal confirmed by Heikin Ashi doji to bullish switch: {symbol}")
+            elif direction == 'SELL' and ha_doji_to_bearish:
+                direction_matches_doji = True
+                self.logger.info(f"✅ SELL signal confirmed by Heikin Ashi doji to bearish switch: {symbol}")
+
+            # Require either doji confirmation OR very strong traditional confirmation
+            if not direction_matches_doji and not ha_signal_ready:
+                self.logger.debug(f"❌ {symbol} signal rejected - No Heikin Ashi doji confirmation")
+                return None
+
+            # ML prediction with STRICT above-neutral filtering
             ml_signal_data = {
                 'symbol': symbol,
                 'direction': direction,
@@ -1831,24 +1932,35 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # Allow more predictions for increased signal volume
+            # STRICT ML FILTERING - Only above neutral allowed
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
 
-            # Relaxed filter: Allow most predictions except clearly unfavorable ones
-            if prediction_type == 'unfavorable' and ml_confidence < 30:
-                return None  # Only block very low confidence unfavorable predictions
+            # Block all neutral and below predictions
+            if prediction_type in ['blocked_neutral_or_below', 'blocked_below_threshold', 'neutral', 'unfavorable']:
+                self.logger.debug(f"❌ {symbol} signal blocked by ML - {prediction_type} (confidence: {ml_confidence:.1f}%)")
+                return None
 
-            # Adjust signal strength for favorable predictions
+            # Only allow above neutral predictions
+            if prediction_type not in ['highly_favorable', 'favorable', 'above_neutral']:
+                self.logger.debug(f"❌ {symbol} signal rejected - ML prediction not above neutral: {prediction_type}")
+                return None
+
+            # Boost signal strength for high ML confidence
             if prediction_type == 'highly_favorable':
-                signal_strength *= 1.2
+                signal_strength *= 1.3  # Strong boost for highly favorable
             elif prediction_type == 'favorable':
-                signal_strength *= 1.1
-            elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
-                signal_strength *= 1.05
+                signal_strength *= 1.2  # Good boost for favorable
+            elif prediction_type == 'above_neutral':
+                signal_strength *= 1.1  # Small boost for above neutral
 
-            # Final signal strength check with relaxed thresholds
-            if signal_strength < 65:  # Lower threshold for more signals
+            # Additional boost for doji confirmation
+            if direction_matches_doji:
+                signal_strength *= 1.15  # Extra boost for doji confirmation
+
+            # MAINTAIN HIGH SIGNAL STRENGTH - strict threshold
+            if signal_strength < 80:  # High threshold to maintain strength
+                self.logger.debug(f"❌ {symbol} signal rejected - Final strength too low: {signal_strength:.1f}")
                 return None
 
             # Update last signal time and lock symbol for single trade per symbol
@@ -1874,14 +1986,17 @@ class UltimateTradingBot:
                 'optimal_leverage': optimal_leverage,
                 'margin_type': 'CROSSED',
                 'ml_prediction': ml_prediction,
+                'ha_confirmation': direction_matches_doji,
+                'ha_doji_switch': ha_doji_confirmation,
                 'indicators_used': [
-                    'ML-Enhanced SuperTrend', 'EMA Confluence', 'CVD Analysis',
-                    'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals', 'Heikin Ashi Confirmation'
+                    'Heikin Ashi Doji Confirmation', 'ML Above-Neutral Filter', 'Enhanced SuperTrend', 
+                    'EMA Confluence', 'CVD Analysis', 'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals'
                 ],
                 'timeframe': 'Multi-TF (1m-4h)',
-                'strategy': 'Ultimate ML-Enhanced Scalping',
+                'strategy': 'Ultimate ML-Enhanced Scalping with Doji Confirmation',
                 'ml_enhanced': True,
                 'adaptive_leverage': True,
+                'strict_filtering': True,
                 'entry_time': current_time
             }
 
@@ -2035,25 +2150,38 @@ class UltimateTradingBot:
             return False
 
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format minimal ML signal message"""
+        """Format ML signal message with Heikin Ashi doji confirmation"""
         ml_prediction = signal.get('ml_prediction', {})
 
         # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Get Heikin Ashi confirmation status with safe access
+        # Enhanced Heikin Ashi confirmation status
         ha_confirmation = signal.get('ha_confirmation', False)
-        ha_status = "✅ Confirmed" if ha_confirmation else "⚠️ Neutral"
+        ha_doji_switch = signal.get('ha_doji_switch', False)
+        
+        if ha_confirmation and ha_doji_switch:
+            ha_status = "🎯 DOJI CONFIRMED"
+        elif ha_confirmation:
+            ha_status = "✅ HA Confirmed"
+        else:
+            ha_status = "⚠️ Basic Signal"
 
+        # ML status with strict filtering info
+        ml_conf = ml_prediction.get('confidence', 0)
+        ml_pred = ml_prediction.get('prediction', 'unknown').replace('_', ' ').title()
+        
         message = f"""{cornix_signal}
 
-🧠 ML: {ml_prediction.get('prediction', 'unknown').title()} ({ml_prediction.get('confidence', 0):.0f}%)
+🧠 ML: {ml_pred} ({ml_conf:.0f}%) - ABOVE NEUTRAL ONLY
 📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:1
 🕯️ Heikin Ashi: {ha_status}
 ⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
-🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}/10
+🔥 STRICT FILTERING ACTIVE
+🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}
 
-Auto SL Management Active | 🚀 UNLIMITED MODE"""
+✅ Doji Pattern Recognition | 🧠 ML Above-Neutral Filter
+Auto SL Management Active | 🚀 HIGH QUALITY MODE"""
 
         return message.strip()
 

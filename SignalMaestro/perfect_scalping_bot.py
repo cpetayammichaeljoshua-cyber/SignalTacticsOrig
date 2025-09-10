@@ -184,10 +184,10 @@ class PerfectScalpingBot:
 
         # Risk management - optimized for scalping with enhanced symbol coverage
         self.risk_reward_ratio = 3.0  # 1:3 RR
-        self.min_signal_strength = 85  # Slightly lower for more opportunities with CVD
-        self.max_signals_per_hour = 3  # Limited to 3 per hour as requested
-        self.capital_allocation = 0.03  # 3% per trade for better diversification
-        self.max_concurrent_trades = 8  # Maximum concurrent positions
+        self.min_signal_strength = 75  # Lower for more opportunities with CVD
+        self.max_signals_per_hour = 6  # Increased to 6 per hour for more volume
+        self.capital_allocation = 0.025  # 2.5% per trade for more diversification
+        self.max_concurrent_trades = 15  # Increased concurrent positions
 
         # Signal tracking
         self.signal_counter = 0
@@ -201,7 +201,7 @@ class PerfectScalpingBot:
 
         # Prevent multiple responses
         self.last_signal_time = {}
-        self.min_signal_interval = 300  # 5 minutes between signals for same symbol
+        self.min_signal_interval = 180  # 3 minutes between signals for same symbol
 
         # Bot status
         self.running = True
@@ -1001,11 +1001,11 @@ class PerfectScalpingBot:
             elif order_flow_bias == 'bearish':
                 bearish_signals += 5
 
-            # Determine signal direction and strength
-            if bullish_signals >= self.min_signal_strength:
+            # Determine signal direction and strength with relaxed thresholds
+            if bullish_signals >= max(self.min_signal_strength - 10, 65):  # Dynamic threshold
                 direction = 'BUY'
                 signal_strength = bullish_signals
-            elif bearish_signals >= self.min_signal_strength:
+            elif bearish_signals >= max(self.min_signal_strength - 10, 65):  # Dynamic threshold
                 direction = 'SELL'
                 signal_strength = bearish_signals
             else:
@@ -2521,11 +2521,11 @@ Please try again or use `/help` for available commands.
                 # Update heartbeat
                 self.last_heartbeat = datetime.now()
 
-                # Dynamic scan interval based on market activity
+                # Faster dynamic scan interval for maximum opportunities
                 if signals:
-                    scan_interval = 60  # More frequent scanning when signals are found
+                    scan_interval = 45  # Even more frequent scanning when signals are found
                 else:
-                    scan_interval = base_scan_interval
+                    scan_interval = max(60, base_scan_interval - 30)  # Faster base scanning
 
                 self.logger.info(f"⏰ Next scan in {scan_interval} seconds")
                 await asyncio.sleep(scan_interval)

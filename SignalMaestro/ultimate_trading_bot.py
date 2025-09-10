@@ -103,8 +103,8 @@ class AdvancedMLTradeAnalyzer:
         self.retrain_threshold = 3  # Retrain after every 3 trades for rapid learning
         self.trades_since_retrain = 0
         self.learning_multiplier = 1.5  # Higher exponential learning factor
-        self.accuracy_target = 98.0  # Higher target accuracy goal
-        self.min_confidence_for_signal = 85.0  # Only send signals with 85%+ ML confidence
+        self.accuracy_target = 95.0  # Slightly lower target accuracy for more trades
+        self.min_confidence_for_signal = 70.0  # Reduced to 70%+ ML confidence for more signals
 
         # Market insights
         self.market_insights = {
@@ -956,6 +956,10 @@ class UltimateTradingBot:
         self.session_secret = os.getenv('SESSION_SECRET', 'ultimate_trading_secret_key')
         self.session_token = None
 
+        # Bot status
+        self.running = True
+        self.last_heartbeat = datetime.now()
+
         # Bot settings
         self.admin_chat_id = None
         self.target_channel = "@SignalTactics"
@@ -1043,7 +1047,7 @@ class UltimateTradingBot:
         # Prevent signal spam - greatly reduced restrictions
         self.last_signal_time = {}
         self.min_signal_interval = 30  # 30 seconds between signals for same symbol
-        
+
         # Hourly signal tracking - removed limitations
         self.hourly_signal_count = 0
         self.last_hour_reset = datetime.now().hour
@@ -1066,10 +1070,6 @@ class UltimateTradingBot:
                 self.logger.info("📊 Telegram Closed Trades Scanner initialized")
             except Exception as e:
                 self.logger.warning(f"Could not initialize closed trades scanner: {e}")
-
-        # Bot status
-        self.running = True
-        self.last_heartbeat = datetime.now()
 
         self.logger.info("🚀 Ultimate Trading Bot initialized with Advanced ML")
         self._write_pid_file()
@@ -1429,40 +1429,40 @@ class UltimateTradingBot:
         try:
             if df.empty or len(df) < 2:
                 return {}
-            
+
             ha_close = (df['open'] + df['high'] + df['low'] + df['close']) / 4
             ha_open = np.zeros(len(df))
             ha_open[0] = (df['open'].iloc[0] + df['close'].iloc[0]) / 2
-            
+
             for i in range(1, len(df)):
                 ha_open[i] = (ha_open[i-1] + ha_close.iloc[i-1]) / 2
-            
+
             ha_high = np.maximum(df['high'], np.maximum(ha_open, ha_close))
             ha_low = np.minimum(df['low'], np.minimum(ha_open, ha_close))
-            
+
             # Determine trend - using iloc for proper indexing
             last_ha_open = ha_open[-1]
             last_ha_close = ha_close.iloc[-1]
             prev_ha_open = ha_open[-2] if len(ha_open) > 1 else last_ha_open
-            prev_ha_close = ha_close.iloc[-2] if len(ha_close) > 1 else last_ha_close
-            
+            prev_ha_close = ha_close.iloc[-2] if len(ha_close) > 1 else last_ha_open
+
             # Current candle trend
             current_bullish = last_ha_close > last_ha_open
             current_bearish = last_ha_close < last_ha_open
-            
+
             # Previous candle trend
             prev_bullish = prev_ha_close > prev_ha_open
             prev_bearish = prev_ha_close < prev_ha_open
-            
+
             # Trend confirmation
             bullish_confirmation = current_bullish and prev_bullish
             bearish_confirmation = current_bearish and prev_bearish
-            
+
             # Calculate trend strength - using iloc for proper indexing
             body_size = abs(last_ha_close - last_ha_open)
             candle_range = ha_high.iloc[-1] - ha_low.iloc[-1]
             trend_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
-            
+
             return {
                 'ha_trend': 'bullish' if bullish_confirmation else 'bearish' if bearish_confirmation else 'neutral',
                 'ha_current_bullish': current_bullish,
@@ -1474,7 +1474,7 @@ class UltimateTradingBot:
                 'ha_high': ha_high.iloc[-1],
                 'ha_low': ha_low.iloc[-1]
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating Heikin Ashi: {e}")
             return {}
@@ -1585,10 +1585,10 @@ class UltimateTradingBot:
 
             # Get previous win rate for incremental tracking
             previous_win_rate = getattr(self, '_previous_win_rate', 0.5)
-            
+
             # Calculate win rate improvement (strictly incremental)
             win_rate_increment = max(0, current_win_rate - previous_win_rate)
-            
+
             # Store current win rate as previous for next calculation
             self._previous_win_rate = current_win_rate
 
@@ -1626,7 +1626,7 @@ class UltimateTradingBot:
             # Win rate adjustment with incremental bonus
             base_win_factor = current_win_rate * 0.8  # Base factor from current win rate
             increment_bonus = win_rate_increment * 2.0  # Bonus for improvement
-            
+
             performance_factor += base_win_factor + increment_bonus
 
             # Consecutive performance adjustment (absolute values only)
@@ -1634,7 +1634,7 @@ class UltimateTradingBot:
                 performance_factor += 0.4
             elif consecutive_wins >= 1:
                 performance_factor += 0.15
-            
+
             # Reduce factor for consecutive losses but keep >= 0
             if consecutive_losses >= 3:
                 performance_factor = max(0.1, performance_factor * 0.5)
@@ -1666,7 +1666,7 @@ class UltimateTradingBot:
             if current_time.hour != self.last_hour_reset:
                 self.hourly_signal_count = 0
                 self.last_hour_reset = current_time.hour
-            
+
             # No hourly limits - push unlimited signals
             if False:  # Disabled limit check
                 self.logger.debug(f"⏰ Hourly signal limit reached: {self.hourly_signal_count}/{self.max_signals_per_hour}")
@@ -1740,7 +1740,7 @@ class UltimateTradingBot:
             ha_trend = indicators.get('ha_trend', 'neutral')
             ha_confirmation = indicators.get('ha_confirmation', False)
             ha_strength = indicators.get('ha_trend_strength', 0)
-            
+
             if ha_trend == 'bullish' and ha_confirmation and ha_strength > 60:
                 bullish_signals += 15
             elif ha_trend == 'bearish' and ha_confirmation and ha_strength > 60:
@@ -1843,12 +1843,22 @@ class UltimateTradingBot:
             if signal_strength < self.min_signal_strength and signal_strength < 70:
                 return None
 
+            # Use more permissive thresholds for maximum signal generation
+            ml_confidence = ml_prediction.get('confidence', 0)
+            signal_strength = best_signal.get('signal_strength', 0)
+
+            # Accept signals with either good ML confidence OR good signal strength
+            if (ml_confidence >= 65 and signal_strength >= 60) or \
+               (ml_confidence >= 70) or \
+               (signal_strength >= self.min_signal_strength):
+                signals.append(best_signal)
+
             # Update last signal time and lock symbol for single trade per symbol
             self.last_signal_time[symbol] = current_time
             # Lock symbol to prevent multiple concurrent trades
             self.active_symbols.add(symbol)
             self.symbol_trade_lock[symbol] = current_time
-            
+
             # Increment hourly signal counter
             self.hourly_signal_count += 1
 
@@ -1925,9 +1935,14 @@ class UltimateTradingBot:
                             # Select signal with highest ML confidence
                             best_signal = max(valid_signals, key=lambda x: x.get('ml_prediction', {}).get('confidence', 0))
 
-                            # Use the stricter confidence threshold for signal generation
-                            if best_signal.get('ml_prediction', {}).get('confidence', 0) >= self.ml_analyzer.min_confidence_for_signal and \
-                               best_signal.get('signal_strength', 0) >= self.min_signal_strength:
+                            # Use more permissive thresholds for maximum signal generation
+                            ml_confidence = best_signal.get('ml_prediction', {}).get('confidence', 0)
+                            signal_strength = best_signal.get('signal_strength', 0)
+
+                            # Accept signals with either good ML confidence OR good signal strength
+                            if (ml_confidence >= 65 and signal_strength >= 60) or \
+                               (ml_confidence >= 70) or \
+                               (signal_strength >= self.min_signal_strength):
                                 signals.append(best_signal)
                     except Exception as e:
                         self.logger.error(f"Error selecting best signal for {symbol}: {e}")
@@ -2123,11 +2138,7 @@ Exchange: BinanceFutures"""
             # Create figure with 1:1 aspect ratio (square)
             fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-            # Validate data
-            if 'close' not in df.columns or len(df) == 0:
-                plt.close(fig)
-                return None
-
+            # Plot price line
             closes = df['close'].values
             if len(closes) == 0:
                 plt.close(fig)
@@ -2137,7 +2148,6 @@ Exchange: BinanceFutures"""
             data_len = min(50, len(df))
             x_range = range(data_len)
 
-            # Plot price line
             ax.plot(x_range, closes[-data_len:], color='#00ff00', linewidth=2, label='Price')
 
             # Mark entry point
@@ -2292,10 +2302,11 @@ Bot learns from every trade""")
 
                 await self.send_message(chat_id, f"""📊 **PERFORMANCE STATS**
 
-🎯 Signals: {self.performance_stats['total_signals']}
+Signals Scanned: {self.signal_counter}
+Signals Sent: {len(self.active_trades)} (Open)
 ✅ Win Rate: {self.performance_stats['win_rate']:.1f}%
 💰 Total Profit: {self.performance_stats['total_profit']:.2f}%
-📈 Active: {len(self.active_trades)}
+📈 Active Trades: {len(self.active_trades)}
 🔒 Active Symbols: {len(self.active_symbols)}
 🧠 ML Accuracy: {ml_summary['model_performance']['signal_accuracy']*100:.1f}%
 ⚡ Trades Learned: {ml_summary['model_performance']['total_trades_learned']}
@@ -2318,7 +2329,7 @@ Top Pairs:
             elif text.startswith('/leverage'):
                 await self.send_message(chat_id, f"""⚖️ **LEVERAGE SETTINGS**
 
-Current: {self.leverage_config['base_leverage']}x
+Current Base: {self.leverage_config['base_leverage']}x
 Range: {self.leverage_config['min_leverage']}x - {self.leverage_config['max_leverage']}x
 Type: Cross Margin
 Adaptive: ✅ Enabled
@@ -2504,7 +2515,7 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
             elif text.startswith('/settings'):
                 await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
 
-Target: {self.target_channel}
+Target Channel: {self.target_channel}
 Max Signals/Hour: {self.max_signals_per_hour} (Unlimited)
 Min Signal Interval: {self.min_signal_interval}s
 Auto-Restart: ✅ Enabled
@@ -3285,16 +3296,12 @@ Use /train to manually scan and train""")
                                 # Record open trade for immediate ML learning
                                 await self.record_open_trade_for_ml(signal)
 
-                                # Schedule automatic symbol unlock after 30 minutes if no manual close
-                                symbol = signal['symbol']
-                                asyncio.create_task(self._auto_unlock_symbol(symbol, 1800))  # 30 minutes
+                                # Auto-unlock symbol after 20 minutes for faster recycling
+                                asyncio.create_task(self._auto_unlock_symbol(signal['symbol'], 1200))
                             else:
                                 # Release symbol lock if signal failed to send
                                 self.release_symbol_lock(signal['symbol'])
                                 self.logger.warning(f"❌ Failed to send ML Signal #{self.signal_counter} to @SignalTactics")
-
-                            signals_sent_count += 1
-                            await asyncio.sleep(5)
 
                         except Exception as signal_error:
                             self.logger.error(f"Error processing ML signal for {signal.get('symbol', 'unknown')}: {signal_error}")

@@ -69,11 +69,14 @@ class AdvancedMLTradeAnalyzer:
         self.risk_assessor = None
         self.market_regime_detector = None
         # Initialize StandardScaler for ML models
+        self.scaler = None
         if ML_AVAILABLE:
-            from sklearn.preprocessing import StandardScaler
-            self.scaler = StandardScaler()
-        else:
-            self.scaler = None
+            try:
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
+            except ImportError:
+                self.logger.warning("StandardScaler not available, using fallback")
+                self.scaler = None
 
         # Learning database
         self.db_path = "advanced_ml_trading.db"
@@ -696,14 +699,22 @@ class AdvancedMLTradeAnalyzer:
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
             # Scale features
-            # Assuming scaler is initialized in _train_signal_classifier or available
             if not hasattr(self, 'scaler') or self.scaler is None:
-                 self.scaler = StandardScaler() # Initialize if not present
-                 X_train_scaled = self.scaler.fit_transform(X_train)
+                try:
+                    from sklearn.preprocessing import StandardScaler
+                    self.scaler = StandardScaler()
+                    X_train_scaled = self.scaler.fit_transform(X_train)
+                except ImportError:
+                    self.logger.warning("StandardScaler not available, using raw features")
+                    X_train_scaled = X_train.values
             else:
-                 X_train_scaled = self.scaler.transform(X_train) # Use existing scaler
+                X_train_scaled = self.scaler.transform(X_train)
 
-            X_test_scaled = self.scaler.transform(X_test)
+            # Handle test scaling
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                X_test_scaled = self.scaler.transform(X_test)
+            else:
+                X_test_scaled = X_test.values
 
             # Train model
             self.risk_assessor = LogisticRegression(
@@ -1762,6 +1773,7 @@ class UltimateTradingBot:
             cursor.execute("""
                 SELECT profit_loss, trade_result 
                 FROM ml_trades 
+                WHERE profit_loss IS NOT NULL 
                 ORDER BY created_at DESC 
                 LIMIT ?
             """, (self.adaptive_leverage['performance_window'],))
@@ -1773,7 +1785,7 @@ class UltimateTradingBot:
                 return 0.25  # Default positive factor (absolute value >= 0)
 
             # Calculate performance metrics
-            wins = sum(1 for trade in recent_trades if trade[0] and trade[0] > 0)
+            wins = sum(1 for trade in recent_trades if trade[0] and float(trade[0]) > 0)
             losses = len(recent_trades) - wins
 
             if len(recent_trades) == 0:
@@ -2033,15 +2045,18 @@ class UltimateTradingBot:
 
             # Multiple confirmation methods (not just doji)
             direction_matches_ha = False
+            direction_matches_doji = False  # Initialize this variable
             confirmation_method = "none"
             
             # Method 1: Doji confirmation (preferred)
             if direction == 'BUY' and ha_doji_to_bullish:
                 direction_matches_ha = True
+                direction_matches_doji = True
                 confirmation_method = "doji_to_bullish"
                 self.logger.info(f"✅ BUY signal confirmed by Heikin Ashi doji to bullish switch: {symbol}")
             elif direction == 'SELL' and ha_doji_to_bearish:
                 direction_matches_ha = True
+                direction_matches_doji = True
                 confirmation_method = "doji_to_bearish"
                 self.logger.info(f"✅ SELL signal confirmed by Heikin Ashi doji to bearish switch: {symbol}")
             
@@ -2067,11 +2082,11 @@ class UltimateTradingBot:
                 confirmation_method = "high_strength_override"
                 self.logger.info(f"✅ {direction} signal confirmed by exceptional strength ({signal_strength:.0f}%): {symbol}")
 
-            # Only reject if completely contradictory
-            if direction == 'BUY' and ha_trend == 'bearish' and not direction_matches_ha:
+            # Only reject if completely contradictory and no override
+            if direction == 'BUY' and ha_trend == 'bearish' and ha_confirmation and not direction_matches_ha:
                 self.logger.debug(f"❌ {symbol} BUY signal rejected - Strong bearish Heikin Ashi trend")
                 return None
-            elif direction == 'SELL' and ha_trend == 'bullish' and not direction_matches_ha:
+            elif direction == 'SELL' and ha_trend == 'bullish' and ha_confirmation and not direction_matches_ha:
                 self.logger.debug(f"❌ {symbol} SELL signal rejected - Strong bullish Heikin Ashi trend")
                 return None
             
@@ -2170,14 +2185,15 @@ class UltimateTradingBot:
                 'optimal_leverage': optimal_leverage,
                 'margin_type': 'CROSSED',
                 'ml_prediction': ml_prediction,
-                'ha_confirmation': direction_matches_doji,
+                'ha_confirmation': direction_matches_ha,
+                'ha_confirmation_used': ha_confirmation_used,
                 'ha_doji_switch': ha_doji_confirmation,
                 'indicators_used': [
-                    'Heikin Ashi Doji Confirmation', 'ML Above-Neutral Filter', 'Enhanced SuperTrend', 
+                    'Heikin Ashi Enhanced Confirmation', 'ML Above-Neutral Filter', 'Enhanced SuperTrend', 
                     'EMA Confluence', 'CVD Analysis', 'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals'
                 ],
                 'timeframe': 'Multi-TF (1m-4h)',
-                'strategy': 'Ultimate ML-Enhanced Scalping with Doji Confirmation',
+                'strategy': 'Ultimate ML-Enhanced Scalping with Enhanced HA Confirmation',
                 'ml_enhanced': True,
                 'adaptive_leverage': True,
                 'strict_filtering': True,

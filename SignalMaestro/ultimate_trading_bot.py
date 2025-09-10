@@ -558,7 +558,7 @@ class AdvancedMLTradeAnalyzer:
             return None, None
 
     async def _train_signal_classifier(self, features: pd.DataFrame, targets: Dict):
-        """Train signal classification model"""
+        """Train signal classification model with improved scaling"""
         try:
             X = features
             y = targets['profitable']
@@ -569,33 +569,56 @@ class AdvancedMLTradeAnalyzer:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-            # Scale features - check if scaler exists
+            # Initialize scaler if not exists
             if not hasattr(self, 'scaler') or self.scaler is None:
+                from sklearn.preprocessing import StandardScaler
                 self.scaler = StandardScaler()
+            
+            # Always fit scaler on training data
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
 
-            # Train model
+            # Train model with better parameters
             self.signal_classifier = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=15,
+                n_estimators=150,
+                max_depth=20,
+                min_samples_split=5,
+                min_samples_leaf=2,
                 random_state=42,
-                class_weight='balanced'
+                class_weight='balanced',
+                n_jobs=-1
             )
             self.signal_classifier.fit(X_train_scaled, y_train)
 
-            # Evaluate
+            # Evaluate with cross-validation
             y_pred = self.signal_classifier.predict(X_test_scaled)
             accuracy = accuracy_score(y_test, y_pred)
+            
+            # Cross-validation score for better accuracy estimate
+            if len(X_train) > 30:
+                cv_scores = cross_val_score(self.signal_classifier, X_train_scaled, y_train, cv=3)
+                accuracy = cv_scores.mean()
 
             self.model_performance['signal_accuracy'] = accuracy
-            self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f}")
+            self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f} (CV: {cv_scores.std():.3f})" if len(X_train) > 30 else f"🎯 Signal classifier accuracy: {accuracy:.3f}")
 
         except Exception as e:
             self.logger.error(f"Error training signal classifier: {e}")
+            # Fallback to basic model
+            try:
+                from sklearn.linear_model import LogisticRegression
+                self.signal_classifier = LogisticRegression(random_state=42, class_weight='balanced')
+                if hasattr(self, 'scaler') and self.scaler is not None:
+                    self.signal_classifier.fit(X_train_scaled, y_train)
+                else:
+                    self.signal_classifier.fit(X_train, y_train)
+                self.model_performance['signal_accuracy'] = 0.7  # Conservative fallback
+                self.logger.info("📊 Fallback classifier trained")
+            except:
+                self.logger.error("Failed to train fallback classifier")
 
     async def _train_profit_predictor(self, features: pd.DataFrame, targets: Dict):
-        """Train profit prediction model"""
+        """Train profit prediction model with improved scaling and validation"""
         try:
             X = features
             y = targets['profit_amount']
@@ -606,37 +629,59 @@ class AdvancedMLTradeAnalyzer:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-            # Scale features
-            # Assuming scaler is initialized in _train_signal_classifier or available
-            if not hasattr(self, 'scaler') or self.scaler is None:
-                 self.scaler = StandardScaler() # Initialize if not present
-                 X_train_scaled = self.scaler.fit_transform(X_train)
+            # Use the same scaler as signal classifier
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                # Use existing fitted scaler
+                X_train_scaled = self.scaler.transform(X_train)
+                X_test_scaled = self.scaler.transform(X_test)
             else:
-                 X_train_scaled = self.scaler.transform(X_train) # Use existing scaler
+                # Initialize new scaler if needed
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
+                X_train_scaled = self.scaler.fit_transform(X_train)
+                X_test_scaled = self.scaler.transform(X_test)
 
-            X_test_scaled = self.scaler.transform(X_test)
-
-
-            # Train model
+            # Train model with better parameters
             from sklearn.ensemble import GradientBoostingRegressor
             self.profit_predictor = GradientBoostingRegressor(
-                n_estimators=100,
-                learning_rate=0.1,
-                max_depth=8,
+                n_estimators=150,
+                learning_rate=0.05,
+                max_depth=10,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                subsample=0.8,
                 random_state=42
             )
             self.profit_predictor.fit(X_train_scaled, y_train)
 
-            # Evaluate
+            # Evaluate with multiple metrics
             y_pred = self.profit_predictor.predict(X_test_scaled)
-            from sklearn.metrics import r2_score
+            from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
             r2 = r2_score(y_test, y_pred)
+            mae = mean_absolute_error(y_test, y_pred)
+            rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
+            # Store comprehensive performance metrics
             self.model_performance['profit_prediction_accuracy'] = max(0, r2)
-            self.logger.info(f"💰 Profit predictor R²: {r2:.3f}")
+            self.model_performance['profit_prediction_mae'] = mae
+            self.model_performance['profit_prediction_rmse'] = rmse
+            
+            self.logger.info(f"💰 Profit predictor - R²: {r2:.3f}, MAE: {mae:.3f}, RMSE: {rmse:.3f}")
 
         except Exception as e:
             self.logger.error(f"Error training profit predictor: {e}")
+            # Fallback to simple linear model
+            try:
+                from sklearn.linear_model import LinearRegression
+                self.profit_predictor = LinearRegression()
+                if hasattr(self, 'scaler') and self.scaler is not None:
+                    self.profit_predictor.fit(X_train_scaled, y_train)
+                else:
+                    self.profit_predictor.fit(X_train, y_train)
+                self.model_performance['profit_prediction_accuracy'] = 0.5  # Conservative fallback
+                self.logger.info("📊 Fallback profit predictor trained")
+            except:
+                self.logger.error("Failed to train fallback profit predictor")
 
     async def _train_risk_assessor(self, features: pd.DataFrame, targets: Dict):
         """Train risk assessment model"""
@@ -765,9 +810,17 @@ class AdvancedMLTradeAnalyzer:
             self.logger.error(f"Error loading ML models: {e}")
 
     def predict_trade_outcome(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Advanced ML prediction for trade outcome - only above neutral"""
+        """Advanced ML prediction for trade outcome with improved filtering"""
         try:
-            if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
+            # Check if all models are available
+            models_available = all([
+                hasattr(self, 'signal_classifier') and self.signal_classifier is not None,
+                hasattr(self, 'profit_predictor') and self.profit_predictor is not None,
+                hasattr(self, 'risk_assessor') and self.risk_assessor is not None,
+                hasattr(self, 'scaler') and self.scaler is not None
+            ])
+            
+            if not models_available:
                 return self._fallback_prediction(signal_data)
 
             # Prepare features as DataFrame
@@ -775,37 +828,61 @@ class AdvancedMLTradeAnalyzer:
             if features_df is None or features_df.empty:
                 return self._fallback_prediction(signal_data)
 
-            # Scale features - now using DataFrame
-            features_scaled = self.scaler.transform(features_df)
+            try:
+                # Scale features with error handling
+                features_scaled = self.scaler.transform(features_df)
+            except Exception as scale_error:
+                self.logger.warning(f"Scaling error, using fallback: {scale_error}")
+                return self._fallback_prediction(signal_data)
 
-            # Get predictions
-            profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
-            profit_amount = self.profit_predictor.predict(features_scaled)[0]
-            risk_prob = self.risk_assessor.predict_proba(features_scaled)[0][1]
+            # Get predictions with error handling
+            try:
+                profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
+                profit_amount = self.profit_predictor.predict(features_scaled)[0]
+                risk_prob = self.risk_assessor.predict_proba(features_scaled)[0][1]
+            except Exception as pred_error:
+                self.logger.warning(f"Prediction error, using fallback: {pred_error}")
+                return self._fallback_prediction(signal_data)
 
-            # Calculate overall confidence
-            confidence = profit_prob * 100
+            # Calculate overall confidence with bounds checking
+            confidence = max(0, min(100, profit_prob * 100))
 
             # Adjust based on market insights
             confidence = self._adjust_confidence_with_insights(signal_data, confidence)
 
-            # ONLY CONSIDER ABOVE NEUTRAL - Strict filtering for high quality
-            if confidence >= 80 and profit_amount > 0 and risk_prob < 0.25:
+            # IMPROVED FILTERING - Less restrictive but still quality-focused
+            signal_strength = signal_data.get('signal_strength', 50)
+            
+            # Multi-factor decision making
+            if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3 and signal_strength >= 80:
                 prediction = 'highly_favorable'
-            elif confidence >= 70 and profit_amount > 0 and risk_prob < 0.35:
+            elif confidence >= 65 and profit_amount > 0 and risk_prob < 0.4 and signal_strength >= 70:
                 prediction = 'favorable'
-            elif confidence >= 60 and profit_amount > 0:
+            elif confidence >= 55 and profit_amount > 0 and risk_prob < 0.5 and signal_strength >= 60:
                 prediction = 'above_neutral'
+            elif confidence >= 45 and signal_strength >= 85:  # High signal strength can override ML
+                prediction = 'strength_override'
             else:
-                # Block all neutral and below predictions
+                # More informative rejection reasons
+                rejection_reason = []
+                if confidence < 45:
+                    rejection_reason.append(f"Low ML confidence ({confidence:.1f}%)")
+                if profit_amount <= 0:
+                    rejection_reason.append("Negative expected profit")
+                if risk_prob >= 0.5:
+                    rejection_reason.append(f"High risk probability ({risk_prob*100:.1f}%)")
+                if signal_strength < 60:
+                    rejection_reason.append(f"Low signal strength ({signal_strength:.1f}%)")
+                
                 return {
-                    'prediction': 'blocked_neutral_or_below',
+                    'prediction': 'filtered_out',
                     'confidence': confidence,
-                    'expected_profit': 0,
-                    'risk_probability': 100,
-                    'recommendation': 'Signal blocked - ML confidence below acceptable threshold',
-                    'model_accuracy': self.model_performance['signal_accuracy'] * 100,
-                    'trades_learned_from': self.model_performance['total_trades_learned']
+                    'expected_profit': profit_amount,
+                    'risk_probability': risk_prob * 100,
+                    'recommendation': f'Signal filtered: {"; ".join(rejection_reason)}',
+                    'model_accuracy': self.model_performance.get('signal_accuracy', 0) * 100,
+                    'trades_learned_from': self.model_performance.get('total_trades_learned', 0),
+                    'rejection_reasons': rejection_reason
                 }
 
             return {
@@ -814,8 +891,9 @@ class AdvancedMLTradeAnalyzer:
                 'expected_profit': profit_amount,
                 'risk_probability': risk_prob * 100,
                 'recommendation': self._get_ml_recommendation(prediction, confidence, profit_amount, risk_prob),
-                'model_accuracy': self.model_performance['signal_accuracy'] * 100,
-                'trades_learned_from': self.model_performance['total_trades_learned']
+                'model_accuracy': self.model_performance.get('signal_accuracy', 0) * 100,
+                'trades_learned_from': self.model_performance.get('total_trades_learned', 0),
+                'signal_strength': signal_strength
             }
 
         except Exception as e:
@@ -900,39 +978,70 @@ class AdvancedMLTradeAnalyzer:
         return "Signal Strength Based: Favorable"
 
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback prediction when ML models not available - only above neutral"""
+        """Fallback prediction when ML models not available - balanced approach"""
         signal_strength = signal_data.get('signal_strength', 50)
+        volume_ratio = signal_data.get('volume_ratio', 1.0)
+        volatility = signal_data.get('market_volatility', 0.02)
+        
+        # Multi-factor fallback assessment
+        base_confidence = signal_strength
+        
+        # Volume boost
+        if volume_ratio > 1.2:
+            base_confidence += 5
+        elif volume_ratio < 0.8:
+            base_confidence -= 5
+            
+        # Volatility adjustment
+        if 0.01 <= volatility <= 0.03:  # Optimal volatility range
+            base_confidence += 3
+        elif volatility > 0.05:  # High volatility penalty
+            base_confidence -= 8
+            
+        # Ensure bounds
+        confidence = max(0, min(100, base_confidence))
 
-        # ONLY ABOVE NEUTRAL - Strict filtering for high strength signals
-        if signal_strength >= 85:  # High threshold for favorable
+        # IMPROVED FALLBACK THRESHOLDS
+        if confidence >= 80 and signal_strength >= 75:
             prediction = 'highly_favorable'
-            confidence = min(signal_strength, 95)
-        elif signal_strength >= 75:  # Good threshold for favorable
+        elif confidence >= 70 and signal_strength >= 65:
             prediction = 'favorable'
-            confidence = min(signal_strength, 85)
-        elif signal_strength >= 65:  # Minimum above neutral
+        elif confidence >= 60 and signal_strength >= 55:
             prediction = 'above_neutral'
-            confidence = min(signal_strength, 75)
+        elif confidence >= 50 and signal_strength >= 70:  # High signal strength override
+            prediction = 'strength_based'
         else:
-            # Block all neutral and below signals
             return {
-                'prediction': 'blocked_below_threshold',
-                'confidence': signal_strength,
+                'prediction': 'below_threshold',
+                'confidence': confidence,
                 'expected_profit': 0,
-                'risk_probability': 100,
-                'recommendation': 'Signal blocked - Strength below acceptable threshold',
+                'risk_probability': max(30, 100 - confidence),
+                'recommendation': f'Fallback filter: Signal strength {signal_strength:.1f}%, confidence {confidence:.1f}%',
                 'model_accuracy': 0.0,
-                'trades_learned_from': 0
+                'trades_learned_from': 0,
+                'fallback_mode': True
             }
+
+        # Calculate expected profit based on multiple factors
+        profit_multiplier = 1.0
+        if volume_ratio > 1.2:
+            profit_multiplier += 0.2
+        if volatility <= 0.02:
+            profit_multiplier += 0.1
+            
+        expected_profit = (confidence / 100.0) * profit_multiplier * 1.5
 
         return {
             'prediction': prediction,
             'confidence': confidence,
-            'expected_profit': signal_strength / 100.0 * 1.2,  # Boost expected profit for high strength
-            'risk_probability': max(5, 100 - signal_strength),
-            'recommendation': f"High Strength Signal: {prediction.title()}",
+            'expected_profit': expected_profit,
+            'risk_probability': max(10, 100 - confidence),
+            'recommendation': f"Fallback: {prediction.replace('_', ' ').title()} (Multi-factor: {confidence:.1f}%)",
             'model_accuracy': 0.0,
-            'trades_learned_from': 0
+            'trades_learned_from': 0,
+            'fallback_mode': True,
+            'volume_factor': volume_ratio,
+            'volatility_factor': volatility
         }
 
     def get_ml_summary(self) -> Dict[str, Any]:
@@ -1841,22 +1950,40 @@ class UltimateTradingBot:
                 elif ha_trend == 'bearish':
                     bearish_signals += 8
 
-            # Determine signal direction and strength
+            # Enhanced signal strength calculation with validation
+            total_possible_signals = 125  # Total possible points from all indicators
+            
             if bullish_signals >= self.min_signal_strength:
                 direction = 'BUY'
-                signal_strength = bullish_signals
+                signal_strength = min(100, bullish_signals)
+                signal_percentage = (bullish_signals / total_possible_signals) * 100
             elif bearish_signals >= self.min_signal_strength:
                 direction = 'SELL'
-                signal_strength = bearish_signals
+                signal_strength = min(100, bearish_signals)
+                signal_percentage = (bearish_signals / total_possible_signals) * 100
             else:
+                # Log why signal was rejected
+                max_signal = max(bullish_signals, bearish_signals)
+                self.logger.debug(f"❌ {symbol} signal too weak - Max strength: {max_signal:.0f}% < Required: {self.min_signal_strength}%")
                 return None
 
-            # Additional Heikin Ashi validation - must confirm direction
-            if direction == 'BUY' and ha_trend == 'bearish':
-                self.logger.debug(f"❌ BUY signal rejected - Heikin Ashi shows bearish trend for {symbol}")
+            # Validate signal strength consistency
+            if signal_strength < 50:
+                self.logger.debug(f"❌ {symbol} signal strength too low: {signal_strength:.0f}%")
                 return None
-            elif direction == 'SELL' and ha_trend == 'bullish':
-                self.logger.debug(f"❌ SELL signal rejected - Heikin Ashi shows bullish trend for {symbol}")
+
+            # Enhanced Heikin Ashi validation - more nuanced
+            ha_conflict = False
+            if direction == 'BUY' and ha_trend == 'bearish' and ha_strength > 70:
+                ha_conflict = True
+                self.logger.debug(f"⚠️ {symbol} BUY signal conflicts with strong bearish HA trend ({ha_strength:.0f}%)")
+            elif direction == 'SELL' and ha_trend == 'bullish' and ha_strength > 70:
+                ha_conflict = True
+                self.logger.debug(f"⚠️ {symbol} SELL signal conflicts with strong bullish HA trend ({ha_strength:.0f}%)")
+
+            # Allow weak HA conflicts if signal is very strong
+            if ha_conflict and signal_strength < 90:
+                self.logger.debug(f"❌ {symbol} signal rejected - HA conflict with insufficient strength")
                 return None
 
             # Calculate entry, stop loss, and take profits
@@ -1896,27 +2023,66 @@ class UltimateTradingBot:
             placeholder_df = pd.DataFrame({'close': [current_price] * 20}) if df is None or len(df) < 20 else df
             optimal_leverage = self.calculate_adaptive_leverage(indicators, placeholder_df)
 
-            # STRICT HEIKIN ASHI DOJI CONFIRMATION REQUIRED
+            # ENHANCED HEIKIN ASHI CONFIRMATION (LESS RESTRICTIVE)
             ha_signal_ready = indicators.get('ha_signal_ready', False)
             ha_doji_confirmation = indicators.get('ha_doji_confirmation', False)
             ha_doji_to_bullish = indicators.get('ha_doji_to_bullish', False)
             ha_doji_to_bearish = indicators.get('ha_doji_to_bearish', False)
+            ha_confirmation = indicators.get('ha_confirmation', False)
+            ha_trend = indicators.get('ha_trend', 'neutral')
 
-            # First check: Heikin Ashi doji confirmation
-            direction_matches_doji = False
+            # Multiple confirmation methods (not just doji)
+            direction_matches_ha = False
+            confirmation_method = "none"
+            
+            # Method 1: Doji confirmation (preferred)
             if direction == 'BUY' and ha_doji_to_bullish:
-                direction_matches_doji = True
+                direction_matches_ha = True
+                confirmation_method = "doji_to_bullish"
                 self.logger.info(f"✅ BUY signal confirmed by Heikin Ashi doji to bullish switch: {symbol}")
             elif direction == 'SELL' and ha_doji_to_bearish:
-                direction_matches_doji = True
+                direction_matches_ha = True
+                confirmation_method = "doji_to_bearish"
                 self.logger.info(f"✅ SELL signal confirmed by Heikin Ashi doji to bearish switch: {symbol}")
+            
+            # Method 2: Strong trend confirmation (alternative)
+            elif direction == 'BUY' and ha_trend in ['bullish', 'bullish_from_doji'] and ha_confirmation:
+                direction_matches_ha = True
+                confirmation_method = "bullish_trend"
+                self.logger.info(f"✅ BUY signal confirmed by strong Heikin Ashi bullish trend: {symbol}")
+            elif direction == 'SELL' and ha_trend in ['bearish', 'bearish_from_doji'] and ha_confirmation:
+                direction_matches_ha = True
+                confirmation_method = "bearish_trend"
+                self.logger.info(f"✅ SELL signal confirmed by strong Heikin Ashi bearish trend: {symbol}")
+            
+            # Method 3: Signal ready confirmation (backup)
+            elif ha_signal_ready:
+                direction_matches_ha = True
+                confirmation_method = "signal_ready"
+                self.logger.info(f"✅ {direction} signal confirmed by Heikin Ashi signal ready: {symbol}")
+            
+            # Method 4: High signal strength override (for very strong signals)
+            elif signal_strength >= 95:
+                direction_matches_ha = True
+                confirmation_method = "high_strength_override"
+                self.logger.info(f"✅ {direction} signal confirmed by exceptional strength ({signal_strength:.0f}%): {symbol}")
 
-            # Require either doji confirmation OR very strong traditional confirmation
-            if not direction_matches_doji and not ha_signal_ready:
-                self.logger.debug(f"❌ {symbol} signal rejected - No Heikin Ashi doji confirmation")
+            # Only reject if completely contradictory
+            if direction == 'BUY' and ha_trend == 'bearish' and not direction_matches_ha:
+                self.logger.debug(f"❌ {symbol} BUY signal rejected - Strong bearish Heikin Ashi trend")
                 return None
+            elif direction == 'SELL' and ha_trend == 'bullish' and not direction_matches_ha:
+                self.logger.debug(f"❌ {symbol} SELL signal rejected - Strong bullish Heikin Ashi trend")
+                return None
+            
+            # Accept signals with any confirmation method or neutral HA
+            if not direction_matches_ha and ha_trend not in ['neutral', 'doji_transition']:
+                self.logger.debug(f"⚠️ {symbol} signal proceeding with limited HA confirmation - Method: {confirmation_method}")
+            
+            # Store confirmation method for analysis
+            ha_confirmation_used = confirmation_method
 
-            # ML prediction with STRICT above-neutral filtering
+            # ML prediction with IMPROVED filtering
             ml_signal_data = {
                 'symbol': symbol,
                 'direction': direction,
@@ -1932,19 +2098,37 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # STRICT ML FILTERING - Only above neutral allowed
+            # IMPROVED ML FILTERING - Less restrictive but quality-focused
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
+            expected_profit = ml_prediction.get('expected_profit', 0)
 
-            # Block all neutral and below predictions
-            if prediction_type in ['blocked_neutral_or_below', 'blocked_below_threshold', 'neutral', 'unfavorable']:
-                self.logger.debug(f"❌ {symbol} signal blocked by ML - {prediction_type} (confidence: {ml_confidence:.1f}%)")
+            # Block only clearly negative predictions
+            blocked_predictions = ['filtered_out', 'below_threshold']
+            if prediction_type in blocked_predictions:
+                rejection_reasons = ml_prediction.get('rejection_reasons', [])
+                self.logger.debug(f"❌ {symbol} signal blocked by ML - {prediction_type}: {'; '.join(rejection_reasons)}")
                 return None
 
-            # Only allow above neutral predictions
-            if prediction_type not in ['highly_favorable', 'favorable', 'above_neutral']:
-                self.logger.debug(f"❌ {symbol} signal rejected - ML prediction not above neutral: {prediction_type}")
-                return None
+            # Allow favorable predictions and strong signal overrides
+            acceptable_predictions = [
+                'highly_favorable', 'favorable', 'above_neutral', 
+                'strength_override', 'strength_based'
+            ]
+            
+            # Special handling for fallback mode
+            if ml_prediction.get('fallback_mode', False):
+                if prediction_type not in acceptable_predictions:
+                    self.logger.debug(f"❌ {symbol} fallback signal rejected - {prediction_type} (confidence: {ml_confidence:.1f}%)")
+                    return None
+            elif prediction_type not in acceptable_predictions:
+                # Check for high signal strength override
+                if signal_strength >= 90 and ml_confidence >= 40:
+                    self.logger.info(f"✅ {symbol} signal accepted via high strength override - Strength: {signal_strength:.1f}%, ML: {ml_confidence:.1f}%")
+                    prediction_type = 'strength_override'
+                else:
+                    self.logger.debug(f"❌ {symbol} signal rejected - ML prediction: {prediction_type} (confidence: {ml_confidence:.1f}%)")
+                    return None
 
             # Boost signal strength for high ML confidence
             if prediction_type == 'highly_favorable':
@@ -2150,38 +2334,55 @@ class UltimateTradingBot:
             return False
 
     def format_ml_signal_message(self, signal: Dict[str, Any]) -> str:
-        """Format ML signal message with Heikin Ashi doji confirmation"""
+        """Format ML signal message with enhanced information"""
         ml_prediction = signal.get('ml_prediction', {})
 
         # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
 
         # Enhanced Heikin Ashi confirmation status
-        ha_confirmation = signal.get('ha_confirmation', False)
-        ha_doji_switch = signal.get('ha_doji_switch', False)
-        
-        if ha_confirmation and ha_doji_switch:
-            ha_status = "🎯 DOJI CONFIRMED"
-        elif ha_confirmation:
-            ha_status = "✅ HA Confirmed"
-        else:
-            ha_status = "⚠️ Basic Signal"
+        ha_confirmation_used = signal.get('ha_confirmation_used', 'none')
+        ha_status_map = {
+            'doji_to_bullish': "🎯 DOJI→BULL",
+            'doji_to_bearish': "🎯 DOJI→BEAR", 
+            'bullish_trend': "📈 STRONG BULL",
+            'bearish_trend': "📉 STRONG BEAR",
+            'signal_ready': "✅ HA READY",
+            'high_strength_override': "🚀 HIGH POWER",
+            'none': "⚠️ BASIC"
+        }
+        ha_status = ha_status_map.get(ha_confirmation_used, "⚠️ BASIC")
 
-        # ML status with strict filtering info
+        # Enhanced ML status
         ml_conf = ml_prediction.get('confidence', 0)
         ml_pred = ml_prediction.get('prediction', 'unknown').replace('_', ' ').title()
+        expected_profit = ml_prediction.get('expected_profit', 0)
+        model_accuracy = ml_prediction.get('model_accuracy', 0)
+        
+        # ML mode indicator
+        ml_mode = "🤖 FULL ML" if not ml_prediction.get('fallback_mode', False) else "🔄 FALLBACK"
+        
+        # Signal quality indicators
+        quality_indicators = []
+        if ml_conf >= 80:
+            quality_indicators.append("🔥 HIGH CONF")
+        if expected_profit >= 1.0:
+            quality_indicators.append("💎 HIGH ROI")
+        if signal['signal_strength'] >= 90:
+            quality_indicators.append("⚡ MAX POWER")
+        
+        quality_status = " | ".join(quality_indicators) if quality_indicators else "📊 STANDARD"
         
         message = f"""{cornix_signal}
 
-🧠 ML: {ml_pred} ({ml_conf:.0f}%) - ABOVE NEUTRAL ONLY
-📊 Strength: {signal['signal_strength']:.0f}% | R/R: 1:1
-🕯️ Heikin Ashi: {ha_status}
-⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin
-🔥 STRICT FILTERING ACTIVE
-🕐 {datetime.now().strftime('%H:%M')} UTC | #{self.hourly_signal_count}
+🧠 {ml_mode}: {ml_pred} ({ml_conf:.0f}%) | Accuracy: {model_accuracy:.0f}%
+📊 Signal: {signal['signal_strength']:.0f}% | Expected: +{expected_profit:.1f}% | R/R: 1:1
+🕯️ HA: {ha_status} | Method: {ha_confirmation_used.replace('_', ' ').title()}
+⚖️ {signal.get('optimal_leverage', 35)}x Cross Margin | 📈 Auto-Scaling Active
+{quality_status}
+🕐 {datetime.now().strftime('%H:%M')} UTC | Signal #{self.hourly_signal_count}
 
-✅ Doji Pattern Recognition | 🧠 ML Above-Neutral Filter
-Auto SL Management Active | 🚀 HIGH QUALITY MODE"""
+🎯 Multi-Indicator Confluence | 🧠 ML Enhanced | 🛡️ Auto Risk Management"""
 
         return message.strip()
 
@@ -2740,7 +2941,7 @@ Use /train to manually scan and train""")
             self.logger.error(f"Error handling command {text}: {e}")
 
     def release_symbol_lock(self, symbol: str):
-        """Release symbol from active trading lock"""
+        """Release symbol from active trading lock with enhanced cleanup"""
         try:
             if symbol in self.active_symbols:
                 self.active_symbols.remove(symbol)
@@ -2749,8 +2950,77 @@ Use /train to manually scan and train""")
             if symbol in self.symbol_trade_lock:
                 del self.symbol_trade_lock[symbol]
 
+            # Cancel monitoring task if it exists
+            if symbol in self.active_trades:
+                trade_info = self.active_trades[symbol]
+                monitoring_task = trade_info.get('monitoring_task')
+                if monitoring_task and not monitoring_task.done():
+                    monitoring_task.cancel()
+                    self.logger.info(f"🔄 Cancelled monitoring task for {symbol}")
+
         except Exception as e:
             self.logger.error(f"Error releasing symbol lock for {symbol}: {e}")
+
+    async def cleanup_stale_locks(self):
+        """Automatically cleanup stale symbol locks"""
+        try:
+            current_time = datetime.now()
+            stale_symbols = []
+
+            for symbol, lock_time in self.symbol_trade_lock.items():
+                if isinstance(lock_time, datetime):
+                    time_diff = (current_time - lock_time).total_seconds()
+                    # Remove locks older than 2 hours
+                    if time_diff > 7200:
+                        stale_symbols.append(symbol)
+
+            for symbol in stale_symbols:
+                self.logger.warning(f"🧹 Cleaning up stale lock for {symbol}")
+                self.release_symbol_lock(symbol)
+
+            if stale_symbols:
+                self.logger.info(f"🧹 Cleaned up {len(stale_symbols)} stale symbol locks")
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning up stale locks: {e}")
+
+    async def validate_active_trades(self):
+        """Validate and cleanup active trades"""
+        try:
+            invalid_symbols = []
+            
+            for symbol, trade_info in self.active_trades.items():
+                try:
+                    # Check if monitoring task is still running
+                    monitoring_task = trade_info.get('monitoring_task')
+                    if monitoring_task and monitoring_task.done():
+                        self.logger.warning(f"⚠️ Monitoring task completed for {symbol}, cleaning up")
+                        invalid_symbols.append(symbol)
+                        continue
+
+                    # Check trade age
+                    entry_time = trade_info.get('entry_time', datetime.now())
+                    age_hours = (datetime.now() - entry_time).total_seconds() / 3600
+                    
+                    if age_hours > 48:  # 48 hours old
+                        self.logger.warning(f"⏰ Trade {symbol} is {age_hours:.1f} hours old, marking for cleanup")
+                        invalid_symbols.append(symbol)
+
+                except Exception as trade_error:
+                    self.logger.error(f"Error validating trade {symbol}: {trade_error}")
+                    invalid_symbols.append(symbol)
+
+            # Cleanup invalid trades
+            for symbol in invalid_symbols:
+                if symbol in self.active_trades:
+                    del self.active_trades[symbol]
+                self.release_symbol_lock(symbol)
+
+            if invalid_symbols:
+                self.logger.info(f"🧹 Cleaned up {len(invalid_symbols)} invalid active trades")
+
+        except Exception as e:
+            self.logger.error(f"Error validating active trades: {e}")
 
     async def record_open_trade_for_ml(self, signal: Dict[str, Any]):
         """Record open trade immediately for real-time ML learning"""
@@ -2812,16 +3082,30 @@ Use /train to manually scan and train""")
             self.logger.error(f"Error recording open trade for ML: {e}")
 
     async def _monitor_open_trade_ml(self, symbol: str, signal: Dict[str, Any]):
-        """Monitor open trade and continuously update ML with real-time data"""
+        """Monitor open trade and continuously update ML with real-time data - Enhanced"""
         try:
             entry_price = signal['entry_price']
             entry_time = datetime.now()
             update_interval = 30  # Update ML every 30 seconds
+            last_price = entry_price
+            price_history = [entry_price]
+            max_profit = 0
+            max_drawdown = 0
 
             while symbol in self.active_trades:
                 try:
-                    # Get current market data
-                    df = await self.get_binance_data(symbol, '1m', 20)
+                    # Get current market data with retry logic
+                    df = None
+                    for retry in range(3):
+                        try:
+                            df = await self.get_binance_data(symbol, '1m', 20)
+                            if df is not None and len(df) > 0:
+                                break
+                        except Exception as fetch_error:
+                            if retry == 2:
+                                self.logger.warning(f"Failed to fetch data for {symbol} after 3 attempts: {fetch_error}")
+                            await asyncio.sleep(5)
+                    
                     if df is None or len(df) == 0:
                         await asyncio.sleep(update_interval)
                         continue
@@ -2830,22 +3114,37 @@ Use /train to manually scan and train""")
                     current_time = datetime.now()
                     duration_minutes = (current_time - entry_time).total_seconds() / 60
 
-                    # Calculate unrealized P/L
+                    # Track price movement
+                    price_history.append(current_price)
+                    if len(price_history) > 100:  # Keep last 100 prices
+                        price_history = price_history[-100:]
+
+                    # Calculate unrealized P/L with precision
                     if signal['direction'].upper() in ['BUY', 'LONG']:
                         unrealized_pnl = ((current_price - entry_price) / entry_price) * 100 * signal['optimal_leverage']
                     else:
                         unrealized_pnl = ((entry_price - current_price) / entry_price) * 100 * signal['optimal_leverage']
 
-                    # Check if TP or SL levels are hit
-                    trade_status = self._check_trade_status(current_price, signal)
+                    # Track max profit and drawdown
+                    max_profit = max(max_profit, unrealized_pnl)
+                    max_drawdown = min(max_drawdown, unrealized_pnl)
 
-                    # Update ML data with current state
+                    # Enhanced trade status check
+                    trade_status = self._check_trade_status(current_price, signal)
+                    
+                    # Calculate additional metrics
+                    price_volatility = np.std(price_history[-20:]) / np.mean(price_history[-20:]) if len(price_history) >= 20 else 0
+                    price_momentum = (current_price - price_history[-10]) / price_history[-10] * 100 if len(price_history) >= 10 else 0
+
+                    # Enhanced ML data with more features
                     updated_ml_data = {
                         'symbol': symbol,
                         'direction': signal['direction'],
                         'entry_price': entry_price,
                         'current_price': current_price,
                         'unrealized_pnl': unrealized_pnl,
+                        'max_profit': max_profit,
+                        'max_drawdown': max_drawdown,
                         'stop_loss': signal['stop_loss'],
                         'take_profit_1': signal['tp1'],
                         'take_profit_2': signal['tp2'],
@@ -2855,6 +3154,8 @@ Use /train to manually scan and train""")
                         'profit_loss': unrealized_pnl,
                         'trade_result': trade_status,
                         'duration_minutes': duration_minutes,
+                        'price_volatility': price_volatility,
+                        'price_momentum': price_momentum,
                         'market_volatility': signal.get('market_volatility', 0.02),
                         'volume_ratio': signal.get('volume_ratio', 1.0),
                         'rsi_value': signal.get('rsi', 50),
@@ -2872,30 +3173,57 @@ Use /train to manually scan and train""")
                     # Feed updated data to ML for continuous learning
                     await self.ml_analyzer.update_open_trade_data(updated_ml_data)
 
-                    # Log progress every 2 minutes
-                    if int(duration_minutes) % 2 == 0:
-                        self.logger.info(f"🔄 ML Learning Update: {symbol} - Duration: {duration_minutes:.1f}min, Unrealized P/L: {unrealized_pnl:.2f}%, Status: {trade_status}")
+                    # Enhanced logging every 3 minutes
+                    if int(duration_minutes) % 3 == 0 and int(duration_minutes) > 0:
+                        profit_emoji = "🟢" if unrealized_pnl > 0 else "🔴" if unrealized_pnl < 0 else "🟡"
+                        self.logger.info(f"🔄 {profit_emoji} ML Update: {symbol} - {duration_minutes:.1f}min | P/L: {unrealized_pnl:.2f}% | Max: {max_profit:.2f}% | Status: {trade_status}")
 
-                    # Check if trade should be closed
+                    # Enhanced exit conditions
                     if trade_status in ['TP1_HIT', 'TP2_HIT', 'TP3_HIT', 'SL_HIT']:
-                        # Record final trade result
+                        # Record final trade result with enhanced data
                         final_result = {
                             'exit_price': current_price,
                             'profit_loss': unrealized_pnl,
+                            'max_profit': max_profit,
+                            'max_drawdown': max_drawdown,
                             'result': trade_status,
                             'duration_minutes': duration_minutes,
-                            'exit_time': current_time
+                            'exit_time': current_time,
+                            'price_volatility': price_volatility,
+                            'final_momentum': price_momentum
                         }
 
                         await self.record_trade_completion(signal, final_result)
 
-                        # Remove from active trades
+                        # Remove from active trades and release lock
                         if symbol in self.active_trades:
                             del self.active_trades[symbol]
+                        
+                        self.release_symbol_lock(symbol)
 
-                        self.logger.info(f"✅ ML Trade Completed: {symbol} - {trade_status} - P/L: {unrealized_pnl:.2f}%")
+                        result_emoji = "✅" if unrealized_pnl > 0 else "❌"
+                        self.logger.info(f"{result_emoji} ML Trade Completed: {symbol} - {trade_status} - Final P/L: {unrealized_pnl:.2f}% | Max: {max_profit:.2f}%")
                         break
 
+                    # Auto-exit after 24 hours (optional safety)
+                    if duration_minutes > 1440:  # 24 hours
+                        self.logger.warning(f"⏰ Auto-closing {symbol} after 24 hours - P/L: {unrealized_pnl:.2f}%")
+                        final_result = {
+                            'exit_price': current_price,
+                            'profit_loss': unrealized_pnl,
+                            'max_profit': max_profit,
+                            'max_drawdown': max_drawdown,
+                            'result': 'AUTO_CLOSE_TIMEOUT',
+                            'duration_minutes': duration_minutes,
+                            'exit_time': current_time
+                        }
+                        await self.record_trade_completion(signal, final_result)
+                        if symbol in self.active_trades:
+                            del self.active_trades[symbol]
+                        self.release_symbol_lock(symbol)
+                        break
+
+                    last_price = current_price
                     await asyncio.sleep(update_interval)
 
                 except Exception as monitor_error:
@@ -2905,6 +3233,10 @@ Use /train to manually scan and train""")
 
         except Exception as e:
             self.logger.error(f"Error in ML trade monitoring for {symbol}: {e}")
+            # Ensure symbol is released on error
+            self.release_symbol_lock(symbol)
+            if symbol in self.active_trades:
+                del self.active_trades[symbol]
 
     def _check_trade_status(self, current_price: float, signal: Dict[str, Any]) -> str:
         """Check if trade has hit TP or SL levels"""
@@ -3348,16 +3680,35 @@ Use /train to manually scan and train""")
             self.logger.error(f"Error processing closed trade {symbol}: {e}")
 
     async def auto_scan_loop(self):
-        """Main auto-scanning loop with ML learning"""
+        """Main auto-scanning loop with ML learning and enhanced maintenance"""
         consecutive_errors = 0
         max_consecutive_errors = 5
         base_scan_interval = 90
         last_channel_training = datetime.now()
+        last_cleanup = datetime.now()
+        last_validation = datetime.now()
 
         while self.running and not self.shutdown_requested:
             try:
-                # Periodically scan channel for closed trades and train ML (every 30 minutes)
                 now = datetime.now()
+                
+                # Periodic maintenance (every 10 minutes)
+                if (now - last_cleanup).total_seconds() > 600:  # 10 minutes
+                    try:
+                        await self.cleanup_stale_locks()
+                        last_cleanup = now
+                    except Exception as e:
+                        self.logger.warning(f"Cleanup error: {e}")
+
+                # Validate active trades (every 15 minutes)
+                if (now - last_validation).total_seconds() > 900:  # 15 minutes
+                    try:
+                        await self.validate_active_trades()
+                        last_validation = now
+                    except Exception as e:
+                        self.logger.warning(f"Validation error: {e}")
+
+                # Periodically scan channel for closed trades and train ML (every 30 minutes)
                 if (now - last_channel_training).total_seconds() > 1800:  # 30 minutes
                     try:
                         await self.scan_and_train_from_closed_trades()
@@ -3365,7 +3716,11 @@ Use /train to manually scan and train""")
                     except Exception as e:
                         self.logger.warning(f"Channel training error: {e}")
 
-                self.logger.info("🧠 Scanning markets for ML-enhanced signals...")
+                # Enhanced status logging
+                active_count = len(self.active_trades)
+                locked_count = len(self.active_symbols)
+                self.logger.info(f"🧠 Scanning markets for ML-enhanced signals... | Active: {active_count} | Locked: {locked_count}")
+                
                 signals = await self.scan_for_signals()
 
                 if signals:

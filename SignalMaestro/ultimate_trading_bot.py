@@ -892,34 +892,22 @@ class AdvancedMLTradeAnalyzer:
         """Fallback prediction when ML models not available"""
         signal_strength = signal_data.get('signal_strength', 50)
 
-        if signal_strength >= 85: # Increased threshold for favorable fallback
+        if signal_strength >= 80:  # Lowered threshold for more signals
             prediction = 'favorable'
-            confidence = 85
-        elif signal_strength >= 75:
+            confidence = min(signal_strength, 85)
+        elif signal_strength >= 70:
             prediction = 'neutral'
-            confidence = 70
+            confidence = min(signal_strength, 75)
         else:
             prediction = 'unfavorable'
-            confidence = 40
-
-        # Only return favorable predictions in fallback
-        if signal_strength < 85:  # Only favorable signals
-            return {
-                'prediction': 'unfavorable',
-                'confidence': confidence,
-                'expected_profit': 0.0,
-                'risk_probability': 50.0,
-                'recommendation': "Signal Strength Based: Favorable",
-                'model_accuracy': 0.0,
-                'trades_learned_from': 0
-            }
+            confidence = max(40, signal_strength * 0.8)
 
         return {
-            'prediction': 'favorable',
+            'prediction': prediction,
             'confidence': confidence,
-            'expected_profit': 0.0,
-            'risk_probability': 50.0,
-            'recommendation': "Signal Strength Based: Favorable",
+            'expected_profit': signal_strength / 100.0,
+            'risk_probability': max(10, 100 - signal_strength),
+            'recommendation': f"Signal Strength Based: {prediction.title()}",
             'model_accuracy': 0.0,
             'trades_learned_from': 0
         }
@@ -1428,7 +1416,17 @@ class UltimateTradingBot:
         """Calculate Heikin Ashi candles for trend confirmation"""
         try:
             if df.empty or len(df) < 2:
-                return {}
+                return {
+                    'ha_trend': 'neutral',
+                    'ha_current_bullish': False,
+                    'ha_current_bearish': False,
+                    'ha_trend_strength': 0,
+                    'ha_confirmation': False,
+                    'ha_open': 0,
+                    'ha_close': 0,
+                    'ha_high': 0,
+                    'ha_low': 0
+                }
 
             ha_close = (df['open'] + df['high'] + df['low'] + df['close']) / 4
             ha_open = np.zeros(len(df))
@@ -1437,10 +1435,10 @@ class UltimateTradingBot:
             for i in range(1, len(df)):
                 ha_open[i] = (ha_open[i-1] + ha_close.iloc[i-1]) / 2
 
-            ha_high = np.maximum(df['high'], np.maximum(ha_open, ha_close))
-            ha_low = np.minimum(df['low'], np.minimum(ha_open, ha_close))
+            ha_high = np.maximum(df['high'].values, np.maximum(ha_open, ha_close.values))
+            ha_low = np.minimum(df['low'].values, np.minimum(ha_open, ha_close.values))
 
-            # Determine trend - using iloc for proper indexing
+            # Determine trend - using proper indexing
             last_ha_open = ha_open[-1]
             last_ha_close = ha_close.iloc[-1]
             prev_ha_open = ha_open[-2] if len(ha_open) > 1 else last_ha_open
@@ -1458,9 +1456,9 @@ class UltimateTradingBot:
             bullish_confirmation = current_bullish and prev_bullish
             bearish_confirmation = current_bearish and prev_bearish
 
-            # Calculate trend strength - using iloc for proper indexing
+            # Calculate trend strength - safe division
             body_size = abs(last_ha_close - last_ha_open)
-            candle_range = ha_high.iloc[-1] - ha_low.iloc[-1]
+            candle_range = ha_high[-1] - ha_low[-1]
             trend_strength = (body_size / candle_range * 100) if candle_range > 0 else 0
 
             return {
@@ -1471,13 +1469,23 @@ class UltimateTradingBot:
                 'ha_confirmation': bullish_confirmation or bearish_confirmation,
                 'ha_open': last_ha_open,
                 'ha_close': last_ha_close,
-                'ha_high': ha_high.iloc[-1],
-                'ha_low': ha_low.iloc[-1]
+                'ha_high': ha_high[-1],
+                'ha_low': ha_low[-1]
             }
 
         except Exception as e:
             self.logger.error(f"Error calculating Heikin Ashi: {e}")
-            return {}
+            return {
+                'ha_trend': 'neutral',
+                'ha_current_bullish': False,
+                'ha_current_bearish': False,
+                'ha_trend_strength': 0,
+                'ha_confirmation': False,
+                'ha_open': 0,
+                'ha_close': 0,
+                'ha_high': 0,
+                'ha_low': 0
+            }
 
     def calculate_adaptive_leverage(self, indicators: Dict[str, Any], df: pd.DataFrame) -> int:
         """Calculate adaptive leverage based on market conditions and past performance"""
@@ -1839,19 +1847,9 @@ class UltimateTradingBot:
             elif prediction_type == 'neutral' and ml_confidence > 70: # Boost neutral signals with high confidence
                 signal_strength *= 1.05
 
-            # Relaxed signal strength check for more opportunities
-            if signal_strength < self.min_signal_strength and signal_strength < 70:
+            # Final signal strength check with relaxed thresholds
+            if signal_strength < 65:  # Lower threshold for more signals
                 return None
-
-            # Use more permissive thresholds for maximum signal generation
-            ml_confidence = ml_prediction.get('confidence', 0)
-            signal_strength = best_signal.get('signal_strength', 0)
-
-            # Accept signals with either good ML confidence OR good signal strength
-            if (ml_confidence >= 65 and signal_strength >= 60) or \
-               (ml_confidence >= 70) or \
-               (signal_strength >= self.min_signal_strength):
-                signals.append(best_signal)
 
             # Update last signal time and lock symbol for single trade per symbol
             self.last_signal_time[symbol] = current_time
@@ -2043,8 +2041,9 @@ class UltimateTradingBot:
         # Simple Cornix format
         cornix_signal = self._format_cornix_signal(signal)
 
-        # Get Heikin Ashi confirmation status
-        ha_status = "✅ Confirmed" if signal.get('ha_confirmation', False) else "⚠️ Neutral"
+        # Get Heikin Ashi confirmation status with safe access
+        ha_confirmation = signal.get('ha_confirmation', False)
+        ha_status = "✅ Confirmed" if ha_confirmation else "⚠️ Neutral"
 
         message = f"""{cornix_signal}
 

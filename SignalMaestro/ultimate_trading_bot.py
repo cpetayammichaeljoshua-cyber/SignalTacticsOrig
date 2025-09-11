@@ -1091,9 +1091,9 @@ class UltimateTradingBot:
         self.running = True
         self.last_heartbeat = datetime.now()
 
-        # Bot settings
-        self.admin_chat_id = None
-        self.target_channel = "@SignalTactics"
+        # Bot settings with environment fallback
+        self.admin_chat_id = os.getenv('ADMIN_CHAT_ID')  # Try from environment first
+        self.target_channel = os.getenv('TARGET_CHANNEL', "@SignalTactics")
         self.channel_accessible = False
 
         # Enhanced symbol list (200+ pairs for maximum coverage)
@@ -1337,39 +1337,136 @@ class UltimateTradingBot:
             return self.cvd_data
 
     async def get_binance_data(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
-        """Get USD-M futures market data from Binance"""
-        try:
-            url = f"https://fapi.binance.com/fapi/v1/klines"
-            params = {
-                'symbol': symbol,
-                'interval': interval,
-                'limit': limit
-            }
+        """Get USD-M futures market data from Binance with enhanced error handling"""
+        max_retries = 3
+        retry_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                # Validate inputs
+                if not symbol or not interval:
+                    self.logger.error(f"Invalid input: symbol={symbol}, interval={interval}")
+                    return None
+                
+                if limit <= 0 or limit > 1500:  # Binance API limit
+                    limit = min(max(1, limit), 1500)
+                
+                url = f"https://fapi.binance.com/fapi/v1/klines"
+                params = {
+                    'symbol': symbol.upper(),
+                    'interval': interval,
+                    'limit': limit
+                }
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
+                timeout = aiohttp.ClientTimeout(total=15)
+                headers = {'User-Agent': 'Ultimate Trading Bot v1.0'}
+                
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    async with session.get(url, params=params) as response:
+                        if response.status == 200:
+                            try:
+                                data = await response.json()
+                                
+                                # Validate response data
+                                if not data or not isinstance(data, list):
+                                    self.logger.warning(f"Invalid data format received for {symbol}")
+                                    if attempt < max_retries - 1:
+                                        await asyncio.sleep(retry_delay)
+                                        continue
+                                    return None
+                                
+                                if len(data) == 0:
+                                    self.logger.warning(f"No data received for {symbol}")
+                                    return None
 
-                        df = pd.DataFrame(data, columns=[
-                            'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                            'close_time', 'quote_volume', 'trades', 'taker_buy_base',
-                            'taker_buy_quote', 'ignore'
-                        ])
+                                df = pd.DataFrame(data, columns=[
+                                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                                    'close_time', 'quote_volume', 'trades', 'taker_buy_base',
+                                    'taker_buy_quote', 'ignore'
+                                ])
 
-                        for col in ['open', 'high', 'low', 'close', 'volume']:
-                            df[col] = pd.to_numeric(df[col])
+                                # Validate DataFrame
+                                if df.empty:
+                                    self.logger.warning(f"Empty DataFrame for {symbol}")
+                                    return None
 
-                        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                        df.set_index('timestamp', inplace=True)
+                                # Convert numeric columns with error handling
+                                numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+                                for col in numeric_cols:
+                                    try:
+                                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                                    except Exception as col_error:
+                                        self.logger.error(f"Error converting {col} for {symbol}: {col_error}")
+                                        return None
 
-                        return df
+                                # Check for NaN values
+                                if df[numeric_cols].isnull().any().any():
+                                    self.logger.warning(f"NaN values found in {symbol} data")
+                                    df[numeric_cols] = df[numeric_cols].fillna(method='ffill').fillna(0)
 
-            return None
+                                # Convert timestamp with error handling
+                                try:
+                                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce')
+                                    if df['timestamp'].isnull().any():
+                                        self.logger.warning(f"Invalid timestamps for {symbol}")
+                                        return None
+                                    df.set_index('timestamp', inplace=True)
+                                except Exception as ts_error:
+                                    self.logger.error(f"Timestamp conversion error for {symbol}: {ts_error}")
+                                    return None
 
-        except Exception as e:
-            self.logger.error(f"Error fetching futures data for {symbol}: {e}")
-            return None
+                                # Final validation
+                                if len(df) < 2:
+                                    self.logger.warning(f"Insufficient data points for {symbol}: {len(df)}")
+                                    return None
+
+                                return df
+                                
+                            except json.JSONDecodeError as json_error:
+                                self.logger.error(f"JSON decode error for {symbol}: {json_error}")
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(retry_delay)
+                                    continue
+                                return None
+                                
+                        elif response.status == 429:  # Rate limited
+                            retry_after = int(response.headers.get('Retry-After', retry_delay))
+                            self.logger.warning(f"⏳ Binance rate limited for {symbol}, waiting {retry_after}s")
+                            await asyncio.sleep(retry_after)
+                            continue
+                            
+                        elif response.status in [400, 404]:  # Bad symbol or not found
+                            error_text = await response.text()
+                            self.logger.warning(f"❌ Invalid symbol or interval {symbol} {interval}: {error_text}")
+                            return None  # Don't retry for these errors
+                            
+                        else:
+                            error_text = await response.text()
+                            self.logger.warning(f"⚠️ Binance API error for {symbol} (attempt {attempt + 1}): HTTP {response.status} - {error_text}")
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(retry_delay)
+                                continue
+
+            except asyncio.TimeoutError:
+                self.logger.warning(f"⏰ Timeout fetching {symbol} data (attempt {attempt + 1})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+                    
+            except aiohttp.ClientError as e:
+                self.logger.warning(f"🌐 Network error fetching {symbol} (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+                    
+            except Exception as e:
+                self.logger.error(f"💥 Unexpected error fetching {symbol} data (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+        self.logger.error(f"❌ Failed to fetch {symbol} data after {max_retries} attempts")
+        return None
 
     def calculate_advanced_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate comprehensive technical indicators"""
@@ -2270,65 +2367,177 @@ class UltimateTradingBot:
         return signals  # Return all signals instead of limiting
 
     async def verify_channel_access(self) -> bool:
-        """Verify channel access"""
+        """Verify channel access with enhanced validation"""
         try:
-            url = f"{self.base_url}/getChat"
-            data = {'chat_id': self.target_channel}
+            # First verify bot token is valid
+            if not self.bot_token or len(self.bot_token) < 40:
+                self.logger.error("❌ Invalid or missing bot token")
+                return False
+            
+            # Test basic bot functionality first
+            url = f"{self.base_url}/getMe"
+            timeout = aiohttp.ClientTimeout(total=10)
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        error = await response.text()
+                        self.logger.error(f"❌ Bot token validation failed: {error}")
+                        return False
+                    
+                    bot_info = await response.json()
+                    if not bot_info.get('ok'):
+                        self.logger.error(f"❌ Bot API returned error: {bot_info}")
+                        return False
+                    
+                    bot_username = bot_info.get('result', {}).get('username', 'Unknown')
+                    self.logger.info(f"✅ Bot verified: @{bot_username}")
 
-            async with aiohttp.ClientSession() as session:
+                # Now test channel access
+                if not self.target_channel:
+                    self.logger.warning("⚠️ No target channel configured")
+                    self.channel_accessible = False
+                    return False
+                
+                url = f"{self.base_url}/getChat"
+                data = {'chat_id': self.target_channel}
+
                 async with session.post(url, json=data) as response:
                     if response.status == 200:
-                        self.channel_accessible = True
-                        self.logger.info(f"✅ Channel {self.target_channel} is accessible")
-                        return True
+                        chat_data = await response.json()
+                        if chat_data.get('ok'):
+                            chat_info = chat_data.get('result', {})
+                            chat_title = chat_info.get('title', self.target_channel)
+                            self.channel_accessible = True
+                            self.logger.info(f"✅ Channel '{chat_title}' is accessible")
+                            return True
+                        else:
+                            error_desc = chat_data.get('description', 'Unknown error')
+                            self.logger.warning(f"⚠️ Channel API error: {error_desc}")
                     else:
-                        self.channel_accessible = False
                         error = await response.text()
-                        self.logger.warning(f"⚠️ Channel {self.target_channel} not accessible: {error}")
-                        return False
+                        error_data = {}
+                        try:
+                            error_data = json.loads(error)
+                            error_desc = error_data.get('description', error)
+                        except:
+                            error_desc = error
+                        
+                        self.logger.warning(f"⚠️ Channel {self.target_channel} not accessible: {error_desc}")
+                        
+                        # Check if it's a common error we can handle
+                        if "not found" in error_desc.lower():
+                            self.logger.error(f"❌ Channel {self.target_channel} does not exist or bot is not added")
+                        elif "forbidden" in error_desc.lower():
+                            self.logger.error(f"❌ Bot is not authorized to access {self.target_channel}")
 
-        except Exception as e:
             self.channel_accessible = False
-            self.logger.error(f"Error verifying channel access: {e}")
+            return False
+
+        except asyncio.TimeoutError:
+            self.logger.error("⏰ Timeout verifying channel access")
+            self.channel_accessible = False
+            return False
+        except aiohttp.ClientError as e:
+            self.logger.error(f"🌐 Network error verifying channel: {e}")
+            self.channel_accessible = False
+            return False
+        except Exception as e:
+            self.logger.error(f"💥 Unexpected error verifying channel access: {e}")
+            self.channel_accessible = False
             return False
 
     async def send_message(self, chat_id: str, text: str, parse_mode=None) -> bool:
-        """Send message to Telegram"""
-        try:
-            url = f"{self.base_url}/sendMessage"
-            data = {
-                'chat_id': chat_id,
-                'text': text,
-                'disable_web_page_preview': True
-            }
+        """Send message to Telegram with enhanced error handling and retry logic"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                # Validate inputs
+                if not chat_id or not text:
+                    self.logger.error(f"Invalid input: chat_id={chat_id}, text_length={len(text) if text else 0}")
+                    return False
+                
+                # Truncate message if too long (Telegram limit is 4096 characters)
+                if len(text) > 4096:
+                    text = text[:4090] + "..."
+                    self.logger.warning(f"Message truncated to fit Telegram limit")
+                
+                url = f"{self.base_url}/sendMessage"
+                data = {
+                    'chat_id': chat_id,
+                    'text': text,
+                    'disable_web_page_preview': True
+                }
 
-            # Only add parse_mode if it's specified and not None
-            if parse_mode:
-                data['parse_mode'] = parse_mode
+                # Only add parse_mode if it's specified and not None
+                if parse_mode:
+                    data['parse_mode'] = parse_mode
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=data) as response:
-                    if response.status == 200:
-                        self.logger.info(f"✅ Message sent successfully to {chat_id}")
-                        if chat_id == self.target_channel:
-                            self.channel_accessible = True
-                        return True
-                    else:
-                        error = await response.text()
-                        self.logger.warning(f"⚠️ Send message failed to {chat_id}: {error}")
-                        if chat_id == self.target_channel:
-                            self.channel_accessible = False
-                        if chat_id == self.target_channel and self.admin_chat_id:
-                            return await self._send_to_admin_fallback(text, parse_mode)
-                        return False
+                # Add timeout and proper headers
+                timeout = aiohttp.ClientTimeout(total=30)
+                headers = {'Content-Type': 'application/json'}
+                
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    async with session.post(url, json=data) as response:
+                        if response.status == 200:
+                            self.logger.info(f"✅ Message sent successfully to {chat_id} (attempt {attempt + 1})")
+                            if chat_id == self.target_channel:
+                                self.channel_accessible = True
+                            return True
+                        elif response.status == 429:  # Rate limited
+                            retry_after = int(response.headers.get('Retry-After', retry_delay))
+                            self.logger.warning(f"⏳ Rate limited, waiting {retry_after}s before retry {attempt + 1}")
+                            await asyncio.sleep(retry_after)
+                            continue
+                        elif response.status in [400, 403]:  # Bad request or forbidden
+                            error_text = await response.text()
+                            error_data = {}
+                            try:
+                                error_data = json.loads(error_text)
+                            except:
+                                pass
+                            
+                            error_description = error_data.get('description', error_text)
+                            self.logger.error(f"❌ Telegram API error {response.status}: {error_description}")
+                            
+                            # Don't retry for these errors
+                            if chat_id == self.target_channel:
+                                self.channel_accessible = False
+                                if self.admin_chat_id and "not found" not in error_description.lower():
+                                    return await self._send_to_admin_fallback(text, parse_mode)
+                            return False
+                        else:
+                            error = await response.text()
+                            self.logger.warning(f"⚠️ Send message failed to {chat_id} (attempt {attempt + 1}): HTTP {response.status} - {error}")
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(retry_delay)
+                                continue
 
-        except Exception as e:
-            self.logger.error(f"Error sending message to {chat_id}: {e}")
-            if chat_id == self.target_channel:
-                self.channel_accessible = False
-            if chat_id == self.target_channel and self.admin_chat_id:
+            except asyncio.TimeoutError:
+                self.logger.warning(f"⏰ Timeout sending message to {chat_id} (attempt {attempt + 1})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+            except aiohttp.ClientError as e:
+                self.logger.warning(f"🌐 Network error sending to {chat_id} (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+            except Exception as e:
+                self.logger.error(f"💥 Unexpected error sending message to {chat_id} (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+        # All retries failed
+        self.logger.error(f"❌ Failed to send message to {chat_id} after {max_retries} attempts")
+        if chat_id == self.target_channel:
+            self.channel_accessible = False
+            if self.admin_chat_id:
                 return await self._send_to_admin_fallback(text, parse_mode)
-            return False
+        return False
 
     async def _send_to_admin_fallback(self, text: str, parse_mode: str) -> bool:
         """Fallback to send message to admin"""
@@ -3703,11 +3912,41 @@ Use /train to manually scan and train""")
         last_channel_training = datetime.now()
         last_cleanup = datetime.now()
         last_validation = datetime.now()
+        last_connection_check = datetime.now()
+        last_heartbeat_log = datetime.now()
+
+        # Initialize recovery state
+        recovery_mode = False
+        recovery_start_time = None
 
         while self.running and not self.shutdown_requested:
             try:
                 now = datetime.now()
                 
+                # Health monitoring and heartbeat (every 5 minutes)
+                if (now - last_heartbeat_log).total_seconds() > 300:  # 5 minutes
+                    active_count = len(self.active_trades)
+                    locked_count = len(self.active_symbols)
+                    self.logger.info(f"💓 Bot Heartbeat - Active: {active_count}, Locked: {locked_count}, Errors: {consecutive_errors}")
+                    last_heartbeat_log = now
+
+                # Connection health check (every 5 minutes)
+                if (now - last_connection_check).total_seconds() > 300:  # 5 minutes
+                    try:
+                        connection_ok = await self.verify_channel_access()
+                        if not connection_ok and not recovery_mode:
+                            self.logger.warning("🔄 Entering recovery mode due to connection issues")
+                            recovery_mode = True
+                            recovery_start_time = now
+                        elif connection_ok and recovery_mode:
+                            recovery_duration = (now - recovery_start_time).total_seconds() if recovery_start_time else 0
+                            self.logger.info(f"✅ Recovery successful after {recovery_duration:.1f} seconds")
+                            recovery_mode = False
+                            consecutive_errors = 0  # Reset error count on successful recovery
+                        last_connection_check = now
+                    except Exception as e:
+                        self.logger.warning(f"Connection check error: {e}")
+
                 # Periodic maintenance (every 10 minutes)
                 if (now - last_cleanup).total_seconds() > 600:  # 10 minutes
                     try:
@@ -3725,17 +3964,24 @@ Use /train to manually scan and train""")
                         self.logger.warning(f"Validation error: {e}")
 
                 # Periodically scan channel for closed trades and train ML (every 30 minutes)
-                if (now - last_channel_training).total_seconds() > 1800:  # 30 minutes
+                if (now - last_channel_training).total_seconds() > 1800 and not recovery_mode:  # 30 minutes, skip if in recovery
                     try:
                         await self.scan_and_train_from_closed_trades()
                         last_channel_training = now
                     except Exception as e:
                         self.logger.warning(f"Channel training error: {e}")
 
-                # Enhanced status logging
+                # Enhanced status logging with recovery mode indicator
                 active_count = len(self.active_trades)
                 locked_count = len(self.active_symbols)
-                self.logger.info(f"🧠 Scanning markets for ML-enhanced signals... | Active: {active_count} | Locked: {locked_count}")
+                mode_indicator = "🔄 RECOVERY" if recovery_mode else "🧠 NORMAL"
+                self.logger.info(f"{mode_indicator} Scanning markets for ML-enhanced signals... | Active: {active_count} | Locked: {locked_count}")
+                
+                # Skip intensive operations in recovery mode
+                if recovery_mode:
+                    self.logger.info("⏸️ Skipping signal scan in recovery mode")
+                    await asyncio.sleep(30)
+                    continue
                 
                 signals = await self.scan_for_signals()
 
@@ -3760,9 +4006,9 @@ Use /train to manually scan and train""")
                                     self.performance_stats['total_signals'] * 100
                                 )
 
-                            # Send chart first to @SignalTactics
+                            # Send chart first to @SignalTactics with better error handling
                             chart_sent = False
-                            if self.channel_accessible:
+                            if self.channel_accessible and not recovery_mode:
                                 try:
                                     df = await self.get_binance_data(signal['symbol'], '1h', 100)
                                     if df is not None and len(df) > 10:
@@ -3770,19 +4016,28 @@ Use /train to manually scan and train""")
                                         if chart_data and len(chart_data) > 100:  # Valid base64 should be longer
                                             chart_sent = await self.send_photo(self.target_channel, chart_data, 
                                                                              f"📊 {signal['symbol']} - {signal['direction']} Setup")
+                                            if not chart_sent:
+                                                self.logger.warning(f"📊 Chart sending failed for {signal['symbol']}")
                                         else:
-                                            self.logger.info(f"📊 Chart generation skipped for {signal['symbol']} - no valid chart data")
+                                            self.logger.debug(f"📊 Chart generation skipped for {signal['symbol']} - no valid chart data")
                                     else:
-                                        self.logger.info(f"📊 Chart generation skipped for {signal['symbol']} - insufficient market data")
+                                        self.logger.debug(f"📊 Chart generation skipped for {signal['symbol']} - insufficient market data")
                                 except Exception as chart_error:
                                     self.logger.warning(f"Chart error for {signal['symbol']}: {str(chart_error)[:100]}")
                                     chart_sent = False
 
-                            # Send signal info separately
-                            signal_msg = self.format_ml_signal_message(signal)
+                            # Send signal info separately with validation
                             channel_sent = False
-                            if self.channel_accessible:
-                                channel_sent = await self.send_message(self.target_channel, signal_msg)
+                            if self.channel_accessible and not recovery_mode:
+                                try:
+                                    signal_msg = self.format_ml_signal_message(signal)
+                                    if signal_msg and len(signal_msg.strip()) > 10:  # Validate message content
+                                        channel_sent = await self.send_message(self.target_channel, signal_msg)
+                                    else:
+                                        self.logger.error(f"Invalid signal message generated for {signal['symbol']}")
+                                except Exception as msg_error:
+                                    self.logger.error(f"Message formatting error for {signal['symbol']}: {msg_error}")
+                                    channel_sent = False
 
                             if channel_sent:
                                 chart_status = "📊✅" if chart_sent else "📊❌"
@@ -3808,32 +4063,83 @@ Use /train to manually scan and train""")
                 else:
                     self.logger.info("📊 No ML signals found - models filtering for optimal opportunities")
 
+                # Reset error count and update heartbeat on successful operation
                 consecutive_errors = 0
                 self.last_heartbeat = datetime.now()
 
-                scan_interval = 30 if signals else 45  # Much more frequent scanning
-                self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds | 🚀 UNLIMITED MODE")
+                # Adaptive scanning interval based on mode and performance
+                if recovery_mode:
+                    scan_interval = 60  # Slower scanning in recovery mode
+                elif signals:
+                    scan_interval = 30  # Fast scanning when signals found
+                else:
+                    scan_interval = 45  # Normal scanning when no signals
+
+                status_msg = "🔄 RECOVERY MODE" if recovery_mode else "🚀 UNLIMITED MODE"
+                self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds | {status_msg}")
                 await asyncio.sleep(scan_interval)
 
             except Exception as e:
                 consecutive_errors += 1
-                self.logger.error(f"ML auto-scan loop error #{consecutive_errors}: {e}")
+                error_type = type(e).__name__
+                self.logger.error(f"ML auto-scan loop error #{consecutive_errors} ({error_type}): {e}")
+                
+                # Log stack trace for debugging if needed
+                if consecutive_errors <= 2:  # Only for first few errors to avoid spam
+                    self.logger.debug(f"Error traceback: {traceback.format_exc()}")
 
                 if consecutive_errors >= max_consecutive_errors:
-                    self.logger.critical(f"🚨 Too many consecutive errors ({consecutive_errors}). Extended wait.")
+                    self.logger.critical(f"🚨 Too many consecutive errors ({consecutive_errors}). Entering extended recovery.")
+                    recovery_mode = True
+                    recovery_start_time = datetime.now()
                     error_wait = min(300, 30 * consecutive_errors)
 
+                    # Comprehensive recovery attempt
                     try:
+                        self.logger.info("🔄 Attempting comprehensive system recovery...")
+                        
+                        # Reset session
                         await self.create_session()
-                        await self.verify_channel_access()
-                        self.logger.info("🔄 Session and connections refreshed")
+                        
+                        # Verify connections
+                        connection_ok = await self.verify_channel_access()
+                        
+                        # Clean up any stuck resources
+                        await self.cleanup_stale_locks()
+                        await self.validate_active_trades()
+                        
+                        # Test basic functionality
+                        if self.admin_chat_id:
+                            test_sent = await self.send_message(self.admin_chat_id, 
+                                f"🔄 Recovery attempt {consecutive_errors} - Testing connection...")
+                            if test_sent:
+                                self.logger.info("✅ Admin communication test successful")
+                        
+                        self.logger.info("🔄 Recovery attempt completed")
+                        
                     except Exception as recovery_error:
                         self.logger.error(f"Recovery attempt failed: {recovery_error}")
+                        # Try to notify admin of critical error
+                        if self.admin_chat_id:
+                            try:
+                                await self.send_message(self.admin_chat_id, 
+                                    f"🚨 CRITICAL: Bot recovery failed after {consecutive_errors} errors. Manual intervention may be required.")
+                            except:
+                                pass  # Even admin notification failed
 
                 else:
+                    # Progressive backoff for temporary errors
                     error_wait = min(120, 15 * consecutive_errors)
+                    
+                    # Try quick recovery for network errors
+                    if "network" in str(e).lower() or "timeout" in str(e).lower():
+                        self.logger.info("🌐 Network error detected, attempting quick connection refresh...")
+                        try:
+                            await self.verify_channel_access()
+                        except:
+                            pass
 
-                self.logger.info(f"⏳ Waiting {error_wait} seconds before retry...")
+                self.logger.info(f"⏳ Waiting {error_wait} seconds before retry... (Recovery mode: {recovery_mode})")
                 await asyncio.sleep(error_wait)
 
     async def run_bot(self):

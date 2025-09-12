@@ -1974,10 +1974,15 @@ class UltimateTradingBot:
                 self.hourly_signal_count = 0
                 self.last_hour_reset = current_time.hour
 
-            # Dynamic 3-trade limit check
+            # Dynamic 3-trade limit check with cleanup
             if len(self.active_trades) >= self.max_concurrent_trades:
-                self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Waiting for trades to close.")
-                return None
+                # Check if any trades are stale and can be cleaned up
+                await self.cleanup_stale_trades()
+                
+                # Check again after cleanup
+                if len(self.active_trades) >= self.max_concurrent_trades:
+                    self.logger.debug(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Skipping scan.")
+                    return None
 
             if symbol in self.active_symbols:
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
@@ -3359,6 +3364,68 @@ Use /train to manually scan and train""")
         except Exception as e:
             self.logger.error(f"Error cleaning up stale locks: {e}")
 
+    async def cleanup_stale_trades(self):
+        """Cleanup stale active trades that may be stuck"""
+        try:
+            current_time = datetime.now()
+            stale_trades = []
+
+            for symbol, trade_info in self.active_trades.items():
+                try:
+                    entry_time = trade_info.get('entry_time', current_time)
+                    age_hours = (current_time - entry_time).total_seconds() / 3600
+
+                    # Check if monitoring task is dead
+                    monitoring_task = trade_info.get('monitoring_task')
+                    task_dead = monitoring_task and (monitoring_task.done() or monitoring_task.cancelled())
+
+                    # Mark trades as stale if they're over 6 hours old or monitoring task is dead
+                    if age_hours > 6 or task_dead:
+                        stale_trades.append(symbol)
+                        self.logger.warning(f"🧹 Found stale trade: {symbol} (age: {age_hours:.1f}h, task_dead: {task_dead})")
+
+                except Exception as trade_error:
+                    self.logger.error(f"Error checking trade {symbol}: {trade_error}")
+                    stale_trades.append(symbol)
+
+            # Cleanup stale trades
+            for symbol in stale_trades:
+                try:
+                    if symbol in self.active_trades:
+                        trade_info = self.active_trades[symbol]
+                        
+                        # Cancel monitoring task if it exists
+                        monitoring_task = trade_info.get('monitoring_task')
+                        if monitoring_task and not monitoring_task.done():
+                            monitoring_task.cancel()
+                        
+                        # Record the trade as completed with timeout status
+                        signal = trade_info.get('signal', {})
+                        if signal:
+                            timeout_result = {
+                                'exit_price': signal.get('entry_price', 0),
+                                'profit_loss': 0,
+                                'result': 'TIMEOUT_CLEANUP',
+                                'duration_minutes': (current_time - trade_info.get('entry_time', current_time)).total_seconds() / 60,
+                                'exit_time': current_time
+                            }
+                            await self.record_trade_completion(signal, timeout_result)
+                        
+                        # Remove from active trades
+                        del self.active_trades[symbol]
+                    
+                    # Release symbol lock
+                    self.release_symbol_lock(symbol)
+                    
+                except Exception as cleanup_error:
+                    self.logger.error(f"Error cleaning up stale trade {symbol}: {cleanup_error}")
+
+            if stale_trades:
+                self.logger.info(f"🧹 Cleaned up {len(stale_trades)} stale trades")
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning up stale trades: {e}")
+
     async def validate_active_trades(self):
         """Validate and cleanup active trades"""
         try:
@@ -4097,10 +4164,11 @@ Use /train to manually scan and train""")
                     except Exception as e:
                         self.logger.warning(f"Connection check error: {e}")
 
-                # Periodic maintenance (every 10 minutes)
-                if (now - last_cleanup).total_seconds() > 600:  # 10 minutes
+                # Periodic maintenance (every 5 minutes)
+                if (now - last_cleanup).total_seconds() > 300:  # 5 minutes
                     try:
                         await self.cleanup_stale_locks()
+                        await self.cleanup_stale_trades()
                         last_cleanup = now
                     except Exception as e:
                         self.logger.warning(f"Cleanup error: {e}")
@@ -4133,17 +4201,21 @@ Use /train to manually scan and train""")
                     await asyncio.sleep(30)
                     continue
 
+                # Check and cleanup stale trades before scanning
+                if len(self.active_trades) >= self.max_concurrent_trades:
+                    await self.cleanup_stale_trades()
+
                 signals = await self.scan_for_signals()
 
                 if signals:
-                    self.logger.info(f"📊 Found {len(signals)} ML-validated signals | Hour: {self.hourly_signal_count}/{self.max_concurrent_trades}")
+                    self.logger.info(f"📊 Found {len(signals)} ML-validated signals | Active: {len(self.active_trades)}/{self.max_concurrent_trades}")
 
                     signals_sent_count = 0
 
                     for signal in signals:
                         # Dynamic 3-trade limit check
                         if len(self.active_trades) >= self.max_concurrent_trades:
-                            self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Waiting for trades to close.")
+                            self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Skipping remaining signals.")
                             break
 
                         try:

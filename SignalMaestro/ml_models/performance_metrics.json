@@ -1,11 +1,11 @@
 {
-  "signal_accuracy": 0.7600112492816354,
-  "profit_prediction_accuracy": 0.2614228231181024,
-  "risk_assessment_accuracy": 0.53,
+  "signal_accuracy": 0.8185808786667156,
+  "profit_prediction_accuracy": 0.20919395851865108,
+  "risk_assessment_accuracy": 0.73,
   "confidence_prediction_accuracy": 0.0,
   "ensemble_accuracy": 0.0,
-  "total_trades_learned": 342,
-  "last_training_time": "2025-09-12T02:03:20.240420",
+  "total_trades_learned": 384,
+  "last_training_time": "2025-09-12T07:41:56.175440",
   "win_rate_improvement": 0.0,
   "accuracy_growth_rate": 0.0,
   "consecutive_wins": 0,
@@ -15,6 +15,6 @@
   "learning_velocity": 0.0,
   "prediction_precision": 0.0,
   "trade_success_streak": 0,
-  "profit_prediction_mae": 4.45953402782908,
-  "profit_prediction_rmse": 7.260099029372774
+  "profit_prediction_mae": 2.1608697218164554,
+  "profit_prediction_rmse": 4.693213572576522
 }

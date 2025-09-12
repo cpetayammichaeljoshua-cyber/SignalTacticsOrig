@@ -1189,7 +1189,7 @@ class UltimateTradingBot:
         self.risk_per_trade_amount = 0.50  # Fixed $0.50 risk per trade regardless of leverage
         
         # Trading limits
-        self.max_concurrent_trades = 10  # Perfect 10-trade management
+        self.max_concurrent_trades = 3  # Perfect 3-trade management
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 75  # Signal quality threshold
 
@@ -5506,7 +5506,6 @@ Use /train to manually scan and train""")
 • CVD confluence detection
 • **Adaptive leverage calculation** (20x-75x)
 • **Cross margin trading** (all positions)
-• **10-trade concurrent management**
 • Machine learning predictions
 • Persistent trade learning
 • Cross-session learning continuity

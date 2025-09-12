@@ -19,6 +19,9 @@ import warnings
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas_ta")
+warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
+warnings.filterwarnings('ignore', category=UserWarning, message='Glyph*')
+warnings.filterwarnings('ignore', category=UserWarning, message='This figure includes Axes*')
 
 try:
     import pandas_ta as ta
@@ -647,7 +650,8 @@ class AdvancedTradingStrategy:
             plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
             plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
 
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.08, bottom=0.15, right=0.95, top=0.88, hspace=0.3)
 
             # Convert to base64 string
             buffer = BytesIO()

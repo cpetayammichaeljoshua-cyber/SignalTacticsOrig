@@ -242,7 +242,8 @@ class PerfectSignalBot:
             ax2.xaxis.set_major_locator(mdates.HourLocator(interval=4))
             plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
 
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.08, bottom=0.15, right=0.95, top=0.88, hspace=0.3)
 
             # Save to base64
             buffer = BytesIO()
@@ -651,7 +652,8 @@ class PerfectSignalBot:
             fig.text(0.99, 0.01, '@SignalTactics - Premium Signals', ha='right', va='bottom',
                     color='#555555', fontsize=10, style='italic')
 
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.06, bottom=0.12, right=0.98, top=0.92, hspace=0.4)
 
             # Save to base64
             buffer = BytesIO()

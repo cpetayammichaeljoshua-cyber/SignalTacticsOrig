@@ -1192,7 +1192,8 @@ class PerfectScalpingBot:
             ax2.set_xlabel('Time', fontsize=12)
             ax2.grid(True, alpha=0.3)
 
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.08, bottom=0.15, right=0.95, top=0.88, hspace=0.3)
 
             # Convert to base64
             buffer = BytesIO()

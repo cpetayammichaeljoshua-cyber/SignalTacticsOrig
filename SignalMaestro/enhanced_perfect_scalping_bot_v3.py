@@ -412,7 +412,8 @@ class EnhancedPerfectScalpingBotV3:
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.08, bottom=0.15, right=0.95, top=0.88, hspace=0.3)
             
             # Save to bytes
             buffer = BytesIO()

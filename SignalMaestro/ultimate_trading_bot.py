@@ -37,8 +37,23 @@ except ImportError:
 try:
     import matplotlib
     matplotlib.use('Agg')
+    # Configure matplotlib to suppress all warnings
+    import warnings
+    warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
+    warnings.filterwarnings('ignore', category=UserWarning, message='Glyph*')
+    warnings.filterwarnings('ignore', category=UserWarning, message='This figure includes Axes*')
+    
+    # Import matplotlib modules
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
+    import matplotlib.font_manager as fm
+    
+    # Configure matplotlib rcParams to suppress font warnings
+    plt.rcParams['font.family'] = ['DejaVu Sans', 'sans-serif']
+    plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams['font.size'] = 10
+    plt.rcParams['figure.max_open_warning'] = 0
+    
     CHART_AVAILABLE = True
 except ImportError:
     CHART_AVAILABLE = False
@@ -1139,16 +1154,18 @@ class UltimateTradingBot:
             'cvd_strength': 0
         }
 
-        # Adaptive leverage settings with cross margin
+        # ========================================
+        # VOLATILITY-BASED DYNAMIC LEVERAGE SYSTEM
+        # ========================================
         self.leverage_config = {
-            'min_leverage': 20,
-            'max_leverage': 75,
-            'base_leverage': 35,
-            'volatility_threshold_low': 0.01,
-            'volatility_threshold_high': 0.04,
-            'volume_threshold_low': 0.8,
-            'volume_threshold_high': 1.5,
-            'margin_type': 'CROSSED'  # Always use cross margin
+            'min_leverage': 10,      # Minimum leverage for high volatility
+            'max_leverage': 50,      # Maximum leverage for low volatility 
+            'base_leverage': 25,     # Default leverage
+            'volatility_threshold_low': 0.005,   # Low volatility threshold (0.5%)
+            'volatility_threshold_medium': 0.015, # Medium volatility threshold (1.5%)
+            'volatility_threshold_high': 0.03,   # High volatility threshold (3%)
+            'atr_period': 14,        # ATR period for volatility calculation
+            'margin_type': 'CROSSED' # Always use cross margin
         }
 
         # Adaptive leveraging based on market conditions and past performance
@@ -1161,12 +1178,20 @@ class UltimateTradingBot:
             'leverage_adjustment_factor': 0.1
         }
 
-        # Risk management - optimized for maximum profitability and unlimited signals
+        # ========================================
+        # PRECISE RISK MANAGEMENT CONFIGURATION
+        # ========================================
+        # Account Balance: 10 USDT (as requested)
+        self.account_balance = 10.0  # USDT
+        
+        # Risk Management: 1% per trade = 0.10 USDT per trade
+        self.risk_per_trade_percentage = 1.0  # 1%
+        self.risk_per_trade_amount = self.account_balance * (self.risk_per_trade_percentage / 100)  # 0.10 USDT
+        
+        # Trading limits
+        self.max_concurrent_trades = 3  # Perfect 3-trade management
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 75  # Lowered for more opportunities
-        # self.max_signals_per_hour = 999  # Unlimited signals per hour
-        self.max_concurrent_trades = 3  # Dynamic 3-trade limit management
-        self.capital_allocation = 0.02  # 2% per trade for more trades (this is not directly used for trade size calculation as per user request, leverage handles it)
+        self.min_signal_strength = 75  # Signal quality threshold
 
         # Performance tracking
         self.signal_counter = 0
@@ -1247,6 +1272,192 @@ class UltimateTradingBot:
                 self.logger.info("🧹 PID file cleaned up")
         except Exception as e:
             self.logger.warning(f"Cleanup error: {e}")
+
+    # ========================================
+    # PRECISE RISK MANAGEMENT FUNCTIONS
+    # ========================================
+    
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
+        """
+        Calculate Average True Range (ATR) for volatility measurement
+        
+        Args:
+            df: DataFrame with OHLC data
+            period: ATR calculation period
+            
+        Returns:
+            Current ATR value
+        """
+        try:
+            high = df['high'].values
+            low = df['low'].values
+            close = df['close'].values
+            
+            # Calculate True Range
+            tr_list = []
+            for i in range(1, len(close)):
+                tr1 = abs(high[i] - low[i])
+                tr2 = abs(high[i] - close[i-1])
+                tr3 = abs(low[i] - close[i-1])
+                tr = max(tr1, tr2, tr3)
+                tr_list.append(tr)
+            
+            # Calculate ATR (moving average of TR)
+            if len(tr_list) >= period:
+                atr = np.mean(tr_list[-period:])
+                return atr
+            else:
+                return np.mean(tr_list) if tr_list else 0.0
+                
+        except Exception as e:
+            self.logger.error(f"Error calculating ATR: {e}")
+            return 0.0
+    
+    def _calculate_volatility_based_leverage(self, df: pd.DataFrame, current_price: float) -> int:
+        """
+        Calculate leverage based on market volatility using ATR
+        
+        Higher volatility = Lower leverage (safer)
+        Lower volatility = Higher leverage (more efficient)
+        
+        Args:
+            df: DataFrame with OHLC data
+            current_price: Current market price
+            
+        Returns:
+            Optimal leverage for the current volatility
+        """
+        try:
+            # Calculate ATR for volatility measurement
+            atr = self._calculate_atr(df, self.leverage_config['atr_period'])
+            
+            # Calculate volatility percentage
+            volatility_pct = (atr / current_price) if current_price > 0 else 0
+            
+            config = self.leverage_config
+            
+            # Determine leverage based on volatility thresholds
+            if volatility_pct <= config['volatility_threshold_low']:
+                # Low volatility - use higher leverage
+                leverage = config['max_leverage']
+                volatility_level = "LOW"
+            elif volatility_pct <= config['volatility_threshold_medium']:
+                # Medium volatility - use medium leverage
+                leverage = config['base_leverage']
+                volatility_level = "MEDIUM"
+            elif volatility_pct <= config['volatility_threshold_high']:
+                # High volatility - use lower leverage
+                leverage = int(config['base_leverage'] * 0.7)  # 30% reduction
+                volatility_level = "HIGH"
+            else:
+                # Very high volatility - use minimum leverage
+                leverage = config['min_leverage']
+                volatility_level = "VERY HIGH"
+            
+            # Ensure leverage stays within bounds
+            leverage = max(config['min_leverage'], min(config['max_leverage'], leverage))
+            
+            self.logger.info(f"🎯 Volatility: {volatility_pct*100:.3f}% ({volatility_level}) → Leverage: {leverage}x")
+            
+            return leverage
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating volatility-based leverage: {e}")
+            return self.leverage_config['base_leverage']
+    
+    def _calculate_precise_position_size(self, entry_price: float, stop_loss: float, leverage: int) -> Dict[str, float]:
+        """
+        Calculate precise position size based on 1% risk per trade
+        
+        Formula: Position Size = (Risk Amount / Stop Loss Distance) 
+        With leverage: Actual Position = Position Size * Leverage
+        
+        Args:
+            entry_price: Entry price for the trade
+            stop_loss: Stop loss price
+            leverage: Leverage to use
+            
+        Returns:
+            Dictionary with position calculations
+        """
+        try:
+            # Risk amount per trade (0.10 USDT)
+            risk_amount = self.risk_per_trade_amount
+            
+            # Calculate stop loss distance in price
+            stop_loss_distance = abs(entry_price - stop_loss)
+            
+            if stop_loss_distance == 0:
+                self.logger.warning("Stop loss distance is zero - using conservative position size")
+                return {
+                    'position_size': 0.0,
+                    'position_value': 0.0,
+                    'risk_amount': risk_amount,
+                    'leverage_used': leverage,
+                    'max_loss': risk_amount
+                }
+            
+            # Calculate position size to risk exactly 0.10 USDT
+            # Position Size = Risk Amount / Stop Loss Distance
+            base_position_size = risk_amount / stop_loss_distance
+            
+            # With leverage, we can control more with less margin
+            # Position value = base_position_size * leverage
+            position_value = base_position_size * leverage
+            
+            # Calculate margin required (position value / leverage)
+            margin_required = position_value / leverage
+            
+            # Ensure we don't exceed account balance
+            max_margin = self.account_balance * 0.9  # Use max 90% of account
+            if margin_required > max_margin:
+                # Reduce position size to fit within account limits
+                position_value = max_margin * leverage
+                base_position_size = position_value / leverage
+                margin_required = max_margin
+            
+            result = {
+                'position_size': base_position_size,
+                'position_value': position_value,
+                'margin_required': margin_required,
+                'risk_amount': risk_amount,
+                'leverage_used': leverage,
+                'stop_loss_distance': stop_loss_distance,
+                'max_loss': risk_amount,
+                'risk_percentage': (risk_amount / self.account_balance) * 100
+            }
+            
+            self.logger.info(f"💰 Position: {base_position_size:.6f} | Value: {position_value:.2f} USDT | Margin: {margin_required:.2f} USDT | Risk: {risk_amount} USDT ({self.risk_per_trade_percentage}%)")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position size: {e}")
+            return {
+                'position_size': 0.0,
+                'position_value': 0.0,
+                'margin_required': 0.0,
+                'risk_amount': self.risk_per_trade_amount,
+                'leverage_used': leverage,
+                'max_loss': self.risk_per_trade_amount
+            }
+    
+    def _validate_trade_slots(self) -> bool:
+        """
+        Validate that we have available trade slots (max 3 trades)
+        
+        Returns:
+            True if slot available, False if at maximum capacity
+        """
+        active_count = len(self.active_trades)
+        slots_available = active_count < self.max_concurrent_trades
+        
+        if not slots_available:
+            self.logger.info(f"🔒 All trade slots occupied ({active_count}/{self.max_concurrent_trades})")
+        else:
+            self.logger.info(f"✅ Trade slot available ({active_count}/{self.max_concurrent_trades})")
+        
+        return slots_available
 
     async def create_session(self) -> str:
         """Create indefinite session"""
@@ -1491,7 +1702,7 @@ class UltimateTradingBot:
 
             # 1. Enhanced SuperTrend
             hl2 = (high + low) / 2
-            atr = self._calculate_atr(high, low, close, 7)
+            atr = self._calculate_atr_array(high, low, close, 7)
             volatility = np.std(close[-20:]) / np.mean(close[-20:])
             multiplier = 2.5 + (volatility * 10)
 
@@ -1597,8 +1808,8 @@ class UltimateTradingBot:
             self.logger.error(f"Error calculating indicators: {e}")
             return {}
 
-    def _calculate_atr(self, high: np.array, low: np.array, close: np.array, period: int) -> np.array:
-        """Calculate Average True Range"""
+    def _calculate_atr_array(self, high: np.array, low: np.array, close: np.array, period: int) -> np.array:
+        """Calculate Average True Range using arrays"""
         tr1 = high - low
         tr2 = np.abs(high - np.roll(close, 1))
         tr3 = np.abs(low - np.roll(close, 1))
@@ -2104,42 +2315,62 @@ class UltimateTradingBot:
                 self.logger.debug(f"❌ {symbol} signal rejected - HA conflict with insufficient strength")
                 return None
 
-            # Calculate entry, stop loss, and take profits
+            # ========================================
+            # NEW PRECISE RISK MANAGEMENT SYSTEM
+            # ========================================
+            
             entry_price = current_price
-            risk_percentage = 1.5  # 1.5% risk
-            risk_amount = entry_price * (risk_percentage / 100)
-
-            if direction == 'BUY':
-                stop_loss = entry_price - risk_amount
-                tp1 = entry_price + (risk_amount * 0.33)  # 33% of profit for 1:1 ratio
-                tp2 = entry_price + (risk_amount * 0.67)  # 67% of profit for 1:1 ratio
-                tp3 = entry_price + (risk_amount * 1.0)   # Full 1:1 profit
-
-                if not (stop_loss < entry_price < tp1 < tp2 < tp3):
-                    stop_loss = entry_price * 0.985
-                    tp1 = entry_price * 1.005
-                    tp2 = entry_price * 1.010
-                    tp3 = entry_price * 1.015
+            
+            # Calculate volatility-based leverage using new system
+            if df is not None and len(df) >= 14:
+                optimal_leverage = self._calculate_volatility_based_leverage(df, current_price)
             else:
-                stop_loss = entry_price + risk_amount
-                tp1 = entry_price - (risk_amount * 0.33)  # 33% of profit for 1:1 ratio
-                tp2 = entry_price - (risk_amount * 0.67)  # 67% of profit for 1:1 ratio
-                tp3 = entry_price - (risk_amount * 1.0)   # Full 1:1 profit
+                # Fallback for insufficient data
+                optimal_leverage = self.leverage_config['base_leverage']
+                self.logger.warning(f"Insufficient data for {symbol} - using base leverage {optimal_leverage}x")
+            
+            # Calculate stop loss and take profit based on 1% risk
+            # Use 1.5% price movement for SL/TP calculation (reasonable for crypto volatility)
+            price_movement_pct = 1.5  # 1.5% price movement
+            price_movement = entry_price * (price_movement_pct / 100)
+            
+            if direction == 'BUY':
+                stop_loss = entry_price - price_movement
+                tp1 = entry_price + (price_movement * 0.33)  # 33% of profit for gradual exits
+                tp2 = entry_price + (price_movement * 0.67)  # 67% of profit
+                tp3 = entry_price + (price_movement * 1.0)   # Full 1:1 risk/reward
 
+                # Validation for BUY orders
+                if not (stop_loss < entry_price < tp1 < tp2 < tp3):
+                    stop_loss = entry_price * 0.985  # 1.5% below entry
+                    tp1 = entry_price * 1.005       # 0.5% above entry
+                    tp2 = entry_price * 1.010       # 1.0% above entry
+                    tp3 = entry_price * 1.015       # 1.5% above entry
+            else:  # SELL
+                stop_loss = entry_price + price_movement
+                tp1 = entry_price - (price_movement * 0.33)
+                tp2 = entry_price - (price_movement * 0.67)
+                tp3 = entry_price - (price_movement * 1.0)
+
+                # Validation for SELL orders
                 if not (tp3 < tp2 < tp1 < entry_price < stop_loss):
-                    stop_loss = entry_price * 1.015
-                    tp1 = entry_price * 0.995
-                    tp2 = entry_price * 0.990
-                    tp3 = entry_price * 0.985
-
-            # Risk validation
-            risk_percentage = abs(entry_price - stop_loss) / entry_price * 100
-            if risk_percentage > 3.0:
+                    stop_loss = entry_price * 1.015  # 1.5% above entry
+                    tp1 = entry_price * 0.995       # 0.5% below entry
+                    tp2 = entry_price * 0.990       # 1.0% below entry
+                    tp3 = entry_price * 0.985       # 1.5% below entry
+            
+            # Calculate precise position size using new risk management
+            position_calc = self._calculate_precise_position_size(entry_price, stop_loss, optimal_leverage)
+            
+            # Risk validation - ensure stop loss distance is reasonable
+            stop_loss_distance_pct = abs(entry_price - stop_loss) / entry_price * 100
+            if stop_loss_distance_pct > 5.0:  # More than 5% is too risky
+                self.logger.warning(f"❌ {symbol} stop loss distance too large: {stop_loss_distance_pct:.2f}%")
                 return None
-
-            # Calculate adaptive leverage with cross margin
-            placeholder_df = pd.DataFrame({'close': [current_price] * 20}) if df is None or len(df) < 20 else df
-            optimal_leverage = self.calculate_adaptive_leverage(indicators, placeholder_df)
+            
+            if position_calc['position_size'] <= 0:
+                self.logger.warning(f"❌ {symbol} invalid position size calculated")
+                return None
 
             # ENHANCED HEIKIN ASHI CONFIRMATION (LESS RESTRICTIVE)
             ha_signal_ready = indicators.get('ha_signal_ready', False)
@@ -2188,6 +2419,10 @@ class UltimateTradingBot:
                 confirmation_method = "high_strength_override"
                 self.logger.info(f"✅ {direction} signal confirmed by exceptional strength ({signal_strength:.0f}%): {symbol}")
 
+            # Validate trade slots before proceeding
+            if not self._validate_trade_slots():
+                return None
+                
             # Only reject if completely contradictory and no override
             if direction == 'BUY' and ha_trend == 'bearish' and ha_confirmation and not direction_matches_ha:
                 self.logger.debug(f"❌ {symbol} BUY signal rejected - Strong bearish Heikin Ashi trend")
@@ -2852,8 +3087,7 @@ Exchange: BinanceFutures"""
             current_time = datetime.now().strftime('%H:%M UTC')
             ha_confirmation = signal.get('ha_confirmation_used', 'none').replace('_', ' ').title()
 
-            info_text = f"""💎 SIGNAL INFO: {current_time} | 🎯 HA Confirmation: {ha_confirmation} | 🧠 ML Enhanced | ⚖️ Cross Margin
-📊 Risk/Reward: 1:3 | 🛡️ Auto SL Management | 📈 Multi-TF Analysis | 🔥 Premium Strategy"""
+            info_text = f"""SIGNAL INFO: {current_time} | HA Confirmation: {ha_confirmation} | ML Enhanced | Cross Margin\nRisk/Reward: 1:3 | Auto SL Management | Multi-TF Analysis | Premium Strategy"""
 
             ax_info.text(0.5, 0.5, info_text, ha='center', va='center',
                         color='white', fontsize=10, weight='bold',
@@ -2888,7 +3122,8 @@ Exchange: BinanceFutures"""
             ax_volume.set_xticks(time_indices)
             ax_volume.set_xticklabels(time_labels, rotation=45)
 
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.05, bottom=0.15, right=0.95, top=0.90, hspace=0.15)
 
             # Save with high quality
             buffer = BytesIO()
@@ -2901,7 +3136,7 @@ Exchange: BinanceFutures"""
             plt.close(fig)
             buffer.close()
 
-            self.logger.info(f"📊 Professional candlestick chart generated for {symbol}")
+            self.logger.info(f"Professional candlestick chart generated for {symbol}")
             return chart_base64
 
         except Exception as e:

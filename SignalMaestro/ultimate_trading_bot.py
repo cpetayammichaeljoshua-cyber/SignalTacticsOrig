@@ -1181,12 +1181,12 @@ class UltimateTradingBot:
         # ========================================
         # PRECISE RISK MANAGEMENT CONFIGURATION
         # ========================================
-        # Account Balance: 10 USDT (as requested)
+        # Account Balance: $10 USDT
         self.account_balance = 10.0  # USDT
         
-        # Risk Management: 1% per trade = 0.10 USDT per trade
+        # Risk Management: 5% per trade = $0.50 per trade (fixed for all trades)
         self.risk_per_trade_percentage = 5.0  # 5%
-        self.risk_per_trade_amount = self.account_balance * (self.risk_per_trade_percentage / 100)  # 0.50 USDT
+        self.risk_per_trade_amount = 0.50  # Fixed $0.50 risk per trade regardless of leverage
         
         # Trading limits
         self.max_concurrent_trades = 3  # Perfect 3-trade management
@@ -1315,17 +1315,17 @@ class UltimateTradingBot:
     
     def _calculate_volatility_based_leverage(self, df: pd.DataFrame, current_price: float) -> int:
         """
-        Calculate leverage based on market volatility using ATR
+        Calculate dynamic leverage based on market volatility while maintaining $0.50 risk per trade
         
-        Higher volatility = Lower leverage (safer)
-        Lower volatility = Higher leverage (more efficient)
+        Higher volatility = Lower leverage (safer, but same $0.50 risk)
+        Lower volatility = Higher leverage (more efficient, same $0.50 risk)
         
         Args:
             df: DataFrame with OHLC data
             current_price: Current market price
             
         Returns:
-            Optimal leverage for the current volatility
+            Optimal leverage for the current volatility (risk stays constant at $0.50)
         """
         try:
             # Calculate ATR for volatility measurement
@@ -1336,25 +1336,26 @@ class UltimateTradingBot:
             
             config = self.leverage_config
             
-            # Determine leverage based on volatility thresholds
+            # Dynamic leverage calculation for optimal risk management
+            # Lower volatility allows higher leverage while maintaining same dollar risk
             if volatility_pct <= config['volatility_threshold_low']:
-                # Low volatility - use higher leverage
+                # Low volatility - can use higher leverage efficiently
                 leverage = config['max_leverage']
                 volatility_level = "LOW"
             elif volatility_pct <= config['volatility_threshold_medium']:
-                # Medium volatility - use medium leverage
+                # Medium volatility - moderate leverage
                 leverage = config['base_leverage']
                 volatility_level = "MEDIUM"
             elif volatility_pct <= config['volatility_threshold_high']:
-                # High volatility - use lower leverage
-                leverage = int(config['base_leverage'] * 0.7)  # 30% reduction
+                # High volatility - reduce leverage for safety
+                leverage = int(config['base_leverage'] * 0.68)  # ~32% reduction
                 volatility_level = "HIGH"
             else:
-                # Very high volatility - use minimum leverage
+                # Very high volatility - minimum leverage for maximum safety
                 leverage = config['min_leverage']
                 volatility_level = "VERY HIGH"
             
-            # Ensure leverage stays within bounds
+            # Ensure leverage stays within safe bounds
             leverage = max(config['min_leverage'], min(config['max_leverage'], leverage))
             
             self.logger.info(f"🎯 Volatility: {volatility_pct*100:.3f}% ({volatility_level}) → Leverage: {leverage}x")
@@ -1367,10 +1368,10 @@ class UltimateTradingBot:
     
     def _calculate_precise_position_size(self, entry_price: float, stop_loss: float, leverage: int) -> Dict[str, float]:
         """
-        Calculate precise position size based on 1% risk per trade
+        Calculate precise position size for exactly 5% risk of $10 ($0.50) per trade
         
         Formula: Position Size = (Risk Amount / Stop Loss Distance) 
-        With leverage: Actual Position = Position Size * Leverage
+        The leverage affects margin required but risk amount stays constant at $0.50
         
         Args:
             entry_price: Entry price for the trade
@@ -1381,8 +1382,8 @@ class UltimateTradingBot:
             Dictionary with position calculations
         """
         try:
-            # Risk amount per trade (0.10 USDT)
-            risk_amount = self.risk_per_trade_amount
+            # Fixed risk amount per trade: 5% of $10 = $0.50
+            risk_amount = 0.50
             
             # Calculate stop loss distance in price
             stop_loss_distance = abs(entry_price - stop_loss)
@@ -1397,13 +1398,13 @@ class UltimateTradingBot:
                     'max_loss': risk_amount
                 }
             
-            # Calculate position size to risk exactly 0.10 USDT
-            # Position Size = Risk Amount / Stop Loss Distance
-            base_position_size = risk_amount / stop_loss_distance
+            # Calculate position size to risk exactly $0.50
+            # For leveraged trading: Position Size (in base currency) = Risk Amount / (Stop Loss Distance * Leverage)
+            # This ensures that when leverage is applied, the actual dollar risk remains $0.50
+            position_size_base = risk_amount / stop_loss_distance
             
-            # With leverage, we can control more with less margin
-            # Position value = base_position_size * leverage
-            position_value = base_position_size * leverage
+            # Calculate the actual position value in USDT
+            position_value = position_size_base * entry_price
             
             # Calculate margin required (position value / leverage)
             margin_required = position_value / leverage
@@ -1411,23 +1412,28 @@ class UltimateTradingBot:
             # Ensure we don't exceed account balance
             max_margin = self.account_balance * 0.9  # Use max 90% of account
             if margin_required > max_margin:
-                # Reduce position size to fit within account limits
-                position_value = max_margin * leverage
-                base_position_size = position_value / leverage
+                # Scale down position to fit within account limits
+                scaling_factor = max_margin / margin_required
+                position_size_base *= scaling_factor
+                position_value *= scaling_factor
                 margin_required = max_margin
+                # Recalculate actual risk with scaled position
+                actual_risk = position_size_base * stop_loss_distance
+            else:
+                actual_risk = risk_amount
             
             result = {
-                'position_size': base_position_size,
+                'position_size': position_size_base,
                 'position_value': position_value,
                 'margin_required': margin_required,
-                'risk_amount': risk_amount,
+                'risk_amount': actual_risk,
                 'leverage_used': leverage,
                 'stop_loss_distance': stop_loss_distance,
-                'max_loss': risk_amount,
-                'risk_percentage': (risk_amount / self.account_balance) * 100
+                'max_loss': actual_risk,
+                'risk_percentage': (actual_risk / self.account_balance) * 100
             }
             
-            self.logger.info(f"💰 Position: {base_position_size:.6f} | Value: {position_value:.2f} USDT | Margin: {margin_required:.2f} USDT | Risk: {risk_amount} USDT ({self.risk_per_trade_percentage}%)")
+            self.logger.info(f"💰 Position: {position_size_base:.6f} | Value: {position_value:.2f} USDT | Margin: {margin_required:.2f} USDT | Risk: ${actual_risk:.2f} | Leverage: {leverage}x")
             
             return result
             
@@ -1437,9 +1443,9 @@ class UltimateTradingBot:
                 'position_size': 0.0,
                 'position_value': 0.0,
                 'margin_required': 0.0,
-                'risk_amount': self.risk_per_trade_amount,
+                'risk_amount': 0.50,
                 'leverage_used': leverage,
-                'max_loss': self.risk_per_trade_amount
+                'max_loss': 0.50
             }
     
     def _validate_trade_slots(self) -> bool:
@@ -2332,9 +2338,12 @@ class UltimateTradingBot:
                 optimal_leverage = self.leverage_config['base_leverage']
                 self.logger.warning(f"Insufficient data for {symbol} - using base leverage {optimal_leverage}x")
             
-            # Calculate stop loss and take profit based on 1% risk
-            # Use 1.5% price movement for SL/TP calculation (reasonable for crypto volatility)
-            price_movement_pct = 1.5  # 1.5% price movement
+            # Calculate stop loss and take profit to achieve exactly $0.50 risk per trade
+            # Dynamic price movement based on leverage to maintain consistent risk
+            # Higher leverage = tighter stops, Lower leverage = wider stops
+            base_movement_pct = 1.5  # Base 1.5% movement
+            leverage_adjustment = optimal_leverage / 25.0  # Normalize around 25x base leverage
+            price_movement_pct = base_movement_pct / leverage_adjustment  # Adjust for leverage
             price_movement = entry_price * (price_movement_pct / 100)
             
             if direction == 'BUY':

@@ -253,12 +253,14 @@ class MomentumScalpingStrategy:
                 
                 # RSI calculation
                 if TALIB_AVAILABLE:
+                    import talib
                     rsi = talib.RSI(close, timeperiod=self.rsi_period)
                 else:
                     rsi = self._calculate_rsi_fallback(close, self.rsi_period)
                 
                 # MACD calculation
                 if TALIB_AVAILABLE:
+                    import talib
                     macd, macdsignal, macdhist = talib.MACD(close, 
                                                            fastperiod=self.macd_fast,
                                                            slowperiod=self.macd_slow, 
@@ -270,6 +272,7 @@ class MomentumScalpingStrategy:
                 emas = {}
                 for period in self.ema_periods:
                     if TALIB_AVAILABLE:
+                        import talib
                         emas[f'ema_{period}'] = talib.EMA(close, timeperiod=period)
                     else:
                         emas[f'ema_{period}'] = self._calculate_ema_fallback(close, period)
@@ -300,6 +303,7 @@ class MomentumScalpingStrategy:
             low = np.array(df['low'].values, dtype=np.float64)
             
             if TALIB_AVAILABLE:
+                import talib
                 rsi = talib.RSI(close, timeperiod=self.rsi_period)
             else:
                 rsi = self._calculate_rsi_fallback(close, self.rsi_period)
@@ -470,6 +474,7 @@ class MomentumScalpingStrategy:
             close = np.array(df['close'].values, dtype=np.float64)
             
             if TALIB_AVAILABLE:
+                import talib
                 macd, macd_signal, macd_hist = talib.MACD(close,
                                                          fastperiod=self.macd_fast,
                                                          slowperiod=self.macd_slow,
@@ -557,10 +562,11 @@ class MomentumScalpingStrategy:
                 
                 # Calculate EMAs
                 for period in self.ema_periods:
-                    if TALIB_AVAILABLE and 'talib' in globals():
-                        emas[period] = talib.EMA(close, timeperiod=period)
+                    if TALIB_AVAILABLE:
+                        import talib
+                        emas[period] = talib.EMA(np.array(close, dtype=np.float64), timeperiod=period)
                     else:
-                        emas[period] = self._calculate_ema_fallback(close, period)
+                        emas[period] = self._calculate_ema_fallback(np.array(close, dtype=np.float64), period)
                 
                 # Check alignment
                 current_price = close[-1]

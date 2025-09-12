@@ -1184,9 +1184,9 @@ class UltimateTradingBot:
         # Account Balance: $10 USDT
         self.account_balance = 10.0  # USDT
         
-        # Risk Management: 5% per trade = $0.50 per trade (fixed for all trades)
-        self.risk_per_trade_percentage = 5.0  # 5%
-        self.risk_per_trade_amount = 0.50  # Fixed $0.50 risk per trade regardless of leverage
+        # Risk Management: 10% per trade = $1.00 per trade (fixed for all trades)
+        self.risk_per_trade_percentage = 10.0  # 10%
+        self.risk_per_trade_amount = 1.00  # Fixed $1.00 risk per trade regardless of leverage
         
         # Trading limits
         self.max_concurrent_trades = 3  # Perfect 3-trade management
@@ -1382,8 +1382,8 @@ class UltimateTradingBot:
             Dictionary with position calculations
         """
         try:
-            # Fixed risk amount per trade: 5% of $10 = $0.50
-            risk_amount = 0.50
+            # Fixed risk amount per trade: 10% of $10 = $1.00
+            risk_amount = 1.00
             
             # Calculate stop loss distance in price
             stop_loss_distance = abs(entry_price - stop_loss)
@@ -2191,8 +2191,8 @@ class UltimateTradingBot:
         try:
             current_time = datetime.now()
             
-            # Define risk percentage (5% of account balance)
-            risk_percentage = 5.0
+            # Define risk percentage (10% of account balance)
+            risk_percentage = 10.0
 
             # Track hourly signals but don't limit them
             if current_time.hour != self.last_hour_reset:
@@ -3247,7 +3247,7 @@ Exchange: BinanceFutures"""
 • **Signals Generated:** {self.signal_counter}
 
 **🛡️ Risk Management:**
-• **Risk per Trade:** 5% (${self.risk_per_trade_amount:.2f})
+• **Risk per Trade:** 10% (${self.risk_per_trade_amount:.2f})
 • **Account Balance:** ${self.account_balance:.2f}
 • **Leverage Range:** {self.leverage_config['min_leverage']}x-{self.leverage_config['max_leverage']}x
 • **Risk/Reward:** 1:{self.risk_reward_ratio}

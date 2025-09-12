@@ -1055,7 +1055,7 @@ class AdvancedMLTradeAnalyzer:
             'volatility_factor': volatility
         }
 
-    def get_ml_summary() -> Dict[str, Any]:
+    def get_ml_summary(self) -> Dict[str, Any]:
         """Get comprehensive ML summary"""
         return {
             'model_performance': self.model_performance,
@@ -1964,7 +1964,7 @@ class UltimateTradingBot:
             self.logger.error(f"Error calculating performance factor: {e}")
             return 0.25  # Default positive factor on error
 
-    def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
+    async def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
         """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
@@ -2335,7 +2335,7 @@ class UltimateTradingBot:
                         if not indicators or not isinstance(indicators, dict):
                             continue
 
-                        signal = self.generate_ml_enhanced_signal(symbol, indicators, df)
+                        signal = await self.generate_ml_enhanced_signal(symbol, indicators, df)
                         if signal and isinstance(signal, dict) and 'signal_strength' in signal:
                             timeframe_scores[timeframe] = signal
                     except Exception as e:

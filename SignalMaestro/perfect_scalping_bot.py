@@ -111,14 +111,14 @@ class PerfectScalpingBot:
 
             # DeFi Tokens
             'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
-            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT', 'RAMPUSDT',
+            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'ALPHAUSDT', 'RAMPUSDT',
 
             # Layer 2 & Scaling
             'MATICUSDT', 'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
 
             # Gaming & Metaverse
             'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
-            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT', 'STEPNUSDT',
+            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT',
 
             # Infrastructure & Storage
             'FILUSDT', 'ARUSDT', 'ICPUSDT', 'STORJUSDT', 'SCUSDT',
@@ -127,7 +127,7 @@ class PerfectScalpingBot:
             'XMRUSDT', 'ZECUSDT', 'DASHUSDT', 'SCRTUSDT',
 
             # Meme & Social
-            'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT',
+            'DOGEUSDT',
 
             # AI & Data
             'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'RNDRУСDT', 'GRTUSDT',

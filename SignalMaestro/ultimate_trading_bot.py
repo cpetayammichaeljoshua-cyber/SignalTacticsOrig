@@ -745,8 +745,12 @@ class AdvancedMLTradeAnalyzer:
             self.market_insights['symbol_performance'] = symbol_performance.to_dict()
 
             # Indicator effectiveness
-            indicator_corr = df[['signal_strength', 'rsi_value', 'volume_ratio', 'profit_loss']].corr()['profit_loss']
-            self.market_insights['indicator_effectiveness'] = indicator_corr.to_dict()
+            indicator_cols = ['signal_strength', 'rsi_value', 'volume_ratio', 'profit_loss']
+            if all(col in df.columns for col in indicator_cols):
+                indicator_corr = df[indicator_cols].corr()['profit_loss']
+                self.market_insights['indicator_effectiveness'] = indicator_corr.to_dict()
+            else:
+                self.market_insights['indicator_effectiveness'] = {}
 
             self.logger.info("🔍 Market insights updated")
 
@@ -1105,20 +1109,19 @@ class UltimateTradingBot:
 
             # DeFi tokens
             'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
-            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'BALAUSDT', 'ALPHAUSDT',
+            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'ALPHAUSDT',
 
             # Layer 2 & Scaling
             'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
 
             # Gaming & Metaverse
             'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
-            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT', 'STEPNUSDT',
+            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT',
 
             # AI & Data
             'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT',
 
             # Meme coins
-            'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT',
 
             # New & Trending
             'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'WLDUSDT',
@@ -1267,7 +1270,7 @@ class UltimateTradingBot:
 
         except Exception as e:
             self.logger.error(f"Session creation error: {e}")
-            return None
+            return ""
 
     async def calculate_cvd_btc_perp(self) -> Dict[str, Any]:
         """Calculate Cumulative Volume Delta for BTC PERP"""
@@ -1400,14 +1403,16 @@ class UltimateTradingBot:
                                         return None
 
                                 # Check for NaN values
-                                if df[numeric_cols].isnull().any().any():
+                                nan_check = df[numeric_cols].isnull()
+                                if nan_check.any().any():
                                     self.logger.warning(f"NaN values found in {symbol} data")
                                     df[numeric_cols] = df[numeric_cols].fillna(method='ffill').fillna(0)
 
                                 # Convert timestamp with error handling
                                 try:
                                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce')
-                                    if df['timestamp'].isnull().any():
+                                    timestamp_nulls = df['timestamp'].isnull()
+                                    if timestamp_nulls.any():
                                         self.logger.warning(f"Invalid timestamps for {symbol}")
                                         return None
                                     df.set_index('timestamp', inplace=True)
@@ -2188,7 +2193,7 @@ class UltimateTradingBot:
                 self.logger.debug(f"❌ {symbol} BUY signal rejected - Strong bearish Heikin Ashi trend")
                 return None
             elif direction == 'SELL' and ha_trend == 'bullish' and ha_confirmation and not direction_matches_ha:
-                self.logger.log(f"❌ {symbol} SELL signal rejected - Strong bullish Heikin Ashi trend")
+                self.logger.debug(f"❌ {symbol} SELL signal rejected - Strong bullish Heikin Ashi trend")
                 return None
 
             # Accept signals with any confirmation method or neutral HA

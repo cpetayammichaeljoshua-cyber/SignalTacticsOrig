@@ -2223,7 +2223,7 @@ class UltimateTradingBot:
 
             # Allow favorable predictions and strong signal overrides
             acceptable_predictions = [
-                'highly_favorable', 'favorable', 'above_neutral', 
+                'highly_favorable', 'favorable', 'above_neutral',
                 'strength_override', 'strength_based'
             ]
 
@@ -2285,7 +2285,7 @@ class UltimateTradingBot:
                 'ha_confirmation_used': ha_confirmation_used,
                 'ha_doji_switch': ha_doji_confirmation,
                 'indicators_used': [
-                    'Heikin Ashi Enhanced Confirmation', 'ML Above-Neutral Filter', 'Enhanced SuperTrend', 
+                    'Heikin Ashi Enhanced Confirmation', 'ML Above-Neutral Filter', 'Enhanced SuperTrend',
                     'EMA Confluence', 'CVD Analysis', 'VWAP Position', 'Volume Surge', 'RSI Analysis', 'MACD Signals'
                 ],
                 'timeframe': 'Multi-TF (1m-4h)',
@@ -2379,18 +2379,19 @@ class UltimateTradingBot:
 
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
-                    if response.status != 200:
+                    if response.status == 200:
+                        bot_info = await response.json()
+                        if not bot_info.get('ok'):
+                            self.logger.error(f"❌ Bot API returned error: {bot_info}")
+                            return False
+
+                        bot_username = bot_info.get('result', {}).get('username', 'Unknown')
+                        self.logger.info(f"✅ Bot verified: @{bot_username}")
+
+                    else:
                         error = await response.text()
                         self.logger.error(f"❌ Bot token validation failed: {error}")
                         return False
-
-                    bot_info = await response.json()
-                    if not bot_info.get('ok'):
-                        self.logger.error(f"❌ Bot API returned error: {bot_info}")
-                        return False
-
-                    bot_username = bot_info.get('result', {}).get('username', 'Unknown')
-                    self.logger.info(f"✅ Bot verified: @{bot_username}")
 
                 # Now test channel access
                 if not self.target_channel:
@@ -2568,7 +2569,7 @@ class UltimateTradingBot:
         ha_confirmation_used = signal.get('ha_confirmation_used', 'none')
         ha_status_map = {
             'doji_to_bullish': "🎯 DOJI→BULL",
-            'doji_to_bearish': "🎯 DOJI→BEAR", 
+            'doji_to_bearish': "🎯 DOJI→BEAR",
             'bullish_trend': "📈 STRONG BULL",
             'bearish_trend': "📉 STRONG BEAR",
             'signal_ready': "✅ HA READY",
@@ -2726,12 +2727,12 @@ Exchange: BinanceFutures"""
                     body_color = '#00ff88' if (close_price - open_price) / open_price > 0.005 else '#26a69a'
                     wick_color = '#4caf50'
                 else:
-                    # Bearish candle - dynamic red shades  
+                    # Bearish candle - dynamic red shades
                     body_color = '#ff4444' if (open_price - close_price) / open_price > 0.005 else '#ef5350'
                     wick_color = '#f44336'
 
                 # Draw wick (high-low line)
-                ax_main.plot([i, i], [low_price, high_price], 
+                ax_main.plot([i, i], [low_price, high_price],
                            color=wick_color, linewidth=wick_width*10, alpha=0.8)
 
                 # Draw candle body
@@ -2740,22 +2741,22 @@ Exchange: BinanceFutures"""
 
                 if body_height > 0:
                     # Filled rectangle for body
-                    rect = plt.Rectangle((i - candle_width/2, body_bottom), 
+                    rect = plt.Rectangle((i - candle_width/2), body_bottom,
                                        candle_width, body_height,
-                                       facecolor=body_color, 
-                                       edgecolor='white', 
+                                       facecolor=body_color,
+                                       edgecolor='white',
                                        linewidth=0.5,
                                        alpha=0.9)
                     ax_main.add_patch(rect)
                 else:
                     # Doji - draw horizontal line
-                    ax_main.plot([i - candle_width/2, i + candle_width/2], 
-                               [close_price, close_price], 
+                    ax_main.plot([i - candle_width/2, i + candle_width/2],
+                               [close_price, close_price],
                                color='white', linewidth=2)
 
             # Add current price line with dynamic positioning
             current_price = float(chart_df['close'].iloc[-1])
-            ax_main.axhline(y=current_price, color='#ffd700', linestyle='-', 
+            ax_main.axhline(y=current_price, color='#ffd700', linestyle='-',
                           linewidth=2, alpha=0.9, label=f'Current: ${current_price:.6f}')
 
             # Add signal levels with enhanced styling
@@ -2763,7 +2764,7 @@ Exchange: BinanceFutures"""
             direction = signal.get('direction', 'BUY').upper()
 
             # Entry line
-            ax_main.axhline(y=entry_price, color='#00bcd4', linestyle='--', 
+            ax_main.axhline(y=entry_price, color='#00bcd4', linestyle='--',
                           linewidth=2, alpha=0.9, label=f'Entry: ${entry_price:.6f}')
 
             # Take Profit levels with gradient effect
@@ -2773,11 +2774,11 @@ Exchange: BinanceFutures"""
             for i, (tp_key, color, label) in enumerate(zip(['tp1', 'tp2', 'tp3'], tp_colors, tp_labels)):
                 if tp_key in signal and signal[tp_key] > 0:
                     tp_price = signal[tp_key]
-                    ax_main.axhline(y=tp_price, color=color, linestyle=':', 
+                    ax_main.axhline(y=tp_price, color=color, linestyle=':',
                                   linewidth=1.5, alpha=0.7 - i*0.1)
 
                     # Add price labels on the right
-                    ax_main.text(len(chart_df)-1, tp_price, f'{label}: ${tp_price:.6f}', 
+                    ax_main.text(len(chart_df)-1, tp_price, f'{label}: ${tp_price:.6f}',
                                color=color, fontweight='bold', fontsize=9,
                                verticalalignment='center', horizontalalignment='left',
                                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
@@ -2785,9 +2786,9 @@ Exchange: BinanceFutures"""
             # Stop Loss line
             if 'stop_loss' in signal and signal['stop_loss'] > 0:
                 sl_price = signal['stop_loss']
-                ax_main.axhline(y=sl_price, color='#f44336', linestyle=':', 
+                ax_main.axhline(y=sl_price, color='#f44336', linestyle=':',
                               linewidth=2, alpha=0.8)
-                ax_main.text(len(chart_df)-1, sl_price, f'SL: ${sl_price:.6f}', 
+                ax_main.text(len(chart_df)-1, sl_price, f'SL: ${sl_price:.6f}',
                            color='#f44336', fontweight='bold', fontsize=9,
                            verticalalignment='center', horizontalalignment='left',
                            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
@@ -2844,7 +2845,7 @@ Exchange: BinanceFutures"""
             info_text = f"""💎 SIGNAL INFO: {current_time} | 🎯 HA Confirmation: {ha_confirmation} | 🧠 ML Enhanced | ⚖️ Cross Margin
 📊 Risk/Reward: 1:3 | 🛡️ Auto SL Management | 📈 Multi-TF Analysis | 🔥 Premium Strategy"""
 
-            ax_info.text(0.5, 0.5, info_text, ha='center', va='center', 
+            ax_info.text(0.5, 0.5, info_text, ha='center', va='center',
                         color='white', fontsize=10, weight='bold',
                         bbox=dict(boxstyle='round,pad=0.5', facecolor='#1a1a2e', alpha=0.8))
 
@@ -2856,8 +2857,8 @@ Exchange: BinanceFutures"""
                 plt.Line2D([0], [0], color='#ffd700', linestyle='-', linewidth=2, label='Current Price')
             ]
 
-            ax_main.legend(handles=legend_elements, loc='upper left', 
-                         facecolor='#0a0e1a', edgecolor='white', 
+            ax_main.legend(handles=legend_elements, loc='upper left',
+                         facecolor='#0a0e1a', edgecolor='white',
                          labelcolor='white', fontsize=9)
 
             # Set axis limits with padding
@@ -2881,7 +2882,7 @@ Exchange: BinanceFutures"""
 
             # Save with high quality
             buffer = BytesIO()
-            plt.savefig(buffer, format='png', facecolor='#0d1421', edgecolor='none', 
+            plt.savefig(buffer, format='png', facecolor='#0d1421', edgecolor='none',
                        dpi=150, bbox_inches='tight', pad_inches=0.2)
             buffer.seek(0)
             chart_base64 = base64.b64encode(buffer.getvalue()).decode()
@@ -2960,7 +2961,7 @@ Exchange: BinanceFutures"""
 
 Commands:
 /ml - ML Status
-/scan - Market Scan  
+/scan - Market Scan
 /stats - Performance
 /symbols - Active Pairs
 /leverage - Current Settings
@@ -3095,7 +3096,7 @@ Next Scan: <60s""")
                 await self.send_message(chat_id, f"""🔍 **TRADING INSIGHTS**
 
 Best Sessions: Available
-Symbol Performance: Tracked  
+Symbol Performance: Tracked
 Indicator Effectiveness: Analyzed
 Market Patterns: Learning
 
@@ -3226,7 +3227,7 @@ Max Concurrent Trades: {self.max_concurrent_trades}
 
 ML Features:
 • Continuous Learning: ✅
-• Adaptive Leverage: ✅  
+• Adaptive Leverage: ✅
 • Risk Assessment: ✅
 • Market Insights: ✅""")
 
@@ -3241,7 +3242,7 @@ Next Retrain: {ml_summary['next_retrain_in']} trades
 
 Models Active:
 ✅ Signal Classifier
-✅ Profit Predictor  
+✅ Profit Predictor
 ✅ Risk Assessor""")
 
             elif text.startswith('/scan'):
@@ -3263,7 +3264,7 @@ Models Active:
                         except Exception as e:
                             self.logger.warning(f"Chart generation failed: {e}")
 
-                        # Send signal info separately  
+                        # Send signal info separately
                         signal_msg = self.format_ml_signal_message(signal)
                         await self.send_message(chat_id, signal_msg)
                         await asyncio.sleep(2)
@@ -3744,7 +3745,7 @@ Use /train to manually scan and train""")
 
             if self.performance_stats['total_signals'] > 0:
                 self.performance_stats['win_rate'] = (
-                    self.performance_stats['profitable_signals'] / 
+                    self.performance_stats['profitable_signals'] /
                     self.performance_stats['total_signals'] * 100
                 )
 
@@ -3892,7 +3893,7 @@ Use /train to manually scan and train""")
 
             # Keywords that indicate a closed/completed trade
             closed_keywords = [
-                'closed', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached', 
+                'closed', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'target reached',
                 'stop loss hit', 'sl hit', 'trade closed', 'position closed',
                 'profit taken', 'loss taken', 'exit', 'completed'
             ]
@@ -4163,7 +4164,7 @@ Use /train to manually scan and train""")
                                     if df is not None and len(df) > 10:
                                         chart_data = self.generate_chart(signal['symbol'], df, signal)
                                         if chart_data and len(chart_data) > 100:  # Valid base64 should be longer
-                                            chart_sent = await self.send_photo(self.target_channel, chart_data, 
+                                            chart_sent = await self.send_photo(self.target_channel, chart_data,
                                                                              f"📊 {signal['symbol']} - {signal['direction']} Setup")
                                             if not chart_sent:
                                                 self.logger.warning(f"📊 Chart sending failed for {signal['symbol']}")
@@ -4191,9 +4192,6 @@ Use /train to manually scan and train""")
                             if channel_sent:
                                 chart_status = "📊✅" if chart_sent else "📊❌"
                                 self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered {chart_status}: Channel @SignalTactics")
-
-                                ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
-                                self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
 
                                 # Record open trade for immediate ML learning
                                 await self.record_open_trade_for_ml(signal)
@@ -4259,7 +4257,7 @@ Use /train to manually scan and train""")
 
                         # Test basic functionality
                         if self.admin_chat_id:
-                            test_sent = await self.send_message(self.admin_chat_id, 
+                            test_sent = await self.send_message(self.admin_chat_id,
                                 f"🔄 Recovery attempt {consecutive_errors} - Testing connection...")
                             if test_sent:
                                 self.logger.info("✅ Admin communication test successful")
@@ -4271,7 +4269,7 @@ Use /train to manually scan and train""")
                         # Try to notify admin of critical error
                         if self.admin_chat_id:
                             try:
-                                await self.send_message(self.admin_chat_id, 
+                                await self.send_message(self.admin_chat_id,
                                     f"🚨 CRITICAL: Bot recovery failed after {consecutive_errors} errors. Manual intervention may be required.")
                             except:
                                 pass  # Even admin notification failed
@@ -4336,7 +4334,6 @@ Use /train to manually scan and train""")
 **📤 Delivery Method:**
 • Signals sent only to @SignalTactics channel
 • Cornix-readable format for automation
-• Cross margin configuration included
 • TradeTactics_bot integration
 
 **🚀 UNLIMITED SIGNAL MODE ACTIVE:**

@@ -55,7 +55,7 @@ class VolumeBreakoutSignal:
     resistance_strength: float = 0.0
     momentum_score: float = 0.0
     
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
 
 class VolumeBreakoutScalpingStrategy:
     """High-frequency volume breakout scalping strategy"""

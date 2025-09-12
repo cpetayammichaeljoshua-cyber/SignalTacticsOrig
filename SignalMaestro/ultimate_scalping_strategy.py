@@ -40,10 +40,10 @@ class UltimateSignal:
     margin_type: str = "cross"
     risk_reward_ratio: float = 3.0
     timeframe: str = "Multi-TF"
-    indicators_confluence: Dict[str, Any] = None
+    indicators_confluence: Optional[Dict[str, Any]] = None
     market_structure: str = "trending"
     volume_confirmation: bool = False
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
 
 class UltimateScalpingStrategy:
     """Most profitable scalping strategy combining all indicators"""

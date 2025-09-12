@@ -34,6 +34,7 @@ class MLTradeAnalyzer:
         self.loss_prediction_model = None
         self.signal_strength_model = None
         self.entry_timing_model = None
+        self.scaler = StandardScaler()
         
         # Persistent encoders
         self.direction_encoder = LabelEncoder()

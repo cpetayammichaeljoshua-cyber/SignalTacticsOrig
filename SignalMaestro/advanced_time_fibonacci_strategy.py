@@ -34,11 +34,11 @@ class AdvancedScalpingSignal:
     fibonacci_level: float = 0.0
     time_confluence: float = 0.0
     fibonacci_confluence: float = 0.0
-    ml_prediction: Dict[str, Any] = None
-    optimal_entry_time: datetime = None
+    ml_prediction: Optional[Dict[str, Any]] = None
+    optimal_entry_time: Optional[datetime] = None
     session_volatility: float = 1.0
     fibonacci_extension: float = 0.0
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
 
 class AdvancedTimeFibonacciStrategy:
     """Advanced strategy combining time theory and Fibonacci analysis"""

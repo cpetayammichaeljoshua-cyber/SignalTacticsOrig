@@ -205,7 +205,7 @@ class AdvancedMLTradeAnalyzer:
             'accuracy_growth_rate': 0.0,
             'consecutive_wins': 0,
             'consecutive_losses': 0,
-            'ml_confidence_threshold': 68.0,  # Optimized from 80% to 68% for better signal frequency while maintaining quality
+            'ml_confidence_threshold': 60.0,  # Reduced from 68% to 60% for increased trade frequency while maintaining quality
             'adaptive_threshold': True,
             'learning_velocity': 0.0,
             'prediction_precision': 0.0,
@@ -217,7 +217,7 @@ class AdvancedMLTradeAnalyzer:
         self.trades_since_retrain = 0
         self.learning_multiplier = 1.5  # Higher exponential learning factor
         self.accuracy_target = 95.0  # Slightly lower target accuracy for more trades
-        self.min_confidence_for_signal = 68.0  # Reduced to 68%+ ML confidence for optimal signal frequency
+        self.min_confidence_for_signal = 55.0  # Reduced to 55%+ ML confidence for increased trade frequency
         
 
         # Market insights
@@ -1385,7 +1385,7 @@ class UltimateTradingBot:
         # Trading limits
         self.max_concurrent_trades = 3  # Perfect 3-trade management
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 75  # Signal quality threshold
+        self.min_signal_strength = 65  # Reduced from 75 to 65 for higher trade frequency
 
         # Performance tracking
         self.signal_counter = 0
@@ -1415,7 +1415,7 @@ class UltimateTradingBot:
         self.ml_analyzer.load_ml_models()
         
         # ML confidence threshold for signal filtering
-        self.min_confidence_for_signal = 68.0  # ML confidence threshold for signal acceptance
+        self.min_confidence_for_signal = 55.0  # Reduced ML confidence threshold for higher trade frequency
 
         # Closed Trades Scanner for ML Training
         self.closed_trades_scanner = None
@@ -2744,11 +2744,11 @@ class UltimateTradingBot:
             prediction_type = ml_prediction.get('prediction', 'unknown')
             expected_profit = ml_prediction.get('expected_profit', 0)
             
-            # Enhanced ML confidence logging and band classification
-            if ml_confidence >= 80:
+            # Enhanced ML confidence logging and band classification - MORE PERMISSIVE FOR HIGHER FREQUENCY
+            if ml_confidence >= 75:
                 confidence_band = "aggressive"
                 signal_bonus = 8
-            elif ml_confidence >= 72:
+            elif ml_confidence >= 65:
                 confidence_band = "moderate"  
                 signal_bonus = 3
             else:
@@ -2898,9 +2898,9 @@ class UltimateTradingBot:
                             ml_confidence = best_signal.get('ml_prediction', {}).get('confidence', 0)
                             signal_strength = best_signal.get('signal_strength', 0)
 
-                            # Enhanced acceptance criteria with optimized thresholds for 68% base
-                            if (ml_confidence >= self.min_confidence_for_signal and signal_strength >= 60) or \
-                               (ml_confidence >= 70) or \
+                            # Enhanced acceptance criteria with optimized thresholds for HIGHER FREQUENCY
+                            if (ml_confidence >= self.min_confidence_for_signal and signal_strength >= 50) or \
+                               (ml_confidence >= 65) or \
                                (signal_strength >= self.min_signal_strength):
                                 signals.append(best_signal)
                     except Exception as e:
@@ -5531,7 +5531,7 @@ Use /train to manually scan and train""")
         """Main auto-scanning loop with ML learning and enhanced maintenance"""
         consecutive_errors = 0
         max_consecutive_errors = 5
-        base_scan_interval = 90
+        base_scan_interval = 60  # Reduced from 90 to 60 seconds for higher frequency scanning
         last_channel_training = datetime.now()
         last_cleanup = datetime.now()
         last_validation = datetime.now()
@@ -5692,13 +5692,13 @@ Use /train to manually scan and train""")
                 consecutive_errors = 0
                 self.last_heartbeat = datetime.now()
 
-                # Adaptive scanning interval based on mode and performance
+                # Adaptive scanning interval based on mode and performance - HIGHER FREQUENCY
                 if recovery_mode:
-                    scan_interval = 60  # Slower scanning in recovery mode
+                    scan_interval = 45  # Reduced from 60 to 45 seconds in recovery mode
                 elif signals:
-                    scan_interval = 30  # Fast scanning when signals found
+                    scan_interval = 20  # Reduced from 30 to 20 seconds when signals found
                 else:
-                    scan_interval = 45  # Normal scanning when no signals
+                    scan_interval = 30  # Reduced from 45 to 30 seconds for normal scanning
 
                 status_msg = "🔄 RECOVERY MODE" if recovery_mode else "🧠 NORMAL"
                 self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds | {status_msg}")

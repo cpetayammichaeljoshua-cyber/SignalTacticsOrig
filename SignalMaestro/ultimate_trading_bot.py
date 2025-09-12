@@ -2682,59 +2682,208 @@ Exchange: BinanceFutures"""
             return []
 
     def generate_chart(self, symbol: str, df: pd.DataFrame, signal: Dict[str, Any]) -> Optional[str]:
-        """Generate 1:1 ratio chart for the signal"""
+        """Generate professional dynamic candlestick chart with perfect styling"""
         try:
             if not CHART_AVAILABLE or df is None or len(df) < 10:
                 self.logger.warning(f"Chart generation skipped for {symbol}: insufficient data or libraries")
                 return None
 
-            # Create figure with 1:1 aspect ratio (square)
-            fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-
-            # Plot price line
-            closes = df['close'].values
-            if len(closes) == 0:
-                plt.close(fig)
+            # Prepare data for candlestick chart
+            data_len = min(60, len(df))  # Show last 60 candles for better context
+            chart_df = df.tail(data_len).copy()
+            
+            if len(chart_df) < 5:
+                plt.close() if 'fig' in locals() else None
                 return None
 
-            # Use available data
-            data_len = min(50, len(df))
-            x_range = range(data_len)
+            # Create professional chart layout
+            fig = plt.figure(figsize=(14, 10), facecolor='#0d1421')
+            gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 0.5], hspace=0.1)
+            
+            # Main candlestick chart
+            ax_main = fig.add_subplot(gs[0])
+            ax_volume = fig.add_subplot(gs[1], sharex=ax_main)
+            ax_info = fig.add_subplot(gs[2])
+            
+            # Convert timestamps for plotting
+            if 'timestamp' in chart_df.columns:
+                x_data = chart_df.index
+            else:
+                x_data = range(len(chart_df))
 
-            ax.plot(x_range, closes[-data_len:], color='#00ff00', linewidth=2, label='Price')
+            # Enhanced Candlestick Drawing
+            candle_width = 0.8
+            wick_width = 0.1
+            
+            for i, (idx, row) in enumerate(chart_df.iterrows()):
+                open_price = float(row['open'])
+                high_price = float(row['high'])
+                low_price = float(row['low'])
+                close_price = float(row['close'])
+                
+                # Determine candle color with advanced styling
+                if close_price >= open_price:
+                    # Bullish candle - dynamic green shades
+                    body_color = '#00ff88' if (close_price - open_price) / open_price > 0.005 else '#26a69a'
+                    wick_color = '#4caf50'
+                else:
+                    # Bearish candle - dynamic red shades  
+                    body_color = '#ff4444' if (open_price - close_price) / open_price > 0.005 else '#ef5350'
+                    wick_color = '#f44336'
+                
+                # Draw wick (high-low line)
+                ax_main.plot([i, i], [low_price, high_price], 
+                           color=wick_color, linewidth=wick_width*10, alpha=0.8)
+                
+                # Draw candle body
+                body_height = abs(close_price - open_price)
+                body_bottom = min(open_price, close_price)
+                
+                if body_height > 0:
+                    # Filled rectangle for body
+                    rect = plt.Rectangle((i - candle_width/2, body_bottom), 
+                                       candle_width, body_height,
+                                       facecolor=body_color, 
+                                       edgecolor='white', 
+                                       linewidth=0.5,
+                                       alpha=0.9)
+                    ax_main.add_patch(rect)
+                else:
+                    # Doji - draw horizontal line
+                    ax_main.plot([i - candle_width/2, i + candle_width/2], 
+                               [close_price, close_price], 
+                               color='white', linewidth=2)
 
-            # Mark entry point
-            entry_price = signal.get('entry_price', closes[-1])
-            ax.axhline(y=entry_price, color='yellow', linestyle='--', alpha=0.8, label=f'Entry: {entry_price:.4f}')
+            # Add current price line with dynamic positioning
+            current_price = float(chart_df['close'].iloc[-1])
+            ax_main.axhline(y=current_price, color='#ffd700', linestyle='-', 
+                          linewidth=2, alpha=0.9, label=f'Current: ${current_price:.6f}')
 
-            # Mark TP levels
-            if 'tp1' in signal and signal['tp1'] > 0:
-                ax.axhline(y=signal['tp1'], color='green', linestyle=':', alpha=0.6, label=f'TP1: {signal["tp1"]:.4f}')
-            if 'tp2' in signal and signal['tp2'] > 0:
-                ax.axhline(y=signal['tp2'], color='green', linestyle=':', alpha=0.4)
-            if 'tp3' in signal and signal['tp3'] > 0:
-                ax.axhline(y=signal['tp3'], color='green', linestyle=':', alpha=0.2)
+            # Add signal levels with enhanced styling
+            entry_price = signal.get('entry_price', current_price)
+            direction = signal.get('direction', 'BUY').upper()
+            
+            # Entry line
+            ax_main.axhline(y=entry_price, color='#00bcd4', linestyle='--', 
+                          linewidth=2, alpha=0.9, label=f'Entry: ${entry_price:.6f}')
+            
+            # Take Profit levels with gradient effect
+            tp_colors = ['#4caf50', '#66bb6a', '#81c784']
+            tp_labels = ['TP1', 'TP2', 'TP3']
+            
+            for i, (tp_key, color, label) in enumerate(zip(['tp1', 'tp2', 'tp3'], tp_colors, tp_labels)):
+                if tp_key in signal and signal[tp_key] > 0:
+                    tp_price = signal[tp_key]
+                    ax_main.axhline(y=tp_price, color=color, linestyle=':', 
+                                  linewidth=1.5, alpha=0.7 - i*0.1)
+                    
+                    # Add price labels on the right
+                    ax_main.text(len(chart_df)-1, tp_price, f'{label}: ${tp_price:.6f}', 
+                               color=color, fontweight='bold', fontsize=9,
+                               verticalalignment='center', horizontalalignment='left',
+                               bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
 
-            # Mark SL
+            # Stop Loss line
             if 'stop_loss' in signal and signal['stop_loss'] > 0:
-                ax.axhline(y=signal['stop_loss'], color='red', linestyle=':', alpha=0.8, label=f'SL: {signal["stop_loss"]:.4f}')
+                sl_price = signal['stop_loss']
+                ax_main.axhline(y=sl_price, color='#f44336', linestyle=':', 
+                              linewidth=2, alpha=0.8)
+                ax_main.text(len(chart_df)-1, sl_price, f'SL: ${sl_price:.6f}', 
+                           color='#f44336', fontweight='bold', fontsize=9,
+                           verticalalignment='center', horizontalalignment='left',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
 
-            # Style the chart
-            ax.set_facecolor('black')
-            fig.patch.set_facecolor('black')
-            ax.tick_params(colors='white')
-            ax.set_title(f'{symbol} - {signal.get("direction", "BUY")} Signal', color='white', fontsize=12)
-            ax.legend(loc='upper left', facecolor='black', edgecolor='white', labelcolor='white')
-            ax.grid(True, alpha=0.3, color='gray')
+            # Professional Volume Chart
+            for i, (idx, row) in enumerate(chart_df.iterrows()):
+                volume = float(row['volume'])
+                open_price = float(row['open'])
+                close_price = float(row['close'])
+                
+                # Volume color based on price movement
+                vol_color = '#00ff88' if close_price >= open_price else '#ff4444'
+                
+                ax_volume.bar(i, volume, color=vol_color, alpha=0.6, width=0.8)
 
-            # Remove x-axis labels for cleaner look
-            ax.set_xticks([])
+            # Enhanced Styling for Main Chart
+            ax_main.set_facecolor('#0a0e1a')
+            ax_main.grid(True, alpha=0.2, color='#333333', linestyle='-', linewidth=0.5)
+            ax_main.tick_params(colors='white', labelsize=10)
+            ax_main.spines['bottom'].set_color('white')
+            ax_main.spines['top'].set_color('white')
+            ax_main.spines['right'].set_color('white')
+            ax_main.spines['left'].set_color('white')
+
+            # Dynamic title with signal information
+            ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
+            signal_strength = signal.get('signal_strength', 0)
+            leverage = signal.get('optimal_leverage', 35)
+            
+            title = f'{symbol} - {direction} Signal | Strength: {signal_strength:.0f}% | ML: {ml_conf:.0f}% | {leverage}x'
+            ax_main.set_title(title, color='white', fontsize=14, fontweight='bold', pad=20)
+
+            # Volume chart styling
+            ax_volume.set_facecolor('#0a0e1a')
+            ax_volume.grid(True, alpha=0.2, color='#333333')
+            ax_volume.tick_params(colors='white', labelsize=9)
+            ax_volume.set_ylabel('Volume', color='white', fontsize=10)
+            
+            # Format volume labels
+            max_volume = chart_df['volume'].max()
+            if max_volume > 1000000:
+                ax_volume.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1e6:.1f}M'))
+            elif max_volume > 1000:
+                ax_volume.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1e3:.1f}K'))
+
+            # Information Panel
+            ax_info.set_facecolor('#0d1421')
+            ax_info.axis('off')
+            
+            # Create information text
+            current_time = datetime.now().strftime('%H:%M UTC')
+            ha_confirmation = signal.get('ha_confirmation_used', 'none').replace('_', ' ').title()
+            
+            info_text = f"""💎 SIGNAL INFO: {current_time} | 🎯 HA Confirmation: {ha_confirmation} | 🧠 ML Enhanced | ⚖️ Cross Margin
+📊 Risk/Reward: 1:3 | 🛡️ Auto SL Management | 📈 Multi-TF Analysis | 🔥 Premium Strategy"""
+            
+            ax_info.text(0.5, 0.5, info_text, ha='center', va='center', 
+                        color='white', fontsize=10, weight='bold',
+                        bbox=dict(boxstyle='round,pad=0.5', facecolor='#1a1a2e', alpha=0.8))
+
+            # Add legend with custom styling
+            legend_elements = [
+                plt.Line2D([0], [0], color='#00bcd4', linestyle='--', linewidth=2, label='Entry'),
+                plt.Line2D([0], [0], color='#4caf50', linestyle=':', linewidth=2, label='Take Profits'),
+                plt.Line2D([0], [0], color='#f44336', linestyle=':', linewidth=2, label='Stop Loss'),
+                plt.Line2D([0], [0], color='#ffd700', linestyle='-', linewidth=2, label='Current Price')
+            ]
+            
+            ax_main.legend(handles=legend_elements, loc='upper left', 
+                         facecolor='#0a0e1a', edgecolor='white', 
+                         labelcolor='white', fontsize=9)
+
+            # Set axis limits with padding
+            price_data = chart_df[['high', 'low', 'open', 'close']].values.flatten()
+            price_range = price_data.max() - price_data.min()
+            padding = price_range * 0.05
+            
+            ax_main.set_ylim(price_data.min() - padding, price_data.max() + padding)
+            ax_main.set_xlim(-0.5, len(chart_df) - 0.5)
+
+            # Remove x-axis labels from main chart
+            ax_main.set_xticklabels([])
+            
+            # Add time labels to volume chart
+            time_indices = [0, len(chart_df)//4, len(chart_df)//2, 3*len(chart_df)//4, len(chart_df)-1]
+            time_labels = [f'{i*5}min ago' for i in reversed(range(len(time_indices)))]
+            ax_volume.set_xticks(time_indices)
+            ax_volume.set_xticklabels(time_labels, rotation=45)
 
             plt.tight_layout()
 
-            # Convert to base64 string
+            # Save with high quality
             buffer = BytesIO()
-            plt.savefig(buffer, format='png', facecolor='black', edgecolor='white', dpi=80, bbox_inches='tight')
+            plt.savefig(buffer, format='png', facecolor='#0d1421', edgecolor='none', 
+                       dpi=150, bbox_inches='tight', pad_inches=0.2)
             buffer.seek(0)
             chart_base64 = base64.b64encode(buffer.getvalue()).decode()
 
@@ -2742,10 +2891,11 @@ Exchange: BinanceFutures"""
             plt.close(fig)
             buffer.close()
 
+            self.logger.info(f"📊 Professional candlestick chart generated for {symbol}")
             return chart_base64
 
         except Exception as e:
-            self.logger.error(f"Error generating chart for {symbol}: {e}")
+            self.logger.error(f"Error generating candlestick chart for {symbol}: {e}")
             if 'fig' in locals():
                 plt.close(fig)
             return None

@@ -14,7 +14,7 @@ import json
 import pickle
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from decimal import Decimal, ROUND_DOWN
 import sqlite3
 from pathlib import Path
@@ -74,9 +74,9 @@ class BacktestConfig:
     tp3_percent: float = 6.0
     
     # Time settings
-    start_date: datetime = None
-    end_date: datetime = None
-    timeframes: List[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    timeframes: Optional[List[str]] = None
     
     def __post_init__(self):
         if self.start_date is None:
@@ -111,7 +111,7 @@ class Position:
     tp1_triggered: bool = False
     tp2_triggered: bool = False
     tp3_triggered: bool = False
-    remaining_size: float = None
+    remaining_size: Optional[float] = None
     current_pnl: float = 0.0
     max_pnl: float = 0.0
     min_pnl: float = 0.0

@@ -58,21 +58,33 @@ try:
 except ImportError:
     CHART_AVAILABLE = False
 
-# ML Libraries
+# ML Libraries - declare at module level to avoid "possibly unbound" issues
+ML_AVAILABLE = False
+RandomForestClassifier = None
+GradientBoostingClassifier = None
+train_test_split = None
+cross_val_score = None
+LabelEncoder = None
+classification_report = None
+accuracy_score = None
+LogisticRegression = None
+StandardScaler = None
+
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.preprocessing import LabelEncoder
+    from sklearn.preprocessing import LabelEncoder, StandardScaler
     from sklearn.metrics import classification_report, accuracy_score
     from sklearn.linear_model import LogisticRegression
     ML_AVAILABLE = True
 except ImportError:
-    ML_AVAILABLE = False
+    pass
 
 from io import BytesIO
 import base64
 
 # Import new enhanced systems with error handling
+ENHANCED_SYSTEMS_AVAILABLE = False
 try:
     from advanced_error_handler import (
         AdvancedErrorHandler, RetryConfig, CircuitBreaker,
@@ -96,7 +108,6 @@ try:
     ENHANCED_SYSTEMS_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Enhanced systems not available: {e}")
-    ENHANCED_SYSTEMS_AVAILABLE = False
     
     # Create fallback classes for compatibility
     class AdvancedErrorHandler:
@@ -150,12 +161,11 @@ class AdvancedMLTradeAnalyzer:
         self.market_regime_detector = None
         # Initialize StandardScaler for ML models
         self.scaler = None
-        if ML_AVAILABLE:
+        if ML_AVAILABLE and StandardScaler is not None:
             try:
-                from sklearn.preprocessing import StandardScaler
                 self.scaler = StandardScaler()
-            except ImportError:
-                self.logger.warning("StandardScaler not available, using fallback")
+            except Exception as e:
+                self.logger.warning(f"StandardScaler not available: {e}")
                 self.scaler = None
 
         # Learning database
@@ -615,10 +625,10 @@ class AdvancedMLTradeAnalyzer:
                 'NY_MAIN': 3, 'NY_CLOSE': 4, 'ASIA_MAIN': 5, 'TRANSITION': 6
             }
 
-            features['direction_encoded'] = df['direction'].fillna('BUY').map(direction_map).fillna(1)
-            features['macd_signal_encoded'] = df['macd_signal'].fillna('neutral').map(macd_map).fillna(0)
-            features['cvd_trend_encoded'] = df['cvd_trend'].fillna('neutral').map(cvd_map).fillna(0)
-            features['time_session_encoded'] = df['time_session'].fillna('NY_MAIN').map(session_map).fillna(3)
+            features['direction_encoded'] = df['direction'].fillna('BUY').replace(direction_map).fillna(1)
+            features['macd_signal_encoded'] = df['macd_signal'].fillna('neutral').replace(macd_map).fillna(0)
+            features['cvd_trend_encoded'] = df['cvd_trend'].fillna('neutral').replace(cvd_map).fillna(0)
+            features['time_session_encoded'] = df['time_session'].fillna('NY_MAIN').replace(session_map).fillna(3)
             features['ema_alignment'] = df['ema_alignment'].fillna(False).astype(int)
 
             # Time features with consistent naming

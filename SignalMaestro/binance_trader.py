@@ -7,6 +7,7 @@ from typing import Optional, List, Dict
 """
 Binance trading integration using ccxt library
 Handles trade execution, portfolio management, and market data
+ENHANCED with comprehensive error handling and resilience
 """
 
 import asyncio
@@ -19,14 +20,55 @@ import time
 from config import Config
 from technical_analysis import TechnicalAnalysis
 
+# Enhanced error handling imports
+try:
+    from advanced_error_handler import (
+        handle_errors, RetryConfigs, CircuitBreaker,
+        APIException, NetworkException, TradingException,
+        InsufficientFundsException, RateLimitException
+    )
+    from api_resilience_layer import resilient_api_call, get_global_resilience_manager
+    ENHANCED_ERROR_HANDLING = True
+except ImportError:
+    ENHANCED_ERROR_HANDLING = False
+    # Create fallback decorators
+    def handle_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def resilient_api_call(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 class BinanceTrader:
-    """Binance trading interface using ccxt"""
+    """Binance trading interface using ccxt with enhanced error handling"""
     
     def __init__(self):
         self.config = Config()
         self.logger = logging.getLogger(__name__)
         self.exchange = None
         self.technical_analysis = TechnicalAnalysis()
+        
+        # Enhanced error handling components
+        self.enhanced_error_handling = ENHANCED_ERROR_HANDLING
+        self.circuit_breaker = None
+        self.resilience_manager = None
+        
+        if ENHANCED_ERROR_HANDLING:
+            # Initialize circuit breaker for Binance API
+            self.circuit_breaker = CircuitBreaker(
+                failure_threshold=5,
+                timeout_duration=300,  # 5 minutes
+                recovery_threshold=3
+            )
+            
+            # Get global resilience manager
+            self.resilience_manager = get_global_resilience_manager()
+            
+            self.logger.info("✅ Enhanced error handling enabled for Binance trader")
+        else:
+            self.logger.warning("⚠️ Enhanced error handling not available - using basic error handling")
         
     async def initialize(self):
         """Initialize Binance exchange connection"""
@@ -82,10 +124,18 @@ class BinanceTrader:
                 self.logger.error(f"Binance completely inaccessible: {e2}")
                 return False
     
+    @handle_errors(max_retries=3, retry_delay=2.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @resilient_api_call
     async def get_account_balance(self) -> Dict[str, Dict[str, float]]:
-        """Get account balance for all assets"""
+        """Get account balance for all assets with enhanced error handling"""
         try:
-            balance = await self.exchange.fetch_balance()
+            # Use resilient API call if available
+            if self.resilience_manager:
+                balance = await self.resilience_manager.make_resilient_api_call(
+                    "binance", self.exchange.fetch_balance
+                )
+            else:
+                balance = await self.exchange.fetch_balance()
             
             # Filter out zero balances and format response
             filtered_balance = {}
@@ -97,10 +147,18 @@ class BinanceTrader:
                         'total': data
                     }
             
+            self.logger.debug(f"💰 Retrieved balance for {len(filtered_balance)} assets")
             return filtered_balance
             
         except Exception as e:
-            self.logger.error(f"Error getting account balance: {e}")
+            self.logger.error(f"❌ Error getting account balance: {e}")
+            if ENHANCED_ERROR_HANDLING:
+                if 'rate limit' in str(e).lower():
+                    raise RateLimitException("Rate limit exceeded getting account balance")
+                elif 'network' in str(e).lower() or 'timeout' in str(e).lower():
+                    raise NetworkException(f"Network error getting account balance: {e}")
+                else:
+                    raise APIException(f"API error getting account balance: {e}")
             raise
     
     async def get_portfolio_value(self) -> float:
@@ -129,30 +187,60 @@ class BinanceTrader:
             self.logger.error(f"Error calculating portfolio value: {e}")
             return 0.0
     
+    @handle_errors(max_retries=3, retry_delay=1.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @resilient_api_call
     async def get_current_price(self, symbol: str) -> float:
-        """Get current market price for symbol"""
+        """Get current market price for symbol with enhanced error handling"""
         try:
-            ticker = await self.exchange.fetch_ticker(symbol)
+            # Use resilient API call if available
+            if self.resilience_manager:
+                ticker = await self.resilience_manager.make_resilient_api_call(
+                    "binance", self.exchange.fetch_ticker, symbol
+                )
+            else:
+                ticker = await self.exchange.fetch_ticker(symbol)
+                
             price = ticker.get('last') or ticker.get('close') or ticker.get('price')
             
             if price is None:
-                self.logger.warning(f"No price data available for {symbol}")
+                self.logger.warning(f"⚠️ No price data available for {symbol}")
+                if ENHANCED_ERROR_HANDLING:
+                    raise APIException(f"No price data returned for {symbol}")
                 return 0.0
                 
-            return float(price)
+            price_float = float(price)
+            self.logger.debug(f"📊 Price for {symbol}: {price_float}")
+            return price_float
             
         except Exception as e:
-            self.logger.error(f"Error getting price for {symbol}: {e}")
+            self.logger.error(f"❌ Error getting price for {symbol}: {e}")
+            if ENHANCED_ERROR_HANDLING:
+                if 'rate limit' in str(e).lower():
+                    raise RateLimitException(f"Rate limit exceeded getting price for {symbol}")
+                elif 'network' in str(e).lower() or 'timeout' in str(e).lower():
+                    raise NetworkException(f"Network error getting price for {symbol}: {e}")
+                else:
+                    raise APIException(f"API error getting price for {symbol}: {e}")
             return 0.0
     
+    @handle_errors(max_retries=3, retry_delay=1.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @resilient_api_call
     async def get_market_data(self, symbol: str, timeframe: str = '1h', limit: int = 100) -> List[List]:
-        """Get OHLCV market data"""
+        """Get OHLCV market data with enhanced error handling"""
         try:
-            ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            # Use resilient API call if available
+            if self.resilience_manager:
+                ohlcv = await self.resilience_manager.make_resilient_api_call(
+                    "binance", self.exchange.fetch_ohlcv, symbol, timeframe, limit=limit
+                )
+            else:
+                ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             
             # Validate the data
             if not ohlcv or len(ohlcv) == 0:
-                self.logger.warning(f"No OHLCV data returned for {symbol} {timeframe}")
+                self.logger.warning(f"⚠️ No OHLCV data returned for {symbol} {timeframe}")
+                if ENHANCED_ERROR_HANDLING:
+                    raise APIException(f"No OHLCV data available for {symbol} {timeframe}")
                 return []
                 
             # Check if data contains valid values
@@ -162,13 +250,23 @@ class BinanceTrader:
                     valid_data.append(candle)
             
             if len(valid_data) == 0:
-                self.logger.warning(f"No valid OHLCV data for {symbol} {timeframe}")
+                self.logger.warning(f"⚠️ No valid OHLCV data for {symbol} {timeframe}")
+                if ENHANCED_ERROR_HANDLING:
+                    raise APIException(f"Invalid OHLCV data format for {symbol} {timeframe}")
                 return []
                 
+            self.logger.debug(f"📊 Retrieved {len(valid_data)} candles for {symbol} {timeframe}")
             return valid_data
             
         except Exception as e:
-            self.logger.error(f"Error getting market data for {symbol} {timeframe}: {e}")
+            self.logger.error(f"❌ Error getting market data for {symbol} {timeframe}: {e}")
+            if ENHANCED_ERROR_HANDLING:
+                if 'rate limit' in str(e).lower():
+                    raise RateLimitException(f"Rate limit exceeded getting market data for {symbol}")
+                elif 'network' in str(e).lower() or 'timeout' in str(e).lower():
+                    raise NetworkException(f"Network error getting market data: {e}")
+                else:
+                    raise APIException(f"API error getting market data: {e}")
             return []
     
     async def get_technical_analysis(self, symbol: str) -> Dict[str, Any]:

@@ -27,6 +27,7 @@ try:
     from binance_trader import BinanceTrader
     from risk_manager import RiskManager
     from signal_parser import SignalParser
+    from stop_loss_integration_module import StopLossIntegrator
 except ImportError as e:
     print(f"Import warning: {e}")
     # Create minimal config if imports fail
@@ -155,6 +156,9 @@ class EnhancedPerfectScalpingBotV2:
         self.binance_trader = BinanceTrader()
         self.risk_manager = RiskManager()
         self.signal_parser = SignalParser()
+        
+        # Initialize stop loss integration
+        self.stop_loss_integrator = StopLossIntegrator(self)
         
         # Bot state management
         self.active_trades: Dict[str, TradeProgress] = {}
@@ -289,6 +293,13 @@ class EnhancedPerfectScalpingBotV2:
             
             # Store active trade
             self.active_trades[trade.symbol] = trade
+            
+            # Create stop loss manager for dynamic monitoring
+            await self.stop_loss_integrator.create_trade_stop_loss(
+                symbol=trade.symbol,
+                direction=trade.direction,
+                entry_price=trade.entry_price
+            )
             
             # Forward to Cornix
             cornix_success = await self.forward_to_cornix(enhanced_signal, trade)
@@ -472,6 +483,13 @@ class EnhancedPerfectScalpingBotV2:
                 current_price = await self.binance_trader.get_current_price(symbol)
                 if not current_price:
                     continue
+                
+                # Update dynamic stop loss system with current price
+                sl_actions = await self.stop_loss_integrator.update_stop_loss_price(symbol, current_price)
+                
+                # Execute any triggered stop loss actions
+                for action in sl_actions:
+                    await self.stop_loss_integrator.execute_stop_loss_action(action)
                 
                 # Check for TP/SL hits
                 await self._check_tp_sl_hits(trade, current_price)

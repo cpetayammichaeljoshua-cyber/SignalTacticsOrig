@@ -63,7 +63,7 @@ class CornixIntegration:
         """Format signal for Cornix webhook format"""
         try:
             # Base payload structure for Cornix
-            payload = {
+            payload: Dict[str, Any] = {
                 'uuid': self.bot_uuid,
                 'timestamp': datetime.utcnow().isoformat(),
                 'source': 'perfect_scalping_bot'
@@ -130,10 +130,10 @@ class CornixIntegration:
                 return None
             
             # Final validation
-            if action == 'BUY' and not (stop_loss < entry < tp1):
+            if action == 'BUY' and not (float(stop_loss) < float(entry) < float(tp1)):
                 self.logger.warning("Invalid BUY price structure for Cornix")
                 return None
-            elif action == 'SELL' and not (tp1 < entry < stop_loss):
+            elif action == 'SELL' and not (float(tp1) < float(entry) < float(stop_loss)):
                 self.logger.warning("Invalid SELL price structure for Cornix")
                 return None
             
@@ -260,7 +260,7 @@ class CornixIntegration:
     async def validate_webhook_config(self) -> Dict[str, Any]:
         """Validate webhook configuration"""
         try:
-            validation_result = {
+            validation_result: Dict[str, Any] = {
                 'webhook_url_configured': bool(self.webhook_url),
                 'bot_uuid_configured': bool(self.bot_uuid),
                 'webhook_secret_configured': bool(self.config.WEBHOOK_SECRET)

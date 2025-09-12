@@ -72,6 +72,71 @@ except ImportError:
 from io import BytesIO
 import base64
 
+# Import new enhanced systems with error handling
+try:
+    from advanced_error_handler import (
+        AdvancedErrorHandler, RetryConfig, CircuitBreaker,
+        TradingBotException, NetworkException, APIException, RateLimitException,
+        TimeoutException, TradingException, handle_errors, RetryConfigs
+    )
+    from centralized_error_logger import (
+        CentralizedErrorLogger, ErrorNotificationConfig, get_global_error_logger,
+        setup_global_error_logger, log_error_globally
+    )
+    from dynamic_stop_loss_system import (
+        TradeStopLossManager, DynamicStopLoss, StopLossConfig, MarketConditions,
+        StopLossLevel, VolatilityLevel, MarketSession, MarketAnalyzer,
+        create_stop_loss_manager, get_stop_loss_manager, get_all_active_managers,
+        cleanup_inactive_managers
+    )
+    from api_resilience_layer import (
+        APIResilienceManager, TelegramAPIWrapper, BinanceAPIWrapper, CornixAPIWrapper,
+        setup_global_resilience_manager, get_global_resilience_manager, resilient_api_call
+    )
+    ENHANCED_SYSTEMS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Enhanced systems not available: {e}")
+    ENHANCED_SYSTEMS_AVAILABLE = False
+    
+    # Create fallback classes for compatibility
+    class AdvancedErrorHandler:
+        def __init__(self, logger): self.logger = logger
+        async def execute_with_retry(self, func, *args, **kwargs): return await func(*args, **kwargs)
+    
+    class CentralizedErrorLogger:
+        def __init__(self, *args, **kwargs): pass
+        async def log_error(self, *args, **kwargs): pass
+    
+    class TradeStopLossManager:
+        def __init__(self, *args, **kwargs): pass
+    
+    class APIResilienceManager:
+        def __init__(self, *args, **kwargs): pass
+    
+    class ErrorSeverity:
+        LOW = "low"
+        MEDIUM = "medium"
+        HIGH = "high"
+        CRITICAL = "critical"
+    
+    class ErrorNotificationConfig:
+        def __init__(self, *args, **kwargs): pass
+    
+    def setup_global_error_logger(*args, **kwargs): return CentralizedErrorLogger()
+    def setup_global_resilience_manager(*args, **kwargs): return APIResilienceManager()
+    
+    class StopLossConfig:
+        def __init__(self, *args, **kwargs):
+            self.sl1_base_percent = 1.5
+            self.sl2_base_percent = 4.0
+            self.sl3_base_percent = 7.5
+            self.trailing_enabled = True
+            self.trailing_distance_percent = 1.0
+    
+    class MarketAnalyzer:
+        def __init__(self): pass
+        def analyze_market_conditions(self, *args, **kwargs): return None
+
 class AdvancedMLTradeAnalyzer:
     """Advanced ML Trade Analyzer with comprehensive learning capabilities"""
 
@@ -1095,6 +1160,84 @@ class UltimateTradingBot:
         self.shutdown_requested = False
         self._setup_signal_handlers()
         atexit.register(self._cleanup_on_exit)
+        
+        # Initialize Enhanced Systems (with fallback if not available)
+        if ENHANCED_SYSTEMS_AVAILABLE:
+            try:
+                # Enhanced Error Handling System
+                self.error_handler = AdvancedErrorHandler(self.logger)
+                self.logger.info("✅ Advanced Error Handler initialized")
+                
+                # Enhanced Error Logging
+                notification_config = ErrorNotificationConfig(
+                    telegram_enabled=True,
+                    admin_chat_id=os.getenv('ADMIN_CHAT_ID'),
+                    severity_threshold=ErrorSeverity.HIGH,
+                    cooldown_minutes=5,
+                    batch_notifications=True
+                )
+                self.error_logger = setup_global_error_logger(notification_config)
+                self.logger.info("✅ Centralized Error Logger initialized")
+                
+                # API Resilience Manager
+                api_config = {
+                    'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN'),
+                    'binance_api_key': os.getenv('BINANCE_API_KEY', ''),
+                    'binance_api_secret': os.getenv('BINANCE_API_SECRET', ''),
+                    'binance_testnet': os.getenv('BINANCE_TESTNET', 'true').lower() == 'true',
+                    'cornix_webhook_url': os.getenv('CORNIX_WEBHOOK_URL', '')
+                }
+                self.resilience_manager = setup_global_resilience_manager(api_config)
+                self.logger.info("✅ API Resilience Manager initialized")
+                
+                # Dynamic Stop Loss System
+                self.stop_loss_config = StopLossConfig(
+                    sl1_base_percent=1.5,
+                    sl2_base_percent=4.0,
+                    sl3_base_percent=7.5,
+                    trailing_enabled=True,
+                    trailing_distance_percent=1.0
+                )
+                self.active_stop_loss_managers = {}  # symbol -> TradeStopLossManager
+                self.market_analyzer = MarketAnalyzer()
+                self.logger.info("✅ Dynamic 3-Level Stop Loss System initialized")
+                
+                self.enhanced_systems_active = True
+                
+            except Exception as e:
+                self.logger.error(f"Error initializing enhanced systems: {e}")
+                self.enhanced_systems_active = False
+                # Initialize fallback systems
+                self._init_fallback_systems()
+        else:
+            self.enhanced_systems_active = False
+            self._init_fallback_systems()
+            self.logger.warning("⚠️ Enhanced systems not available, using fallback mode")
+    
+    def _init_fallback_systems(self):
+        """Initialize fallback systems when enhanced systems are not available"""
+        try:
+            # Initialize basic error handling
+            self.error_handler = AdvancedErrorHandler(self.logger)
+            self.error_logger = CentralizedErrorLogger()
+            self.resilience_manager = APIResilienceManager()
+            
+            # Initialize basic stop loss system
+            self.stop_loss_config = StopLossConfig()
+            self.active_stop_loss_managers = {}
+            self.market_analyzer = MarketAnalyzer()
+            
+            self.logger.info("✅ Fallback systems initialized")
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing fallback systems: {e}")
+            # Create minimal fallback
+            self.error_handler = None
+            self.error_logger = None
+            self.resilience_manager = None
+            self.stop_loss_config = None
+            self.active_stop_loss_managers = {}
+            self.market_analyzer = None
 
         # Telegram configuration
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -1102,9 +1245,11 @@ class UltimateTradingBot:
             raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
-        # Session management
+        # Session management (enhanced with error recovery)
         self.session_secret = os.getenv('SESSION_SECRET', 'ultimate_trading_secret_key')
         self.session_token = None
+        self.session_retry_count = 0
+        self.max_session_retries = 3
 
         # Bot status
         self.running = True
@@ -1233,7 +1378,21 @@ class UltimateTradingBot:
             except Exception as e:
                 self.logger.warning(f"Could not initialize closed trades scanner: {e}")
 
-        self.logger.info("🚀 Ultimate Trading Bot initialized with Advanced ML")
+        # Integrate Enhanced Methods
+        try:
+            from enhanced_trading_methods import integrate_enhanced_methods
+            if integrate_enhanced_methods(self):
+                self.logger.info("✅ Enhanced trading methods integration successful")
+            else:
+                self.logger.warning("⚠️ Enhanced trading methods integration failed")
+        except ImportError:
+            self.logger.warning("⚠️ Enhanced trading methods not available")
+        except Exception as e:
+            self.logger.error(f"Error integrating enhanced methods: {e}")
+        
+        # Final initialization
+        enhancement_status = "with Enhanced Systems" if self.enhanced_systems_active else "in Fallback Mode"
+        self.logger.info(f"🚀 Ultimate Trading Bot initialized with Advanced ML {enhancement_status}")
         self._write_pid_file()
 
     def _setup_logging(self):

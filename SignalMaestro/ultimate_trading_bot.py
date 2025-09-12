@@ -83,6 +83,26 @@ except ImportError:
 from io import BytesIO
 import base64
 
+# Dynamic Error Fixer - Automatically detects and fixes issues
+try:
+    from dynamic_error_fixer import (
+        DynamicErrorFixer, get_global_error_fixer, auto_fix_error, 
+        apply_all_fixes, safe_pandas_replace
+    )
+    ERROR_FIXER_AVAILABLE = True
+    # Apply preventive fixes immediately
+    apply_all_fixes()
+except ImportError:
+    ERROR_FIXER_AVAILABLE = False
+    # Create fallback function
+    def safe_pandas_replace(df, to_replace, value, **kwargs):
+        result = df.replace(to_replace, value, **kwargs)
+        try:
+            result = result.infer_objects(copy=False)
+        except:
+            pass
+        return result
+
 # Import new enhanced systems with error handling
 ENHANCED_SYSTEMS_AVAILABLE = False
 try:
@@ -625,10 +645,10 @@ class AdvancedMLTradeAnalyzer:
                 'NY_MAIN': 3, 'NY_CLOSE': 4, 'ASIA_MAIN': 5, 'TRANSITION': 6
             }
 
-            features['direction_encoded'] = df['direction'].fillna('BUY').replace(direction_map).fillna(1)
-            features['macd_signal_encoded'] = df['macd_signal'].fillna('neutral').replace(macd_map).fillna(0)
-            features['cvd_trend_encoded'] = df['cvd_trend'].fillna('neutral').replace(cvd_map).fillna(0)
-            features['time_session_encoded'] = df['time_session'].fillna('NY_MAIN').replace(session_map).fillna(3)
+            features['direction_encoded'] = safe_pandas_replace(df['direction'].fillna('BUY'), direction_map, None).fillna(1)
+            features['macd_signal_encoded'] = safe_pandas_replace(df['macd_signal'].fillna('neutral'), macd_map, None).fillna(0)
+            features['cvd_trend_encoded'] = safe_pandas_replace(df['cvd_trend'].fillna('neutral'), cvd_map, None).fillna(0)
+            features['time_session_encoded'] = safe_pandas_replace(df['time_session'].fillna('NY_MAIN'), session_map, None).fillna(3)
             features['ema_alignment'] = df['ema_alignment'].fillna(False).astype(int)
 
             # Time features with consistent naming
@@ -853,7 +873,17 @@ class AdvancedMLTradeAnalyzer:
         """Save ML models to disk"""
         try:
             model_dir = Path("SignalMaestro/ml_models")
-            model_dir.mkdir(exist_ok=True)
+            model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Ensure directory is accessible
+            if not model_dir.exists():
+                # Try alternative paths
+                for alt_path in ["ml_models", "./ml_models", "data/ml_models"]:
+                    alt_dir = Path(alt_path)
+                    alt_dir.mkdir(parents=True, exist_ok=True)
+                    if alt_dir.exists():
+                        model_dir = alt_dir
+                        break
 
             models = {
                 'signal_classifier.pkl': self.signal_classifier,

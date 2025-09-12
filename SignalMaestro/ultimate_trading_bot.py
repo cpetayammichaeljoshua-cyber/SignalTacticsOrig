@@ -576,7 +576,7 @@ class AdvancedMLTradeAnalyzer:
             if not hasattr(self, 'scaler') or self.scaler is None:
                 from sklearn.preprocessing import StandardScaler
                 self.scaler = StandardScaler()
-            
+
             # Always fit scaler on training data
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
@@ -596,7 +596,7 @@ class AdvancedMLTradeAnalyzer:
             # Evaluate with cross-validation
             y_pred = self.signal_classifier.predict(X_test_scaled)
             accuracy = accuracy_score(y_test, y_pred)
-            
+
             # Cross-validation score for better accuracy estimate
             if len(X_train) > 30:
                 cv_scores = cross_val_score(self.signal_classifier, X_train_scaled, y_train, cv=3)
@@ -668,7 +668,7 @@ class AdvancedMLTradeAnalyzer:
             self.model_performance['profit_prediction_accuracy'] = max(0, r2)
             self.model_performance['profit_prediction_mae'] = mae
             self.model_performance['profit_prediction_rmse'] = rmse
-            
+
             self.logger.info(f"💰 Profit predictor - R²: {r2:.3f}, MAE: {mae:.3f}, RMSE: {rmse:.3f}")
 
         except Exception as e:
@@ -830,7 +830,7 @@ class AdvancedMLTradeAnalyzer:
                 hasattr(self, 'risk_assessor') and self.risk_assessor is not None,
                 hasattr(self, 'scaler') and self.scaler is not None
             ])
-            
+
             if not models_available:
                 return self._fallback_prediction(signal_data)
 
@@ -863,7 +863,7 @@ class AdvancedMLTradeAnalyzer:
 
             # IMPROVED FILTERING - Less restrictive but still quality-focused
             signal_strength = signal_data.get('signal_strength', 50)
-            
+
             # Multi-factor decision making
             if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3 and signal_strength >= 80:
                 prediction = 'highly_favorable'
@@ -884,7 +884,7 @@ class AdvancedMLTradeAnalyzer:
                     rejection_reason.append(f"High risk probability ({risk_prob*100:.1f}%)")
                 if signal_strength < 60:
                     rejection_reason.append(f"Low signal strength ({signal_strength:.1f}%)")
-                
+
                 return {
                     'prediction': 'filtered_out',
                     'confidence': confidence,
@@ -993,22 +993,22 @@ class AdvancedMLTradeAnalyzer:
         signal_strength = signal_data.get('signal_strength', 50)
         volume_ratio = signal_data.get('volume_ratio', 1.0)
         volatility = signal_data.get('market_volatility', 0.02)
-        
+
         # Multi-factor fallback assessment
         base_confidence = signal_strength
-        
+
         # Volume boost
         if volume_ratio > 1.2:
             base_confidence += 5
         elif volume_ratio < 0.8:
             base_confidence -= 5
-            
+
         # Volatility adjustment
         if 0.01 <= volatility <= 0.03:  # Optimal volatility range
             base_confidence += 3
         elif volatility > 0.05:  # High volatility penalty
             base_confidence -= 8
-            
+
         # Ensure bounds
         confidence = max(0, min(100, base_confidence))
 
@@ -1039,7 +1039,7 @@ class AdvancedMLTradeAnalyzer:
             profit_multiplier += 0.2
         if volatility <= 0.02:
             profit_multiplier += 0.1
-            
+
         expected_profit = (confidence / 100.0) * profit_multiplier * 1.5
 
         return {
@@ -1055,7 +1055,7 @@ class AdvancedMLTradeAnalyzer:
             'volatility_factor': volatility
         }
 
-    def get_ml_summary(self) -> Dict[str, Any]:
+    def get_ml_summary() -> Dict[str, Any]:
         """Get comprehensive ML summary"""
         return {
             'model_performance': self.model_performance,
@@ -1161,9 +1161,9 @@ class UltimateTradingBot:
         # Risk management - optimized for maximum profitability and unlimited signals
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 75  # Lowered for more opportunities
-        self.max_signals_per_hour = 999  # Unlimited signals per hour
-        self.capital_allocation = 0.02  # 2% per trade for more trades
-        self.max_concurrent_trades = 50  # Increased concurrent trades for more volume
+        # self.max_signals_per_hour = 999  # Unlimited signals per hour
+        self.max_concurrent_trades = 3  # Dynamic 3-trade limit management
+        self.capital_allocation = 0.02  # 2% per trade for more trades (this is not directly used for trade size calculation as per user request, leverage handles it)
 
         # Performance tracking
         self.signal_counter = 0
@@ -1340,17 +1340,17 @@ class UltimateTradingBot:
         """Get USD-M futures market data from Binance with enhanced error handling"""
         max_retries = 3
         retry_delay = 1
-        
+
         for attempt in range(max_retries):
             try:
                 # Validate inputs
                 if not symbol or not interval:
                     self.logger.error(f"Invalid input: symbol={symbol}, interval={interval}")
                     return None
-                
+
                 if limit <= 0 or limit > 1500:  # Binance API limit
                     limit = min(max(1, limit), 1500)
-                
+
                 url = f"https://fapi.binance.com/fapi/v1/klines"
                 params = {
                     'symbol': symbol.upper(),
@@ -1360,13 +1360,13 @@ class UltimateTradingBot:
 
                 timeout = aiohttp.ClientTimeout(total=15)
                 headers = {'User-Agent': 'Ultimate Trading Bot v1.0'}
-                
+
                 async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                     async with session.get(url, params=params) as response:
                         if response.status == 200:
                             try:
                                 data = await response.json()
-                                
+
                                 # Validate response data
                                 if not data or not isinstance(data, list):
                                     self.logger.warning(f"Invalid data format received for {symbol}")
@@ -1374,7 +1374,7 @@ class UltimateTradingBot:
                                         await asyncio.sleep(retry_delay)
                                         continue
                                     return None
-                                
+
                                 if len(data) == 0:
                                     self.logger.warning(f"No data received for {symbol}")
                                     return None
@@ -1421,25 +1421,25 @@ class UltimateTradingBot:
                                     return None
 
                                 return df
-                                
+
                             except json.JSONDecodeError as json_error:
                                 self.logger.error(f"JSON decode error for {symbol}: {json_error}")
                                 if attempt < max_retries - 1:
                                     await asyncio.sleep(retry_delay)
                                     continue
                                 return None
-                                
+
                         elif response.status == 429:  # Rate limited
                             retry_after = int(response.headers.get('Retry-After', retry_delay))
                             self.logger.warning(f"⏳ Binance rate limited for {symbol}, waiting {retry_after}s")
                             await asyncio.sleep(retry_after)
                             continue
-                            
+
                         elif response.status in [400, 404]:  # Bad symbol or not found
                             error_text = await response.text()
                             self.logger.warning(f"❌ Invalid symbol or interval {symbol} {interval}: {error_text}")
                             return None  # Don't retry for these errors
-                            
+
                         else:
                             error_text = await response.text()
                             self.logger.warning(f"⚠️ Binance API error for {symbol} (attempt {attempt + 1}): HTTP {response.status} - {error_text}")
@@ -1452,13 +1452,13 @@ class UltimateTradingBot:
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
-                    
+
             except aiohttp.ClientError as e:
                 self.logger.warning(f"🌐 Network error fetching {symbol} (attempt {attempt + 1}): {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
-                    
+
             except Exception as e:
                 self.logger.error(f"💥 Unexpected error fetching {symbol} data (attempt {attempt + 1}): {e}")
                 if attempt < max_retries - 1:
@@ -1725,7 +1725,7 @@ class UltimateTradingBot:
             # Calculate trend strength - safe division with doji consideration
             body_size = abs(last_ha_close - last_ha_open)
             candle_range = ha_high[-1] - ha_low[-1]
-            
+
             if candle_range > 0:
                 trend_strength = (body_size / candle_range * 100)
                 # Boost strength if coming from doji pattern
@@ -1974,12 +1974,11 @@ class UltimateTradingBot:
                 self.hourly_signal_count = 0
                 self.last_hour_reset = current_time.hour
 
-            # No hourly limits - push unlimited signals
-            if False:  # Disabled limit check
-                self.logger.debug(f"⏰ Hourly signal limit reached: {self.hourly_signal_count}/{self.max_signals_per_hour}")
-                return None
+            # Dynamic 3-trade limit check
+            if len(self.active_trades) >= self.max_concurrent_trades:
+                self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Waiting for trades to close.")
+                break # This should be a return None, not break
 
-            # Prevent multiple trades per symbol
             if symbol in self.active_symbols:
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
                 return None
@@ -2061,7 +2060,7 @@ class UltimateTradingBot:
 
             # Enhanced signal strength calculation with validation
             total_possible_signals = 125  # Total possible points from all indicators
-            
+
             if bullish_signals >= self.min_signal_strength:
                 direction = 'BUY'
                 signal_strength = min(100, bullish_signals)
@@ -2144,7 +2143,7 @@ class UltimateTradingBot:
             direction_matches_ha = False
             direction_matches_doji = False  # Initialize this variable
             confirmation_method = "none"
-            
+
             # Method 1: Doji confirmation (preferred)
             if direction == 'BUY' and ha_doji_to_bullish:
                 direction_matches_ha = True
@@ -2156,7 +2155,7 @@ class UltimateTradingBot:
                 direction_matches_doji = True
                 confirmation_method = "doji_to_bearish"
                 self.logger.info(f"✅ SELL signal confirmed by Heikin Ashi doji to bearish switch: {symbol}")
-            
+
             # Method 2: Strong trend confirmation (alternative)
             elif direction == 'BUY' and ha_trend in ['bullish', 'bullish_from_doji'] and ha_confirmation:
                 direction_matches_ha = True
@@ -2166,13 +2165,13 @@ class UltimateTradingBot:
                 direction_matches_ha = True
                 confirmation_method = "bearish_trend"
                 self.logger.info(f"✅ SELL signal confirmed by strong Heikin Ashi bearish trend: {symbol}")
-            
+
             # Method 3: Signal ready confirmation (backup)
             elif ha_signal_ready:
                 direction_matches_ha = True
                 confirmation_method = "signal_ready"
                 self.logger.info(f"✅ {direction} signal confirmed by Heikin Ashi signal ready: {symbol}")
-            
+
             # Method 4: High signal strength override (for very strong signals)
             elif signal_strength >= 95:
                 direction_matches_ha = True
@@ -2184,13 +2183,13 @@ class UltimateTradingBot:
                 self.logger.debug(f"❌ {symbol} BUY signal rejected - Strong bearish Heikin Ashi trend")
                 return None
             elif direction == 'SELL' and ha_trend == 'bullish' and ha_confirmation and not direction_matches_ha:
-                self.logger.debug(f"❌ {symbol} SELL signal rejected - Strong bullish Heikin Ashi trend")
+                self.logger.log(f"❌ {symbol} SELL signal rejected - Strong bullish Heikin Ashi trend")
                 return None
-            
+
             # Accept signals with any confirmation method or neutral HA
             if not direction_matches_ha and ha_trend not in ['neutral', 'doji_transition']:
                 self.logger.debug(f"⚠️ {symbol} signal proceeding with limited HA confirmation - Method: {confirmation_method}")
-            
+
             # Store confirmation method for analysis
             ha_confirmation_used = confirmation_method
 
@@ -2227,7 +2226,7 @@ class UltimateTradingBot:
                 'highly_favorable', 'favorable', 'above_neutral', 
                 'strength_override', 'strength_based'
             ]
-            
+
             # Special handling for fallback mode
             if ml_prediction.get('fallback_mode', False):
                 if prediction_type not in acceptable_predictions:
@@ -2373,23 +2372,23 @@ class UltimateTradingBot:
             if not self.bot_token or len(self.bot_token) < 40:
                 self.logger.error("❌ Invalid or missing bot token")
                 return False
-            
+
             # Test basic bot functionality first
             url = f"{self.base_url}/getMe"
             timeout = aiohttp.ClientTimeout(total=10)
-            
+
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
                     if response.status != 200:
                         error = await response.text()
                         self.logger.error(f"❌ Bot token validation failed: {error}")
                         return False
-                    
+
                     bot_info = await response.json()
                     if not bot_info.get('ok'):
                         self.logger.error(f"❌ Bot API returned error: {bot_info}")
                         return False
-                    
+
                     bot_username = bot_info.get('result', {}).get('username', 'Unknown')
                     self.logger.info(f"✅ Bot verified: @{bot_username}")
 
@@ -2398,7 +2397,7 @@ class UltimateTradingBot:
                     self.logger.warning("⚠️ No target channel configured")
                     self.channel_accessible = False
                     return False
-                
+
                 url = f"{self.base_url}/getChat"
                 data = {'chat_id': self.target_channel}
 
@@ -2422,9 +2421,9 @@ class UltimateTradingBot:
                             error_desc = error_data.get('description', error)
                         except:
                             error_desc = error
-                        
+
                         self.logger.warning(f"⚠️ Channel {self.target_channel} not accessible: {error_desc}")
-                        
+
                         # Check if it's a common error we can handle
                         if "not found" in error_desc.lower():
                             self.logger.error(f"❌ Channel {self.target_channel} does not exist or bot is not added")
@@ -2451,19 +2450,19 @@ class UltimateTradingBot:
         """Send message to Telegram with enhanced error handling and retry logic"""
         max_retries = 3
         retry_delay = 2
-        
+
         for attempt in range(max_retries):
             try:
                 # Validate inputs
                 if not chat_id or not text:
                     self.logger.error(f"Invalid input: chat_id={chat_id}, text_length={len(text) if text else 0}")
                     return False
-                
+
                 # Truncate message if too long (Telegram limit is 4096 characters)
                 if len(text) > 4096:
                     text = text[:4090] + "..."
                     self.logger.warning(f"Message truncated to fit Telegram limit")
-                
+
                 url = f"{self.base_url}/sendMessage"
                 data = {
                     'chat_id': chat_id,
@@ -2478,7 +2477,7 @@ class UltimateTradingBot:
                 # Add timeout and proper headers
                 timeout = aiohttp.ClientTimeout(total=30)
                 headers = {'Content-Type': 'application/json'}
-                
+
                 async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                     async with session.post(url, json=data) as response:
                         if response.status == 200:
@@ -2498,10 +2497,10 @@ class UltimateTradingBot:
                                 error_data = json.loads(error_text)
                             except:
                                 pass
-                            
+
                             error_description = error_data.get('description', error_text)
                             self.logger.error(f"❌ Telegram API error {response.status}: {error_description}")
-                            
+
                             # Don't retry for these errors
                             if chat_id == self.target_channel:
                                 self.channel_accessible = False
@@ -2583,10 +2582,10 @@ class UltimateTradingBot:
         ml_pred = ml_prediction.get('prediction', 'unknown').replace('_', ' ').title()
         expected_profit = ml_prediction.get('expected_profit', 0)
         model_accuracy = ml_prediction.get('model_accuracy', 0)
-        
+
         # ML mode indicator
         ml_mode = "🤖 FULL ML" if not ml_prediction.get('fallback_mode', False) else "🔄 FALLBACK"
-        
+
         # Signal quality indicators
         quality_indicators = []
         if ml_conf >= 80:
@@ -2595,9 +2594,9 @@ class UltimateTradingBot:
             quality_indicators.append("💎 HIGH ROI")
         if signal['signal_strength'] >= 90:
             quality_indicators.append("⚡ MAX POWER")
-        
+
         quality_status = " | ".join(quality_indicators) if quality_indicators else "📊 STANDARD"
-        
+
         message = f"""{cornix_signal}
 
 🧠 {ml_mode}: {ml_pred} ({ml_conf:.0f}%) | Accuracy: {model_accuracy:.0f}%
@@ -2691,7 +2690,7 @@ Exchange: BinanceFutures"""
             # Prepare data for candlestick chart
             data_len = min(60, len(df))  # Show last 60 candles for better context
             chart_df = df.tail(data_len).copy()
-            
+
             if len(chart_df) < 5:
                 plt.close() if 'fig' in locals() else None
                 return None
@@ -2699,12 +2698,12 @@ Exchange: BinanceFutures"""
             # Create professional chart layout
             fig = plt.figure(figsize=(14, 10), facecolor='#0d1421')
             gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 0.5], hspace=0.1)
-            
+
             # Main candlestick chart
             ax_main = fig.add_subplot(gs[0])
             ax_volume = fig.add_subplot(gs[1], sharex=ax_main)
             ax_info = fig.add_subplot(gs[2])
-            
+
             # Convert timestamps for plotting
             if 'timestamp' in chart_df.columns:
                 x_data = chart_df.index
@@ -2714,13 +2713,13 @@ Exchange: BinanceFutures"""
             # Enhanced Candlestick Drawing
             candle_width = 0.8
             wick_width = 0.1
-            
+
             for i, (idx, row) in enumerate(chart_df.iterrows()):
                 open_price = float(row['open'])
                 high_price = float(row['high'])
                 low_price = float(row['low'])
                 close_price = float(row['close'])
-                
+
                 # Determine candle color with advanced styling
                 if close_price >= open_price:
                     # Bullish candle - dynamic green shades
@@ -2730,15 +2729,15 @@ Exchange: BinanceFutures"""
                     # Bearish candle - dynamic red shades  
                     body_color = '#ff4444' if (open_price - close_price) / open_price > 0.005 else '#ef5350'
                     wick_color = '#f44336'
-                
+
                 # Draw wick (high-low line)
                 ax_main.plot([i, i], [low_price, high_price], 
                            color=wick_color, linewidth=wick_width*10, alpha=0.8)
-                
+
                 # Draw candle body
                 body_height = abs(close_price - open_price)
                 body_bottom = min(open_price, close_price)
-                
+
                 if body_height > 0:
                     # Filled rectangle for body
                     rect = plt.Rectangle((i - candle_width/2, body_bottom), 
@@ -2762,21 +2761,21 @@ Exchange: BinanceFutures"""
             # Add signal levels with enhanced styling
             entry_price = signal.get('entry_price', current_price)
             direction = signal.get('direction', 'BUY').upper()
-            
+
             # Entry line
             ax_main.axhline(y=entry_price, color='#00bcd4', linestyle='--', 
                           linewidth=2, alpha=0.9, label=f'Entry: ${entry_price:.6f}')
-            
+
             # Take Profit levels with gradient effect
             tp_colors = ['#4caf50', '#66bb6a', '#81c784']
             tp_labels = ['TP1', 'TP2', 'TP3']
-            
+
             for i, (tp_key, color, label) in enumerate(zip(['tp1', 'tp2', 'tp3'], tp_colors, tp_labels)):
                 if tp_key in signal and signal[tp_key] > 0:
                     tp_price = signal[tp_key]
                     ax_main.axhline(y=tp_price, color=color, linestyle=':', 
                                   linewidth=1.5, alpha=0.7 - i*0.1)
-                    
+
                     # Add price labels on the right
                     ax_main.text(len(chart_df)-1, tp_price, f'{label}: ${tp_price:.6f}', 
                                color=color, fontweight='bold', fontsize=9,
@@ -2798,10 +2797,10 @@ Exchange: BinanceFutures"""
                 volume = float(row['volume'])
                 open_price = float(row['open'])
                 close_price = float(row['close'])
-                
+
                 # Volume color based on price movement
                 vol_color = '#00ff88' if close_price >= open_price else '#ff4444'
-                
+
                 ax_volume.bar(i, volume, color=vol_color, alpha=0.6, width=0.8)
 
             # Enhanced Styling for Main Chart
@@ -2817,7 +2816,7 @@ Exchange: BinanceFutures"""
             ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
             signal_strength = signal.get('signal_strength', 0)
             leverage = signal.get('optimal_leverage', 35)
-            
+
             title = f'{symbol} - {direction} Signal | Strength: {signal_strength:.0f}% | ML: {ml_conf:.0f}% | {leverage}x'
             ax_main.set_title(title, color='white', fontsize=14, fontweight='bold', pad=20)
 
@@ -2826,7 +2825,7 @@ Exchange: BinanceFutures"""
             ax_volume.grid(True, alpha=0.2, color='#333333')
             ax_volume.tick_params(colors='white', labelsize=9)
             ax_volume.set_ylabel('Volume', color='white', fontsize=10)
-            
+
             # Format volume labels
             max_volume = chart_df['volume'].max()
             if max_volume > 1000000:
@@ -2837,14 +2836,14 @@ Exchange: BinanceFutures"""
             # Information Panel
             ax_info.set_facecolor('#0d1421')
             ax_info.axis('off')
-            
+
             # Create information text
             current_time = datetime.now().strftime('%H:%M UTC')
             ha_confirmation = signal.get('ha_confirmation_used', 'none').replace('_', ' ').title()
-            
+
             info_text = f"""💎 SIGNAL INFO: {current_time} | 🎯 HA Confirmation: {ha_confirmation} | 🧠 ML Enhanced | ⚖️ Cross Margin
 📊 Risk/Reward: 1:3 | 🛡️ Auto SL Management | 📈 Multi-TF Analysis | 🔥 Premium Strategy"""
-            
+
             ax_info.text(0.5, 0.5, info_text, ha='center', va='center', 
                         color='white', fontsize=10, weight='bold',
                         bbox=dict(boxstyle='round,pad=0.5', facecolor='#1a1a2e', alpha=0.8))
@@ -2856,7 +2855,7 @@ Exchange: BinanceFutures"""
                 plt.Line2D([0], [0], color='#f44336', linestyle=':', linewidth=2, label='Stop Loss'),
                 plt.Line2D([0], [0], color='#ffd700', linestyle='-', linewidth=2, label='Current Price')
             ]
-            
+
             ax_main.legend(handles=legend_elements, loc='upper left', 
                          facecolor='#0a0e1a', edgecolor='white', 
                          labelcolor='white', fontsize=9)
@@ -2865,13 +2864,13 @@ Exchange: BinanceFutures"""
             price_data = chart_df[['high', 'low', 'open', 'close']].values.flatten()
             price_range = price_data.max() - price_data.min()
             padding = price_range * 0.05
-            
+
             ax_main.set_ylim(price_data.min() - padding, price_data.max() + padding)
             ax_main.set_xlim(-0.5, len(chart_df) - 0.5)
 
             # Remove x-axis labels from main chart
             ax_main.set_xticklabels([])
-            
+
             # Add time labels to volume chart
             time_indices = [0, len(chart_df)//4, len(chart_df)//2, 3*len(chart_df)//4, len(chart_df)-1]
             time_labels = [f'{i*5}min ago' for i in reversed(range(len(time_indices)))]
@@ -3219,11 +3218,11 @@ Data Points: {ml_summary['model_performance']['total_trades_learned']}
                 await self.send_message(chat_id, f"""⚙️ **BOT SETTINGS**
 
 Target Channel: {self.target_channel}
-Max Signals/Hour: {self.max_signals_per_hour} (Unlimited)
+Max Concurrent Trades: {self.max_concurrent_trades}
 Min Signal Interval: {self.min_signal_interval}s
 Auto-Restart: ✅ Enabled
 Duplicate Prevention: ✅ One trade per symbol
-Max Concurrent: {self.max_concurrent_trades}
+Max Concurrent Trades: {self.max_concurrent_trades}
 
 ML Features:
 • Continuous Learning: ✅
@@ -3363,7 +3362,7 @@ Use /train to manually scan and train""")
         """Validate and cleanup active trades"""
         try:
             invalid_symbols = []
-            
+
             for symbol, trade_info in self.active_trades.items():
                 try:
                     # Check if monitoring task is still running
@@ -3376,7 +3375,7 @@ Use /train to manually scan and train""")
                     # Check trade age
                     entry_time = trade_info.get('entry_time', datetime.now())
                     age_hours = (datetime.now() - entry_time).total_seconds() / 3600
-                    
+
                     if age_hours > 48:  # 48 hours old
                         self.logger.warning(f"⏰ Trade {symbol} is {age_hours:.1f} hours old, marking for cleanup")
                         invalid_symbols.append(symbol)
@@ -3480,7 +3479,7 @@ Use /train to manually scan and train""")
                             if retry == 2:
                                 self.logger.warning(f"Failed to fetch data for {symbol} after 3 attempts: {fetch_error}")
                             await asyncio.sleep(5)
-                    
+
                     if df is None or len(df) == 0:
                         await asyncio.sleep(update_interval)
                         continue
@@ -3506,7 +3505,7 @@ Use /train to manually scan and train""")
 
                     # Enhanced trade status check
                     trade_status = self._check_trade_status(current_price, signal)
-                    
+
                     # Calculate additional metrics
                     price_volatility = np.std(price_history[-20:]) / np.mean(price_history[-20:]) if len(price_history) >= 20 else 0
                     price_momentum = (current_price - price_history[-10]) / price_history[-10] * 100 if len(price_history) >= 10 else 0
@@ -3573,7 +3572,7 @@ Use /train to manually scan and train""")
                         # Remove from active trades and release lock
                         if symbol in self.active_trades:
                             del self.active_trades[symbol]
-                        
+
                         self.release_symbol_lock(symbol)
 
                         result_emoji = "✅" if unrealized_pnl > 0 else "❌"
@@ -4072,7 +4071,7 @@ Use /train to manually scan and train""")
         while self.running and not self.shutdown_requested:
             try:
                 now = datetime.now()
-                
+
                 # Health monitoring and heartbeat (every 5 minutes)
                 if (now - last_heartbeat_log).total_seconds() > 300:  # 5 minutes
                     active_count = len(self.active_trades)
@@ -4126,25 +4125,25 @@ Use /train to manually scan and train""")
                 locked_count = len(self.active_symbols)
                 mode_indicator = "🔄 RECOVERY" if recovery_mode else "🧠 NORMAL"
                 self.logger.info(f"{mode_indicator} Scanning markets for ML-enhanced signals... | Active: {active_count} | Locked: {locked_count}")
-                
+
                 # Skip intensive operations in recovery mode
                 if recovery_mode:
                     self.logger.info("⏸️ Skipping signal scan in recovery mode")
                     await asyncio.sleep(30)
                     continue
-                
+
                 signals = await self.scan_for_signals()
 
                 if signals:
-                    self.logger.info(f"📊 Found {len(signals)} ML-validated signals | Hour: {self.hourly_signal_count}/{self.max_signals_per_hour}")
+                    self.logger.info(f"📊 Found {len(signals)} ML-validated signals | Hour: {self.hourly_signal_count}/{self.max_concurrent_trades}")
 
                     signals_sent_count = 0
 
                     for signal in signals:
-                        # No hourly limits - process all signals
-                        if False:  # Disabled hourly limit check
-                            self.logger.info(f"⏰ Hourly signal limit reached ({self.max_signals_per_hour}). Skipping remaining signals.")
-                            break
+                        # Dynamic 3-trade limit check
+                        if len(self.active_trades) >= self.max_concurrent_trades:
+                            self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Waiting for trades to close.")
+                            break # This should be a return None, not break
 
                         try:
                             self.signal_counter += 1
@@ -4225,7 +4224,7 @@ Use /train to manually scan and train""")
                 else:
                     scan_interval = 45  # Normal scanning when no signals
 
-                status_msg = "🔄 RECOVERY MODE" if recovery_mode else "🚀 UNLIMITED MODE"
+                status_msg = "🔄 RECOVERY MODE" if recovery_mode else "🧠 NORMAL"
                 self.logger.info(f"⏰ Next ML scan in {scan_interval} seconds | {status_msg}")
                 await asyncio.sleep(scan_interval)
 
@@ -4233,7 +4232,7 @@ Use /train to manually scan and train""")
                 consecutive_errors += 1
                 error_type = type(e).__name__
                 self.logger.error(f"ML auto-scan loop error #{consecutive_errors} ({error_type}): {e}")
-                
+
                 # Log stack trace for debugging if needed
                 if consecutive_errors <= 2:  # Only for first few errors to avoid spam
                     self.logger.debug(f"Error traceback: {traceback.format_exc()}")
@@ -4247,26 +4246,26 @@ Use /train to manually scan and train""")
                     # Comprehensive recovery attempt
                     try:
                         self.logger.info("🔄 Attempting comprehensive system recovery...")
-                        
+
                         # Reset session
                         await self.create_session()
-                        
+
                         # Verify connections
                         connection_ok = await self.verify_channel_access()
-                        
+
                         # Clean up any stuck resources
                         await self.cleanup_stale_locks()
                         await self.validate_active_trades()
-                        
+
                         # Test basic functionality
                         if self.admin_chat_id:
                             test_sent = await self.send_message(self.admin_chat_id, 
                                 f"🔄 Recovery attempt {consecutive_errors} - Testing connection...")
                             if test_sent:
                                 self.logger.info("✅ Admin communication test successful")
-                        
+
                         self.logger.info("🔄 Recovery attempt completed")
-                        
+
                     except Exception as recovery_error:
                         self.logger.error(f"Recovery attempt failed: {recovery_error}")
                         # Try to notify admin of critical error
@@ -4280,7 +4279,7 @@ Use /train to manually scan and train""")
                 else:
                     # Progressive backoff for temporary errors
                     error_wait = min(120, 15 * consecutive_errors)
-                    
+
                     # Try quick recovery for network errors
                     if "network" in str(e).lower() or "timeout" in str(e).lower():
                         self.logger.info("🌐 Network error detected, attempting quick connection refresh...")
@@ -4326,9 +4325,7 @@ Use /train to manually scan and train""")
 • **Cross margin trading** (all positions)
 • Machine learning predictions
 • Persistent trade learning
-• Cornix-compatible Telegram formatting
-• Real-time performance tracking
-• Continuous learning system
+• Cross-session learning continuity
 
 **⚙️ Adaptive Learning:**
 • Performance-based leverage adjustment

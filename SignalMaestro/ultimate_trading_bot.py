@@ -175,7 +175,7 @@ class AdvancedMLTradeAnalyzer:
             'accuracy_growth_rate': 0.0,
             'consecutive_wins': 0,
             'consecutive_losses': 0,
-            'ml_confidence_threshold': 80.0,  # Increased from 75% for stricter filtering
+            'ml_confidence_threshold': 68.0,  # Optimized from 80% to 68% for better signal frequency while maintaining quality
             'adaptive_threshold': True,
             'learning_velocity': 0.0,
             'prediction_precision': 0.0,
@@ -187,7 +187,8 @@ class AdvancedMLTradeAnalyzer:
         self.trades_since_retrain = 0
         self.learning_multiplier = 1.5  # Higher exponential learning factor
         self.accuracy_target = 95.0  # Slightly lower target accuracy for more trades
-        self.min_confidence_for_signal = 70.0  # Reduced to 70%+ ML confidence for more signals
+        self.min_confidence_for_signal = 68.0  # Reduced to 68%+ ML confidence for optimal signal frequency
+        
 
         # Market insights
         self.market_insights = {
@@ -198,6 +199,7 @@ class AdvancedMLTradeAnalyzer:
         }
 
         self.logger.info("🧠 Advanced ML Trade Analyzer initialized")
+    
 
     def _initialize_database(self):
         """Initialize comprehensive ML database"""
@@ -1367,6 +1369,9 @@ class UltimateTradingBot:
         # Advanced ML Trade Analyzer
         self.ml_analyzer = AdvancedMLTradeAnalyzer()
         self.ml_analyzer.load_ml_models()
+        
+        # ML confidence threshold for signal filtering
+        self.min_confidence_for_signal = 68.0  # ML confidence threshold for signal acceptance
 
         # Closed Trades Scanner for ML Training
         self.closed_trades_scanner = None
@@ -1434,6 +1439,17 @@ class UltimateTradingBot:
                 self.logger.info("🧹 PID file cleaned up")
         except Exception as e:
             self.logger.warning(f"Cleanup error: {e}")
+
+    def _get_ml_confidence_band(self, confidence: float) -> str:
+        """Determine ML confidence band for adaptive signal processing"""
+        if confidence >= 80:
+            return "aggressive"
+        elif confidence >= 72:
+            return "moderate"
+        elif confidence >= 68:
+            return "conservative"
+        else:
+            return "low_confidence"
 
     # ========================================
     # PRECISE RISK MANAGEMENT FUNCTIONS
@@ -2679,12 +2695,29 @@ class UltimateTradingBot:
 
             ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
 
-            # IMPROVED ML FILTERING - Less restrictive but quality-focused
+            # ENHANCED ML FILTERING - Optimized confidence-based filtering
             ml_confidence = ml_prediction.get('confidence', 50)
             prediction_type = ml_prediction.get('prediction', 'unknown')
             expected_profit = ml_prediction.get('expected_profit', 0)
+            
+            # Enhanced ML confidence logging and band classification
+            if ml_confidence >= 80:
+                confidence_band = "aggressive"
+                signal_bonus = 8
+            elif ml_confidence >= 72:
+                confidence_band = "moderate"  
+                signal_bonus = 3
+            else:
+                confidence_band = "conservative"
+                signal_bonus = 0
+            
+            self.logger.info(f"🧠 {symbol}: ML confidence {ml_confidence:.1f}% ({confidence_band} band)")
 
-            # Block only clearly negative predictions
+            # Block only clearly negative predictions with enhanced threshold
+            if ml_confidence < self.min_confidence_for_signal:
+                self.logger.debug(f"❌ {symbol} signal rejected - ML confidence {ml_confidence:.1f}% below threshold {self.min_confidence_for_signal:.1f}%")
+                return None
+
             blocked_predictions = ['filtered_out', 'below_threshold']
             if prediction_type in blocked_predictions:
                 rejection_reasons = ml_prediction.get('rejection_reasons', [])
@@ -2711,13 +2744,16 @@ class UltimateTradingBot:
                     self.logger.debug(f"❌ {symbol} signal rejected - ML prediction: {prediction_type} (confidence: {ml_confidence:.1f}%)")
                     return None
 
-            # Boost signal strength for high ML confidence
+            # Enhanced signal strength boost with confidence-based weighting
             if prediction_type == 'highly_favorable':
                 signal_strength *= 1.3  # Strong boost for highly favorable
             elif prediction_type == 'favorable':
                 signal_strength *= 1.2  # Good boost for favorable
             elif prediction_type == 'above_neutral':
                 signal_strength *= 1.1  # Small boost for above neutral
+            
+            # Apply confidence band bonus
+            signal_strength += signal_bonus
 
             # Additional boost for doji confirmation
             if direction_matches_doji:
@@ -2818,8 +2854,8 @@ class UltimateTradingBot:
                             ml_confidence = best_signal.get('ml_prediction', {}).get('confidence', 0)
                             signal_strength = best_signal.get('signal_strength', 0)
 
-                            # Accept signals with either good ML confidence OR good signal strength
-                            if (ml_confidence >= 65 and signal_strength >= 60) or \
+                            # Enhanced acceptance criteria with optimized thresholds for 68% base
+                            if (ml_confidence >= self.min_confidence_for_signal and signal_strength >= 60) or \
                                (ml_confidence >= 70) or \
                                (signal_strength >= self.min_signal_strength):
                                 signals.append(best_signal)

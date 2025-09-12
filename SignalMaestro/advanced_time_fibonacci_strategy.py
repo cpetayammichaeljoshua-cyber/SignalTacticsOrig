@@ -79,12 +79,26 @@ class AdvancedTimeFibonacciStrategy:
             'multiple_level_confluence': 0.15
         }
 
-        # ML enhancement parameters
-        self.ml_confidence_threshold = 0.75
+        # ML enhancement parameters - Optimized for balanced signal quality vs quantity
+        self.ml_confidence_threshold = 0.68  # Lowered from 0.75 to increase signal frequency
         self.min_signal_strength = 80  # Balanced threshold for more opportunities
+        
+        # ML Confidence-based filtering bands
+        self.ml_confidence_bands = {
+            'conservative': {'min': 0.68, 'max': 0.72, 'leverage_multiplier': 0.85, 'signal_bonus': 0},
+            'moderate': {'min': 0.72, 'max': 0.80, 'leverage_multiplier': 1.0, 'signal_bonus': 3},
+            'aggressive': {'min': 0.80, 'max': 1.0, 'leverage_multiplier': 1.15, 'signal_bonus': 8}
+        }
         self.max_trades_per_hour = 5   # Enhanced trade frequency
         self.last_trade_times = {}
         self.hourly_trade_counts = {}  # Track trades per hour per symbol
+
+    def _get_ml_confidence_band(self, confidence: float) -> str:
+        """Determine ML confidence band for adaptive signal processing"""
+        for band_name, band_data in self.ml_confidence_bands.items():
+            if band_data['min'] <= confidence <= band_data['max']:
+                return band_name
+        return 'conservative'  # Default to conservative for edge cases
 
     async def analyze_symbol(self, symbol: str, ohlcv_data: Dict[str, List], ml_analyzer=None) -> Optional[AdvancedScalpingSignal]:
         """Analyze symbol with advanced time and Fibonacci theory"""
@@ -558,9 +572,15 @@ class AdvancedTimeFibonacciStrategy:
                 }
                 ml_prediction = ml_analyzer.predict_trade_outcome(signal_data)
 
-                # Skip if ML confidence is too low
-                if ml_prediction.get('confidence', 0) < self.ml_confidence_threshold * 100:
+                # Skip if ML confidence is too low (now optimized at 68%)
+                ml_confidence = ml_prediction.get('confidence', 0) / 100.0  # Convert to decimal
+                if ml_confidence < self.ml_confidence_threshold:
+                    self.logger.debug(f"❌ {symbol}: ML confidence {ml_confidence*100:.1f}% below threshold {self.ml_confidence_threshold*100:.1f}%")
                     return None
+                    
+                # Determine ML confidence band for adaptive filtering
+                confidence_band = self._get_ml_confidence_band(ml_confidence)
+                self.logger.info(f"🧠 {symbol}: ML confidence {ml_confidence*100:.1f}% ({confidence_band} band)")
 
             # Calculate stop loss and take profits using Fibonacci
             atr = self._calculate_atr(df)
@@ -608,15 +628,20 @@ class AdvancedTimeFibonacciStrategy:
                 if volume_analysis.get('volume_ratio_20', 1.0) > 2.0:
                     base_strength += 5
             
-            # Enhanced ML prediction bonus
+            # Enhanced ML prediction bonus with confidence-based weighting
             if ml_prediction and ml_prediction.get('prediction') == 'favorable':
+                # Base ML bonus
                 base_strength += 12
                 if ml_prediction.get('telegram_enhanced'):
                     base_strength += 3  # Telegram learning bonus
+                    
+                # Confidence band bonus
+                confidence_band_data = self.ml_confidence_bands[confidence_band]
+                base_strength += confidence_band_data['signal_bonus']
 
             signal_strength = min(base_strength, 100)
 
-            # Dynamic leverage based on signal strength, confluence, and session volatility
+            # Dynamic leverage based on signal strength, confluence, and ML confidence
             leverage = 25  # Minimum leverage
             if signal_strength >= 90:
                 leverage = min(50, 25 + int((signal_strength - 90) * 2.5))  # Up to 50x for strongest signals
@@ -626,6 +651,11 @@ class AdvancedTimeFibonacciStrategy:
                 leverage = min(40, 25 + int((signal_strength - 80) * 3))     # Up to 40x
             else:
                 leverage = min(35, 25 + int((signal_strength - 75) * 2))     # Up to 35x
+                
+            # Apply ML confidence-based leverage adjustment
+            confidence_band_data = self.ml_confidence_bands[confidence_band]
+            leverage = int(leverage * confidence_band_data['leverage_multiplier'])
+            leverage = max(20, min(75, leverage))  # Ensure within safe bounds
 
             # Session-based leverage boost for high volatility periods
             current_session = time_analysis['session']
@@ -660,6 +690,9 @@ class AdvancedTimeFibonacciStrategy:
                 fibonacci_confluence=fib_analysis['confluence_strength'],
                 ml_prediction={
                     **ml_prediction if ml_prediction else {},
+                    'confidence_value': ml_confidence,
+                    'confidence_band': confidence_band,
+                    'leverage_multiplier': confidence_band_data['leverage_multiplier'],
                     'momentum_confirmed': momentum_analysis['momentum_confirmed'],
                     'momentum_strength': momentum_analysis['momentum_strength'],
                     'volume_confirmed': volume_analysis['volume_confirmed'],

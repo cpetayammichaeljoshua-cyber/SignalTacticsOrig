@@ -185,9 +185,23 @@ class TradingPlanCoordinator:
             )
             
             # Advanced Time Fibonacci Strategy (with ML analyzer)
-            tasks['fibonacci_time'] = asyncio.create_task(
-                self.strategies['fibonacci_time'].analyze_symbol(symbol, ohlcv_data, self.ml_analyzer)
-            )
+            try:
+                # Check if strategy accepts ML analyzer parameter
+                import inspect
+                sig = inspect.signature(self.strategies['fibonacci_time'].analyze_symbol)
+                if len(sig.parameters) >= 3:
+                    tasks['fibonacci_time'] = asyncio.create_task(
+                        self.strategies['fibonacci_time'].analyze_symbol(symbol, ohlcv_data, self.ml_analyzer)
+                    )
+                else:
+                    tasks['fibonacci_time'] = asyncio.create_task(
+                        self.strategies['fibonacci_time'].analyze_symbol(symbol, ohlcv_data)
+                    )
+            except Exception:
+                # Fallback to standard signature
+                tasks['fibonacci_time'] = asyncio.create_task(
+                    self.strategies['fibonacci_time'].analyze_symbol(symbol, ohlcv_data)
+                )
             
             # Momentum Scalping Strategy
             tasks['momentum_scalping'] = asyncio.create_task(
@@ -279,13 +293,16 @@ class TradingPlanCoordinator:
             if not valid_signals:
                 return {'consensus_score': 0, 'consensus_direction': 'neutral'}
             
+            # Normalize and validate signals first
+            normalized_signals = self._normalize_signals(valid_signals)
+            
             # Direction analysis
             directions = []
             strengths = []
             
-            for strategy_name, signal in valid_signals.items():
-                directions.append(signal.direction)
-                strengths.append(signal.signal_strength)
+            for strategy_name, signal in normalized_signals.items():
+                directions.append(signal.get('direction', 'BUY'))
+                strengths.append(signal.get('signal_strength', 50))
             
             # Count direction votes
             buy_votes = directions.count('BUY')
@@ -717,3 +734,145 @@ class TradingPlanCoordinator:
                     
         except Exception as e:
             self.logger.error(f"Error updating strategy success rates: {e}")
+    
+    def _normalize_signals(self, signals: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Normalize signals from different strategies to a common format"""
+        try:
+            normalized = {}
+            
+            for strategy_name, signal in signals.items():
+                try:
+                    # Create normalized signal dictionary
+                    normalized_signal = {
+                        'strategy_name': strategy_name,
+                        'direction': getattr(signal, 'direction', 'BUY'),
+                        'entry_price': getattr(signal, 'entry_price', 0),
+                        'stop_loss': getattr(signal, 'stop_loss', 0),
+                        'tp1': getattr(signal, 'tp1', 0),
+                        'tp2': getattr(signal, 'tp2', 0),
+                        'tp3': getattr(signal, 'tp3', 0),
+                        'signal_strength': getattr(signal, 'signal_strength', 50),
+                        'leverage': getattr(signal, 'leverage', 10),
+                        'risk_reward_ratio': getattr(signal, 'risk_reward_ratio', 2.0),
+                        'timestamp': getattr(signal, 'timestamp', datetime.now())
+                    }
+                    
+                    # Validation checks
+                    if normalized_signal['entry_price'] <= 0:
+                        self.logger.warning(f"Invalid entry price for {strategy_name}: {normalized_signal['entry_price']}")
+                        continue
+                        
+                    if normalized_signal['signal_strength'] <= 0 or normalized_signal['signal_strength'] > 100:
+                        self.logger.warning(f"Invalid signal strength for {strategy_name}: {normalized_signal['signal_strength']}")
+                        normalized_signal['signal_strength'] = max(1, min(100, normalized_signal['signal_strength']))
+                    
+                    if normalized_signal['leverage'] <= 0 or normalized_signal['leverage'] > 100:
+                        self.logger.warning(f"Invalid leverage for {strategy_name}: {normalized_signal['leverage']}")
+                        normalized_signal['leverage'] = max(5, min(50, normalized_signal['leverage']))
+                    
+                    normalized[strategy_name] = normalized_signal
+                    
+                except Exception as e:
+                    self.logger.error(f"Error normalizing signal from {strategy_name}: {e}")
+                    continue
+            
+            return normalized
+            
+        except Exception as e:
+            self.logger.error(f"Error normalizing signals: {e}")
+            return {}
+    
+    def _validate_strategy_compatibility(self) -> Dict[str, bool]:
+        """Validate that all strategies are compatible and functional"""
+        try:
+            compatibility = {}
+            
+            for strategy_name, strategy in self.strategies.items():
+                try:
+                    # Check if strategy has required analyze_symbol method
+                    if not hasattr(strategy, 'analyze_symbol'):
+                        compatibility[strategy_name] = False
+                        self.logger.error(f"Strategy {strategy_name} missing analyze_symbol method")
+                        continue
+                    
+                    # Check method signature
+                    import inspect
+                    sig = inspect.signature(strategy.analyze_symbol)
+                    params = list(sig.parameters.keys())
+                    
+                    # Must have at least 'self', 'symbol', 'ohlcv_data'
+                    if len(params) < 3:
+                        compatibility[strategy_name] = False
+                        self.logger.error(f"Strategy {strategy_name} has invalid analyze_symbol signature")
+                        continue
+                    
+                    compatibility[strategy_name] = True
+                    self.logger.debug(f"Strategy {strategy_name} validated successfully")
+                    
+                except Exception as e:
+                    compatibility[strategy_name] = False
+                    self.logger.error(f"Error validating strategy {strategy_name}: {e}")
+            
+            # Log overall compatibility status
+            compatible_count = sum(compatibility.values())
+            total_count = len(compatibility)
+            self.logger.info(f"Strategy compatibility: {compatible_count}/{total_count} strategies compatible")
+            
+            return compatibility
+            
+        except Exception as e:
+            self.logger.error(f"Error validating strategy compatibility: {e}")
+            return {}
+    
+    def get_system_health(self) -> Dict[str, Any]:
+        """Get comprehensive system health check"""
+        try:
+            # Validate strategy compatibility
+            compatibility = self._validate_strategy_compatibility()
+            
+            # Check ML analyzer status
+            ml_status = self.ml_analyzer.get_model_status() if self.ml_analyzer else {'error': 'No ML analyzer'}
+            
+            # Count active components
+            active_strategies = sum(compatibility.values()) if compatibility else 0
+            
+            return {
+                'coordinator_status': 'healthy' if active_strategies >= 3 else 'degraded',
+                'active_strategies': active_strategies,
+                'total_strategies': len(self.strategies),
+                'strategy_compatibility': compatibility,
+                'ml_analyzer_ready': ml_status.get('learning_ready', False),
+                'active_signals_count': len(self.active_signals),
+                'performance_tracking_active': len(self.strategy_performance) > 0,
+                'last_health_check': datetime.now(),
+                'recommendations': self._get_health_recommendations(active_strategies, ml_status)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting system health: {e}")
+            return {
+                'coordinator_status': 'error',
+                'error': str(e),
+                'timestamp': datetime.now()
+            }
+    
+    def _get_health_recommendations(self, active_strategies: int, ml_status: Dict) -> List[str]:
+        """Get health recommendations based on system status"""
+        recommendations = []
+        
+        if active_strategies < 3:
+            recommendations.append("Warning: Less than 3 strategies active - system reliability may be reduced")
+        
+        if active_strategies == 0:
+            recommendations.append("Critical: No strategies are functional - coordinator cannot generate signals")
+        
+        if not ml_status.get('learning_ready', False):
+            recommendations.append("Info: ML analyzer needs more trade data to improve predictions")
+        
+        if len(self.signal_history) == 0:
+            recommendations.append("Info: No trading history yet - performance tracking will improve over time")
+        
+        if active_strategies == len(self.strategies):
+            recommendations.append("Excellent: All strategies are functional and working together")
+        
+        return recommendations

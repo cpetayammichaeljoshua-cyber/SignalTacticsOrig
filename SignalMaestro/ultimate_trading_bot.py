@@ -2746,7 +2746,7 @@ Exchange: BinanceFutures"""
 
                 if body_height > 0:
                     # Filled rectangle for body
-                    rect = plt.Rectangle((i - candle_width/2), body_bottom,
+                    rect = plt.Rectangle((i - candle_width/2, body_bottom),
                                        candle_width, body_height,
                                        facecolor=body_color,
                                        edgecolor='white',

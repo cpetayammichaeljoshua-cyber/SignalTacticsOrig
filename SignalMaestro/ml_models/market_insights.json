@@ -9,8 +9,8 @@
       "TRANSITION": 240
     },
     "std": {
-      "ASIA_MAIN": 1.9596675267543988,
-      "TRANSITION": 7.814086926893181
+      "ASIA_MAIN": 1.9596675267543993,
+      "TRANSITION": 7.814086926893184
     }
   },
   "symbol_performance": {
@@ -123,7 +123,7 @@
       "FLOWUSDT": 0.0,
       "GALAUSDT": 0.0,
       "GRTUSDT": 0.0,
-      "IMXUSDT": 7.536640098510184,
+      "IMXUSDT": 7.536640098510185,
       "LINKUSDT": 0.0,
       "MANAUSDT": 0.0,
       "MATICUSDT": 0.0,
@@ -148,7 +148,7 @@
     }
   },
   "indicator_effectiveness": {
-    "signal_strength": 0.07871976836212957,
+    "signal_strength": 0.07871976836212952,
     "rsi_value": NaN,
     "volume_ratio": NaN,
     "profit_loss": 1.0

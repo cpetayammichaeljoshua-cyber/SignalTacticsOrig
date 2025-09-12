@@ -6,6 +6,7 @@ Handles user interactions and command processing
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -17,6 +18,7 @@ from config import Config
 from signal_parser import SignalParser
 from risk_manager import RiskManager
 from utils import format_currency, format_percentage
+from telegram_strategy_comparison import TelegramStrategyComparison
 
 class TradingSignalBot:
     """Telegram bot for handling trading signals and user interactions"""
@@ -30,6 +32,9 @@ class TradingSignalBot:
         self.signal_parser = SignalParser()
         self.risk_manager = RiskManager()
         self.application = None
+        
+        # Initialize strategy comparison service
+        self.strategy_comparison = TelegramStrategyComparison(self.config)
         
     async def initialize(self):
         """Initialize the Telegram bot application"""
@@ -45,6 +50,16 @@ class TradingSignalBot:
             self.application.add_handler(CommandHandler("settings", self.settings_command))
             self.application.add_handler(CommandHandler("status", self.status_command))
             self.application.add_handler(CommandHandler("history", self.history_command))
+            
+            # Add strategy comparison commands
+            self.application.add_handler(CommandHandler("strategies", self.strategies_command))
+            self.application.add_handler(CommandHandler("compare_run", self.compare_run_command))
+            self.application.add_handler(CommandHandler("compare_status", self.compare_status_command))
+            self.application.add_handler(CommandHandler("compare_result", self.compare_result_command))
+            self.application.add_handler(CommandHandler("compare_recent", self.compare_recent_command))
+            self.application.add_handler(CommandHandler("compare_rankings", self.compare_rankings_command))
+            self.application.add_handler(CommandHandler("compare_tips", self.compare_tips_command))
+            self.application.add_handler(CommandHandler("compare_help", self.compare_help_command))
             
             # Add message handler for signals
             self.application.add_handler(
@@ -100,6 +115,12 @@ Hello {username}! I'm your automated cryptocurrency trading assistant.
 • `/status` - Check bot status
 • `/history` - View trading history
 • `/help` - Show this help message
+
+**Strategy Comparison:**
+• `/strategies` - List available strategies
+• `/compare_run` - Start strategy comparison
+• `/compare_recent` - Show recent comparisons
+• `/compare_help` - Strategy comparison help
 
 **Signal Format:**
 You can send trading signals in these formats:
@@ -224,7 +245,7 @@ Send me a trading signal or use the commands above!
                 signal_text = f"📈 **Signal for {symbol}:**\n\n"
                 signal_text += f"💰 Current Price: ${price}\n"
                 signal_text += f"📊 24h Change: {change_24h}%\n\n"
-                signal_text += "📋 Use the web dashboard for detailed technical analysis."
+                signal_text += "📊 Use `/compare_run` to backtest strategies for this symbol."
                 
                 await update.message.reply_text(signal_text, parse_mode='Markdown')
             else:
@@ -246,7 +267,7 @@ Send me a trading signal or use the commands above!
             settings_text += f"🎯 Risk per trade: {user_data.get('risk_percentage', 2)}%\n"
             settings_text += f"🤖 Auto trading: {'Enabled' if user_data.get('auto_trading', False) else 'Disabled'}\n"
             settings_text += f"📤 Cornix forwarding: {'Enabled' if user_data.get('cornix_enabled', False) else 'Disabled'}\n\n"
-            settings_text += "Use the web dashboard to modify these settings."
+            settings_text += "Contact your administrator to modify these settings."
             
             await update.message.reply_text(settings_text, parse_mode='Markdown')
             
@@ -395,3 +416,273 @@ Send me a trading signal or use the commands above!
             
         except Exception as e:
             self.logger.error(f"Error executing signal: {e}")
+    
+    # ======== Strategy Comparison Commands ========
+    
+    async def strategies_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /strategies command - list available strategies"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            await update.message.reply_text("⏳ Loading available strategies...")
+            
+            strategies_text, total_count = await self.strategy_comparison.get_available_strategies()
+            
+            if total_count == 0:
+                await update.message.reply_text(strategies_text, parse_mode='Markdown')
+            else:
+                footer = f"\n\n📱 Use `/compare_run` to start a comparison"
+                final_text = strategies_text + footer
+                
+                if len(final_text) > 4096:
+                    # Send in chunks if too long
+                    await update.message.reply_text(strategies_text[:4090] + "...", parse_mode='Markdown')
+                    await update.message.reply_text(footer, parse_mode='Markdown')
+                else:
+                    await update.message.reply_text(final_text, parse_mode='Markdown')
+                    
+        except Exception as e:
+            self.logger.error(f"Error in strategies command: {e}")
+            await update.message.reply_text("❌ Error loading strategies. Please try again later.")
+    
+    async def compare_run_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_run command - start new strategy comparison"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            # Parse arguments
+            symbols = None
+            days = 30
+            strategies = None
+            initial_capital = 10.0
+            
+            if context.args:
+                try:
+                    # Parse first argument (symbols)
+                    if context.args[0].lower() != 'default':
+                        symbols = [s.strip().upper() for s in context.args[0].split(',')]
+                    
+                    # Parse second argument (days)
+                    if len(context.args) > 1:
+                        days = int(context.args[1])
+                    
+                    # Parse third argument (strategies)  
+                    if len(context.args) > 2:
+                        strategies = [s.strip() for s in context.args[2].split(',')]
+                    
+                    # Parse fourth argument (capital)
+                    if len(context.args) > 3:
+                        initial_capital = float(context.args[3])
+                        
+                except (ValueError, IndexError) as e:
+                    await update.message.reply_text(
+                        "❌ Invalid arguments. Usage:\n"
+                        "`/compare_run [symbols] [days] [strategies] [capital]`\n\n"
+                        "Examples:\n"
+                        "• `/compare_run` - Use defaults\n"
+                        "• `/compare_run BTCUSDT,ETHUSDT 7` - Specific pairs, 7 days\n"
+                        "• `/compare_run default 30 Ultimate,Momentum 100`",
+                        parse_mode='Markdown'
+                    )
+                    return
+            
+            await update.message.reply_text("🚀 Starting strategy comparison...")
+            
+            # Start comparison
+            result_text, comparison_id = await self.strategy_comparison.start_comparison(
+                user_id=user_id,
+                symbols=symbols,
+                days=days,
+                strategies=strategies,
+                initial_capital=initial_capital
+            )
+            
+            await update.message.reply_text(result_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_run command: {e}")
+            await update.message.reply_text("❌ Error starting comparison. Please try again later.")
+    
+    async def compare_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_status command - check comparison progress"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            if not context.args:
+                await update.message.reply_text(
+                    "❌ Please provide comparison ID.\nUsage: `/compare_status <id>`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            comparison_id = context.args[0]
+            status_text = await self.strategy_comparison.get_comparison_status(comparison_id)
+            
+            await update.message.reply_text(status_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_status command: {e}")
+            await update.message.reply_text("❌ Error checking status. Please try again later.")
+    
+    async def compare_result_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_result command - show comparison results"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            if not context.args:
+                await update.message.reply_text(
+                    "❌ Please provide comparison ID.\nUsage: `/compare_result <id> [page]`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            comparison_id = context.args[0]
+            page = 1
+            
+            if len(context.args) > 1:
+                try:
+                    page = int(context.args[1])
+                except ValueError:
+                    page = 1
+            
+            await update.message.reply_text("⏳ Loading comparison results...")
+            
+            # Get results
+            result_text, chart_path, has_more = await self.strategy_comparison.get_comparison_result(
+                comparison_id, page
+            )
+            
+            # Send chart if available
+            if chart_path and Path(chart_path).exists():
+                try:
+                    with open(chart_path, 'rb') as photo:
+                        await update.message.reply_photo(
+                            photo=photo,
+                            caption=result_text,
+                            parse_mode='Markdown'
+                        )
+                except Exception as e:
+                    self.logger.warning(f"Error sending chart: {e}")
+                    await update.message.reply_text(result_text, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(result_text, parse_mode='Markdown')
+            
+            # Add pagination buttons if needed
+            if has_more:
+                next_page = page + 1
+                await update.message.reply_text(
+                    f"📄 More results available. Use:\n`/compare_result {comparison_id} {next_page}`",
+                    parse_mode='Markdown'
+                )
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_result command: {e}")
+            await update.message.reply_text("❌ Error loading results. Please try again later.")
+    
+    async def compare_recent_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_recent command - show recent comparisons"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            await update.message.reply_text("⏳ Loading your recent comparisons...")
+            
+            recent_text = await self.strategy_comparison.get_recent_comparisons(user_id)
+            await update.message.reply_text(recent_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_recent command: {e}")
+            await update.message.reply_text("❌ Error loading recent comparisons. Please try again later.")
+    
+    async def compare_rankings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_rankings command - show strategy rankings by metric"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            if not context.args:
+                available_metrics = self.strategy_comparison.get_available_metrics()
+                metrics_list = '\n'.join([f"• `{metric}`" for metric in available_metrics])
+                await update.message.reply_text(
+                    f"❌ Please provide comparison ID and metric.\n\n"
+                    f"Usage: `/compare_rankings <id> <metric>`\n\n"
+                    f"Available metrics:\n{metrics_list}",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            comparison_id = context.args[0]
+            metric = context.args[1] if len(context.args) > 1 else 'total_pnl_percentage'
+            
+            await update.message.reply_text("⏳ Loading strategy rankings...")
+            
+            rankings_text = await self.strategy_comparison.get_comparison_rankings(comparison_id, metric)
+            await update.message.reply_text(rankings_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_rankings command: {e}")
+            await update.message.reply_text("❌ Error loading rankings. Please try again later.")
+    
+    async def compare_tips_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_tips command - show recommendations"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            if not context.args:
+                await update.message.reply_text(
+                    "❌ Please provide comparison ID.\nUsage: `/compare_tips <id>`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            comparison_id = context.args[0]
+            await update.message.reply_text("⏳ Loading recommendations...")
+            
+            recommendations_text = await self.strategy_comparison.get_comparison_recommendations(comparison_id)
+            await update.message.reply_text(recommendations_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_tips command: {e}")
+            await update.message.reply_text("❌ Error loading recommendations. Please try again later.")
+    
+    async def compare_help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /compare_help command - show strategy comparison help"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            help_text = await self.strategy_comparison.get_help_text()
+            await update.message.reply_text(help_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_help command: {e}")
+            await update.message.reply_text("❌ Error loading help. Please try again later.")

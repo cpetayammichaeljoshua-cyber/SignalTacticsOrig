@@ -9,8 +9,8 @@
       "TRANSITION": 240
     },
     "std": {
-      "ASIA_MAIN": 1.9596675267543993,
-      "TRANSITION": 7.814086926893184
+      "ASIA_MAIN": 1.959667526754399,
+      "TRANSITION": 7.814086926893183
     }
   },
   "symbol_performance": {
@@ -148,7 +148,7 @@
     }
   },
   "indicator_effectiveness": {
-    "signal_strength": 0.07871976836212952,
+    "signal_strength": 0.07871976836212932,
     "rsi_value": NaN,
     "volume_ratio": NaN,
     "profit_loss": 1.0

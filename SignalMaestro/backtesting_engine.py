@@ -283,8 +283,8 @@ class MLSignalFilter:
     def _load_models(self):
         """Load existing ML models if available"""
         try:
-            model_path = Path("ml_models/signal_classifier.pkl")
-            scaler_path = Path("ml_models/scaler.pkl")
+            model_path = Path("SignalMaestro/ml_models/signal_classifier.pkl")
+            scaler_path = Path("SignalMaestro/ml_models/scaler.pkl")
             
             if model_path.exists() and scaler_path.exists():
                 with open(model_path, 'rb') as f:

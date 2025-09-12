@@ -99,7 +99,7 @@ class MLTradePredictor:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.model_dir = Path("ml_models")
+        self.model_dir = Path("SignalMaestro/ml_models")
         self.model_dir.mkdir(exist_ok=True)
 
         # ML Models for different predictions
@@ -111,7 +111,7 @@ class MLTradePredictor:
         self.scaler = StandardScaler() # Initialize scaler here
 
         # Trade database
-        self.db_path = "ml_trade_learning.db"
+        self.db_path = "SignalMaestro/ml_trade_learning.db"
         self._initialize_database()
 
         # Learning parameters

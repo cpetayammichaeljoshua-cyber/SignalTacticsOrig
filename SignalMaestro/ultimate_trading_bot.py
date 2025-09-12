@@ -842,7 +842,7 @@ class AdvancedMLTradeAnalyzer:
     def _save_ml_models(self):
         """Save ML models to disk"""
         try:
-            model_dir = Path("ml_models")
+            model_dir = Path("SignalMaestro/ml_models")
             model_dir.mkdir(exist_ok=True)
 
             models = {
@@ -871,9 +871,10 @@ class AdvancedMLTradeAnalyzer:
     def load_ml_models(self):
         """Load ML models from disk"""
         try:
-            model_dir = Path("ml_models")
+            model_dir = Path("SignalMaestro/ml_models")
 
             if not model_dir.exists():
+                self.logger.warning(f"🔍 ML models directory not found: {model_dir}")
                 return
 
             models = {
@@ -901,7 +902,10 @@ class AdvancedMLTradeAnalyzer:
                 with open(insights_file, 'r') as f:
                     self.market_insights.update(json.load(f))
 
-            self.logger.info("🤖 Advanced ML models loaded successfully")
+            # Log loaded models for verification
+            loaded_models = [attr for attr in ['signal_classifier', 'profit_predictor', 'risk_assessor', 'scaler'] if hasattr(self, attr) and getattr(self, attr) is not None]
+            self.logger.info(f"🤖 Advanced ML models loaded successfully from {model_dir}: {loaded_models}")
+            self.logger.info(f"📊 Model performance: {self.model_performance.get('ensemble_accuracy', 0):.1f}% accuracy, {self.model_performance.get('total_trades_learned', 0)} trades learned")
 
         except Exception as e:
             self.logger.error(f"Error loading ML models: {e}")

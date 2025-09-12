@@ -27,7 +27,7 @@ class Config:
         )
 
         # Trading Configuration
-        self.DEFAULT_RISK_PERCENTAGE = float(os.getenv("DEFAULT_RISK_PERCENTAGE", "2.0"))
+        self.DEFAULT_RISK_PERCENTAGE = float(os.getenv("DEFAULT_RISK_PERCENTAGE", "5.0"))
         self.MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "1000.0"))
         self.MIN_POSITION_SIZE = float(os.getenv("MIN_POSITION_SIZE", "10.0"))
         self.STOP_LOSS_PERCENTAGE = float(os.getenv("STOP_LOSS_PERCENTAGE", "3.0"))
@@ -155,7 +155,7 @@ class Config:
     LOG_FILE: str = os.getenv('LOG_FILE', 'logs/trading_bot.log')
     
     # Trading Parameters
-    DEFAULT_RISK_PERCENT: float = float(os.getenv('DEFAULT_RISK_PERCENT', '2.0'))
+    DEFAULT_RISK_PERCENT: float = float(os.getenv('DEFAULT_RISK_PERCENT', '5.0'))
     MAX_CONCURRENT_TRADES: int = int(os.getenv('MAX_CONCURRENT_TRADES', '5'))
     
     # Rate Limiting
@@ -211,7 +211,7 @@ class Config:
         
         # Bot Settings
         self.MAX_CONCURRENT_TRADES: int = 3
-        self.DEFAULT_RISK_PERCENTAGE: float = 2.0
+        self.DEFAULT_RISK_PERCENTAGE: float = 5.0
         self.DEFAULT_LEVERAGE: int = 50
         self.MARGIN_TYPE: str = "cross"
         

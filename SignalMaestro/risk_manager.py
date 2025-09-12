@@ -168,7 +168,7 @@ class RiskManager:
             # you would fetch actual account balance
             
             # Assume account balance (this should come from the exchange)
-            account_balance = 10000  # USD - This should be fetched from Binance
+            account_balance = 10  # USD - This should be fetched from Binance
             
             # Default risk percentage
             risk_percentage = self.config.DEFAULT_RISK_PERCENTAGE / 100

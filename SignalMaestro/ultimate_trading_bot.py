@@ -1185,8 +1185,8 @@ class UltimateTradingBot:
         self.account_balance = 10.0  # USDT
         
         # Risk Management: 1% per trade = 0.10 USDT per trade
-        self.risk_per_trade_percentage = 1.0  # 1%
-        self.risk_per_trade_amount = self.account_balance * (self.risk_per_trade_percentage / 100)  # 0.10 USDT
+        self.risk_per_trade_percentage = 5.0  # 5%
+        self.risk_per_trade_amount = self.account_balance * (self.risk_per_trade_percentage / 100)  # 0.50 USDT
         
         # Trading limits
         self.max_concurrent_trades = 3  # Perfect 3-trade management
@@ -2184,6 +2184,9 @@ class UltimateTradingBot:
         """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
+            
+            # Define risk percentage (5% of account balance)
+            risk_percentage = 5.0
 
             # Track hourly signals but don't limit them
             if current_time.hour != self.last_hour_reset:

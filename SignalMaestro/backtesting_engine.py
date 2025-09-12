@@ -89,6 +89,7 @@ class BacktestConfig:
 @dataclass
 class Position:
     """Trading position tracking"""
+    # Required fields (no defaults)
     symbol: str
     direction: str  # 'long' or 'short'
     entry_price: float
@@ -96,24 +97,20 @@ class Position:
     size: float
     leverage: int
     margin_used: float
-    
-    # Stop loss levels
     sl1_price: float
     sl2_price: float
     sl3_price: float
-    sl1_triggered: bool = False
-    sl2_triggered: bool = False
-    sl3_triggered: bool = False
-    
-    # Take profit levels
     tp1_price: float
     tp2_price: float
     tp3_price: float
+    
+    # Optional fields (with defaults)
+    sl1_triggered: bool = False
+    sl2_triggered: bool = False
+    sl3_triggered: bool = False
     tp1_triggered: bool = False
     tp2_triggered: bool = False
     tp3_triggered: bool = False
-    
-    # Position status
     remaining_size: float = None
     current_pnl: float = 0.0
     max_pnl: float = 0.0

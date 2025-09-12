@@ -26,10 +26,6 @@ from pathlib import Path
 import sqlite3
 import pickle
 from decimal import Decimal, ROUND_DOWN
-import warnings
-
-# Suppress all warnings for clean output
-warnings.filterwarnings('ignore')
 
 # Technical Analysis and Chart Generation
 try:
@@ -37,12 +33,12 @@ try:
     TALIB_AVAILABLE = True
 except ImportError:
     TALIB_AVAILABLE = False
-    logging.warning("TA-Lib not available, using fallback technical analysis")
 
 try:
     import matplotlib
     matplotlib.use('Agg')
     # Configure matplotlib to suppress all warnings
+    import warnings
     warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
     warnings.filterwarnings('ignore', category=UserWarning, message='Glyph*')
     warnings.filterwarnings('ignore', category=UserWarning, message='This figure includes Axes*')
@@ -61,25 +57,20 @@ try:
     CHART_AVAILABLE = True
 except ImportError:
     CHART_AVAILABLE = False
-    logging.warning("Matplotlib not available, charts disabled")
 
-# ML Libraries with fallback handling
+# ML Libraries
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.preprocessing import LabelEncoder, StandardScaler
-    from sklearn.metrics import classification_report, accuracy_score, r2_score, mean_absolute_error, mean_squared_error
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.metrics import classification_report, accuracy_score
     from sklearn.linear_model import LogisticRegression
-    from sklearn.ensemble import GradientBoostingRegressor
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
-    logging.warning("Scikit-learn not available, ML features disabled")
 
-# Additional imports
 from io import BytesIO
 import base64
-import psutil
 
 class AdvancedMLTradeAnalyzer:
     """Advanced ML Trade Analyzer with comprehensive learning capabilities"""
@@ -587,295 +578,175 @@ class AdvancedMLTradeAnalyzer:
     async def _train_signal_classifier(self, features: pd.DataFrame, targets: Dict):
         """Train signal classification model with improved scaling"""
         try:
-            if not ML_AVAILABLE:
-                self.logger.warning("ML libraries not available, skipping classifier training")
-                return
-
             X = features
             y = targets['profitable']
 
             if len(X) < 20:
-                self.logger.warning("Insufficient data for classifier training")
                 return
 
-            # Split data with stratification for better balance
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.3, random_state=42, stratify=y
-                )
-            except ValueError:
-                # If stratification fails due to class imbalance, use regular split
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
             # Initialize scaler if not exists
             if not hasattr(self, 'scaler') or self.scaler is None:
-                if ML_AVAILABLE:
-                    self.scaler = StandardScaler()
-                else:
-                    self.scaler = None
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
 
-            # Scale features if scaler available
-            if self.scaler is not None:
-                try:
-                    X_train_scaled = self.scaler.fit_transform(X_train)
-                    X_test_scaled = self.scaler.transform(X_test)
-                except Exception as scale_error:
-                    self.logger.warning(f"Scaling failed: {scale_error}, using unscaled features")
-                    X_train_scaled = X_train.values
-                    X_test_scaled = X_test.values
-                    self.scaler = None
-            else:
-                X_train_scaled = X_train.values
-                X_test_scaled = X_test.values
+            # Always fit scaler on training data
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
 
-            # Train model with better parameters and error handling
-            try:
-                self.signal_classifier = RandomForestClassifier(
-                    n_estimators=min(150, len(X_train) // 2),  # Adaptive n_estimators
-                    max_depth=min(20, int(np.log2(len(X_train)))),
-                    min_samples_split=max(2, min(5, len(X_train) // 20)),
-                    min_samples_leaf=max(1, min(2, len(X_train) // 40)),
-                    random_state=42,
-                    class_weight='balanced',
-                    n_jobs=1  # Single thread to avoid issues
-                )
-                self.signal_classifier.fit(X_train_scaled, y_train)
+            # Train model with better parameters
+            self.signal_classifier = RandomForestClassifier(
+                n_estimators=150,
+                max_depth=20,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                random_state=42,
+                class_weight='balanced',
+                n_jobs=-1
+            )
+            self.signal_classifier.fit(X_train_scaled, y_train)
 
-                # Evaluate model
-                y_pred = self.signal_classifier.predict(X_test_scaled)
-                accuracy = accuracy_score(y_test, y_pred)
+            # Evaluate with cross-validation
+            y_pred = self.signal_classifier.predict(X_test_scaled)
+            accuracy = accuracy_score(y_test, y_pred)
 
-                # Cross-validation score for better accuracy estimate (if sufficient data)
-                if len(X_train) > 30:
-                    try:
-                        cv_scores = cross_val_score(self.signal_classifier, X_train_scaled, y_train, cv=min(3, len(X_train) // 10))
-                        accuracy = cv_scores.mean()
-                        cv_std = cv_scores.std()
-                        self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f} (CV std: {cv_std:.3f})")
-                    except Exception as cv_error:
-                        self.logger.warning(f"Cross-validation failed: {cv_error}")
-                        self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f}")
-                else:
-                    self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f}")
+            # Cross-validation score for better accuracy estimate
+            if len(X_train) > 30:
+                cv_scores = cross_val_score(self.signal_classifier, X_train_scaled, y_train, cv=3)
+                accuracy = cv_scores.mean()
 
-                self.model_performance['signal_accuracy'] = max(0.5, min(1.0, accuracy))
-
-            except Exception as train_error:
-                self.logger.error(f"RandomForest training failed: {train_error}")
-                # Fallback to simpler model
-                try:
-                    self.signal_classifier = LogisticRegression(
-                        random_state=42, 
-                        class_weight='balanced',
-                        max_iter=1000,
-                        solver='lbfgs'
-                    )
-                    self.signal_classifier.fit(X_train_scaled, y_train)
-                    y_pred = self.signal_classifier.predict(X_test_scaled)
-                    accuracy = accuracy_score(y_test, y_pred)
-                    self.model_performance['signal_accuracy'] = max(0.5, accuracy)
-                    self.logger.info(f"📊 Fallback LogisticRegression trained with accuracy: {accuracy:.3f}")
-                except Exception as fallback_error:
-                    self.logger.error(f"Fallback classifier training failed: {fallback_error}")
-                    self.model_performance['signal_accuracy'] = 0.6  # Conservative default
+            self.model_performance['signal_accuracy'] = accuracy
+            self.logger.info(f"🎯 Signal classifier accuracy: {accuracy:.3f} (CV: {cv_scores.std():.3f})" if len(X_train) > 30 else f"🎯 Signal classifier accuracy: {accuracy:.3f}")
 
         except Exception as e:
-            self.logger.error(f"Error in signal classifier training: {e}")
-            self.model_performance['signal_accuracy'] = 0.6  # Safe default
+            self.logger.error(f"Error training signal classifier: {e}")
+            # Fallback to basic model
+            try:
+                from sklearn.linear_model import LogisticRegression
+                self.signal_classifier = LogisticRegression(random_state=42, class_weight='balanced')
+                if hasattr(self, 'scaler') and self.scaler is not None:
+                    self.signal_classifier.fit(X_train_scaled, y_train)
+                else:
+                    self.signal_classifier.fit(X_train, y_train)
+                self.model_performance['signal_accuracy'] = 0.7  # Conservative fallback
+                self.logger.info("📊 Fallback classifier trained")
+            except:
+                self.logger.error("Failed to train fallback classifier")
 
     async def _train_profit_predictor(self, features: pd.DataFrame, targets: Dict):
         """Train profit prediction model with improved scaling and validation"""
         try:
-            if not ML_AVAILABLE:
-                self.logger.warning("ML libraries not available, skipping profit predictor training")
-                return
-
             X = features
             y = targets['profit_amount']
 
             if len(X) < 20:
-                self.logger.warning("Insufficient data for profit predictor training")
                 return
 
-            # Clean target values
-            y = pd.Series(y).fillna(0).replace([np.inf, -np.inf], 0)
-            
             # Split data
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-            except Exception as split_error:
-                self.logger.error(f"Data split failed: {split_error}")
-                return
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-            # Use the same scaler as signal classifier or create new one
+            # Use the same scaler as signal classifier
             if hasattr(self, 'scaler') and self.scaler is not None:
-                try:
-                    # Use existing fitted scaler - refit on new training data
-                    X_train_scaled = self.scaler.fit_transform(X_train)
-                    X_test_scaled = self.scaler.transform(X_test)
-                except Exception as scale_error:
-                    self.logger.warning(f"Scaler transform failed: {scale_error}")
-                    X_train_scaled = X_train.values
-                    X_test_scaled = X_test.values
+                # Use existing fitted scaler
+                X_train_scaled = self.scaler.transform(X_train)
+                X_test_scaled = self.scaler.transform(X_test)
             else:
                 # Initialize new scaler if needed
-                if ML_AVAILABLE:
-                    try:
-                        self.scaler = StandardScaler()
-                        X_train_scaled = self.scaler.fit_transform(X_train)
-                        X_test_scaled = self.scaler.transform(X_test)
-                    except Exception:
-                        X_train_scaled = X_train.values
-                        X_test_scaled = X_test.values
-                        self.scaler = None
-                else:
-                    X_train_scaled = X_train.values
-                    X_test_scaled = X_test.values
+                from sklearn.preprocessing import StandardScaler
+                self.scaler = StandardScaler()
+                X_train_scaled = self.scaler.fit_transform(X_train)
+                X_test_scaled = self.scaler.transform(X_test)
 
-            # Train model with better parameters and error handling
-            try:
-                self.profit_predictor = GradientBoostingRegressor(
-                    n_estimators=min(150, len(X_train)),
-                    learning_rate=0.1,
-                    max_depth=min(10, int(np.log2(len(X_train)))),
-                    min_samples_split=max(2, len(X_train) // 20),
-                    min_samples_leaf=max(1, len(X_train) // 40),
-                    subsample=0.8,
-                    random_state=42,
-                    validation_fraction=0.1,
-                    n_iter_no_change=10,
-                    tol=1e-4
-                )
-                self.profit_predictor.fit(X_train_scaled, y_train)
+            # Train model with better parameters
+            from sklearn.ensemble import GradientBoostingRegressor
+            self.profit_predictor = GradientBoostingRegressor(
+                n_estimators=150,
+                learning_rate=0.05,
+                max_depth=10,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                subsample=0.8,
+                random_state=42
+            )
+            self.profit_predictor.fit(X_train_scaled, y_train)
 
-                # Evaluate with multiple metrics
-                y_pred = self.profit_predictor.predict(X_test_scaled)
-                
-                # Clean predictions
-                y_pred = np.nan_to_num(y_pred, nan=0.0, posinf=0.0, neginf=0.0)
-                
-                # Calculate metrics safely
-                try:
-                    r2 = r2_score(y_test, y_pred)
-                    mae = mean_absolute_error(y_test, y_pred)
-                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                except Exception as metric_error:
-                    self.logger.warning(f"Metrics calculation failed: {metric_error}")
-                    r2, mae, rmse = 0.0, 1.0, 1.0
+            # Evaluate with multiple metrics
+            y_pred = self.profit_predictor.predict(X_test_scaled)
+            from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+            r2 = r2_score(y_test, y_pred)
+            mae = mean_absolute_error(y_test, y_pred)
+            rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-                # Store comprehensive performance metrics with bounds checking
-                self.model_performance['profit_prediction_accuracy'] = max(0, min(1.0, r2))
-                self.model_performance['profit_prediction_mae'] = max(0, mae)
-                self.model_performance['profit_prediction_rmse'] = max(0, rmse)
+            # Store comprehensive performance metrics
+            self.model_performance['profit_prediction_accuracy'] = max(0, r2)
+            self.model_performance['profit_prediction_mae'] = mae
+            self.model_performance['profit_prediction_rmse'] = rmse
 
-                self.logger.info(f"💰 Profit predictor - R²: {r2:.3f}, MAE: {mae:.3f}, RMSE: {rmse:.3f}")
-
-            except Exception as train_error:
-                self.logger.error(f"GradientBoostingRegressor training failed: {train_error}")
-                # Fallback to simple linear model
-                try:
-                    from sklearn.linear_model import LinearRegression
-                    self.profit_predictor = LinearRegression()
-                    self.profit_predictor.fit(X_train_scaled, y_train)
-                    
-                    y_pred = self.profit_predictor.predict(X_test_scaled)
-                    y_pred = np.nan_to_num(y_pred, nan=0.0, posinf=0.0, neginf=0.0)
-                    
-                    try:
-                        r2 = r2_score(y_test, y_pred)
-                        self.model_performance['profit_prediction_accuracy'] = max(0, r2)
-                    except:
-                        self.model_performance['profit_prediction_accuracy'] = 0.3
-                    
-                    self.logger.info("📊 Fallback LinearRegression profit predictor trained")
-                    
-                except Exception as fallback_error:
-                    self.logger.error(f"Fallback profit predictor failed: {fallback_error}")
-                    self.model_performance['profit_prediction_accuracy'] = 0.3  # Conservative default
+            self.logger.info(f"💰 Profit predictor - R²: {r2:.3f}, MAE: {mae:.3f}, RMSE: {rmse:.3f}")
 
         except Exception as e:
-            self.logger.error(f"Error in profit predictor training: {e}")
-            self.model_performance['profit_prediction_accuracy'] = 0.3  # Safe default
+            self.logger.error(f"Error training profit predictor: {e}")
+            # Fallback to simple linear model
+            try:
+                from sklearn.linear_model import LinearRegression
+                self.profit_predictor = LinearRegression()
+                if hasattr(self, 'scaler') and self.scaler is not None:
+                    self.profit_predictor.fit(X_train_scaled, y_train)
+                else:
+                    self.profit_predictor.fit(X_train, y_train)
+                self.model_performance['profit_prediction_accuracy'] = 0.5  # Conservative fallback
+                self.logger.info("📊 Fallback profit predictor trained")
+            except:
+                self.logger.error("Failed to train fallback profit predictor")
 
     async def _train_risk_assessor(self, features: pd.DataFrame, targets: Dict):
         """Train risk assessment model"""
         try:
-            if not ML_AVAILABLE:
-                self.logger.warning("ML libraries not available, skipping risk assessor training")
-                return
-
             X = features
             y = targets['high_risk']
 
             if len(X) < 20:
-                self.logger.warning("Insufficient data for risk assessor training")
                 return
 
-            # Clean target values - ensure binary
-            y = pd.Series(y).fillna(0).astype(int)
-            
-            # Split data with stratification if possible
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.3, random_state=42, stratify=y
-                )
-            except ValueError:
-                # If stratification fails, use regular split
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
             # Scale features
-            if hasattr(self, 'scaler') and self.scaler is not None:
+            if not hasattr(self, 'scaler') or self.scaler is None:
                 try:
-                    # Refit scaler on new training data
+                    from sklearn.preprocessing import StandardScaler
+                    self.scaler = StandardScaler()
                     X_train_scaled = self.scaler.fit_transform(X_train)
-                    X_test_scaled = self.scaler.transform(X_test)
-                except Exception as scale_error:
-                    self.logger.warning(f"Scaling failed: {scale_error}, using raw features")
+                except ImportError:
+                    self.logger.warning("StandardScaler not available, using raw features")
                     X_train_scaled = X_train.values
-                    X_test_scaled = X_test.values
             else:
-                if ML_AVAILABLE:
-                    try:
-                        self.scaler = StandardScaler()
-                        X_train_scaled = self.scaler.fit_transform(X_train)
-                        X_test_scaled = self.scaler.transform(X_test)
-                    except Exception:
-                        X_train_scaled = X_train.values
-                        X_test_scaled = X_test.values
-                        self.scaler = None
-                else:
-                    X_train_scaled = X_train.values
-                    X_test_scaled = X_test.values
+                X_train_scaled = self.scaler.transform(X_train)
 
-            # Train model with better parameters
-            try:
-                self.risk_assessor = LogisticRegression(
-                    random_state=42,
-                    class_weight='balanced',
-                    max_iter=1000,
-                    solver='lbfgs',
-                    C=1.0
-                )
-                self.risk_assessor.fit(X_train_scaled, y_train)
+            # Handle test scaling
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                X_test_scaled = self.scaler.transform(X_test)
+            else:
+                X_test_scaled = X_test.values
 
-                # Evaluate
-                y_pred = self.risk_assessor.predict(X_test_scaled)
-                accuracy = accuracy_score(y_test, y_pred)
+            # Train model
+            self.risk_assessor = LogisticRegression(
+                random_state=42,
+                class_weight='balanced'
+            )
+            self.risk_assessor.fit(X_train_scaled, y_train)
 
-                # Bounds checking
-                self.model_performance['risk_assessment_accuracy'] = max(0.5, min(1.0, accuracy))
-                self.logger.info(f"⚠️ Risk assessor accuracy: {accuracy:.3f}")
+            # Evaluate
+            y_pred = self.risk_assessor.predict(X_test_scaled)
+            accuracy = accuracy_score(y_test, y_pred)
 
-            except Exception as train_error:
-                self.logger.error(f"Risk assessor training failed: {train_error}")
-                # Create dummy risk assessor
-                self.risk_assessor = None
-                self.model_performance['risk_assessment_accuracy'] = 0.6  # Conservative default
+            self.model_performance['risk_assessment_accuracy'] = accuracy
+            self.logger.info(f"⚠️ Risk assessor accuracy: {accuracy:.3f}")
 
         except Exception as e:
-            self.logger.error(f"Error in risk assessor training: {e}")
-            self.risk_assessor = None
-            self.model_performance['risk_assessment_accuracy'] = 0.6  # Safe default
+            self.logger.error(f"Error training risk assessor: {e}")
 
     async def _analyze_market_insights(self, df: pd.DataFrame):
         """Analyze market insights from trading data"""
@@ -971,13 +842,12 @@ class AdvancedMLTradeAnalyzer:
     def predict_trade_outcome(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Advanced ML prediction for trade outcome with improved filtering"""
         try:
-            if not ML_AVAILABLE:
-                return self._fallback_prediction(signal_data)
-
-            # Check if models are available and properly trained
+            # Check if all models are available
             models_available = all([
                 hasattr(self, 'signal_classifier') and self.signal_classifier is not None,
-                hasattr(self, 'profit_predictor') and self.profit_predictor is not None
+                hasattr(self, 'profit_predictor') and self.profit_predictor is not None,
+                hasattr(self, 'risk_assessor') and self.risk_assessor is not None,
+                hasattr(self, 'scaler') and self.scaler is not None
             ])
 
             if not models_available:
@@ -988,113 +858,73 @@ class AdvancedMLTradeAnalyzer:
             if features_df is None or features_df.empty:
                 return self._fallback_prediction(signal_data)
 
-            # Scale features with error handling
             try:
-                if hasattr(self, 'scaler') and self.scaler is not None:
-                    features_scaled = self.scaler.transform(features_df)
-                else:
-                    features_scaled = features_df.values
+                # Scale features with error handling
+                features_scaled = self.scaler.transform(features_df)
             except Exception as scale_error:
-                self.logger.warning(f"Scaling error, using raw features: {scale_error}")
-                features_scaled = features_df.values
+                self.logger.warning(f"Scaling error, using fallback: {scale_error}")
+                return self._fallback_prediction(signal_data)
 
-            # Get predictions with comprehensive error handling
+            # Get predictions with error handling
             try:
-                # Signal classifier prediction
-                if hasattr(self.signal_classifier, 'predict_proba'):
-                    profit_prob_array = self.signal_classifier.predict_proba(features_scaled)
-                    if len(profit_prob_array) > 0 and len(profit_prob_array[0]) > 1:
-                        profit_prob = profit_prob_array[0][1]  # Probability of positive class
-                    else:
-                        profit_prob = 0.5  # Default neutral
-                else:
-                    # Fallback for classifiers without predict_proba
-                    prediction_result = self.signal_classifier.predict(features_scaled)
-                    profit_prob = 0.7 if prediction_result[0] > 0 else 0.3
-
-                # Profit predictor
-                profit_amount_raw = self.profit_predictor.predict(features_scaled)[0]
-                profit_amount = float(np.nan_to_num(profit_amount_raw, nan=0.0, posinf=5.0, neginf=-5.0))
-
-                # Risk assessor (with fallback if not available)
-                if hasattr(self, 'risk_assessor') and self.risk_assessor is not None:
-                    if hasattr(self.risk_assessor, 'predict_proba'):
-                        risk_prob_array = self.risk_assessor.predict_proba(features_scaled)
-                        if len(risk_prob_array) > 0 and len(risk_prob_array[0]) > 1:
-                            risk_prob = risk_prob_array[0][1]
-                        else:
-                            risk_prob = 0.3  # Default low risk
-                    else:
-                        risk_prediction = self.risk_assessor.predict(features_scaled)
-                        risk_prob = 0.7 if risk_prediction[0] > 0 else 0.3
-                else:
-                    # Default risk assessment based on signal strength
-                    signal_strength = signal_data.get('signal_strength', 50)
-                    risk_prob = max(0.1, min(0.8, (100 - signal_strength) / 100))
-
+                profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
+                profit_amount = self.profit_predictor.predict(features_scaled)[0]
+                risk_prob = self.risk_assessor.predict_proba(features_scaled)[0][1]
             except Exception as pred_error:
                 self.logger.warning(f"Prediction error, using fallback: {pred_error}")
                 return self._fallback_prediction(signal_data)
 
             # Calculate overall confidence with bounds checking
-            confidence = max(0, min(100, float(profit_prob * 100)))
+            confidence = max(0, min(100, profit_prob * 100))
 
             # Adjust based on market insights
-            try:
-                confidence = self._adjust_confidence_with_insights(signal_data, confidence)
-            except Exception as insight_error:
-                self.logger.debug(f"Market insights adjustment failed: {insight_error}")
+            confidence = self._adjust_confidence_with_insights(signal_data, confidence)
 
             # IMPROVED FILTERING - Less restrictive but still quality-focused
-            signal_strength = float(signal_data.get('signal_strength', 50))
+            signal_strength = signal_data.get('signal_strength', 50)
 
-            # Multi-factor decision making with safe comparisons
-            try:
-                if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3 and signal_strength >= 80:
-                    prediction = 'highly_favorable'
-                elif confidence >= 65 and profit_amount > 0 and risk_prob < 0.4 and signal_strength >= 70:
-                    prediction = 'favorable'
-                elif confidence >= 55 and profit_amount > 0 and risk_prob < 0.5 and signal_strength >= 60:
-                    prediction = 'above_neutral'
-                elif confidence >= 45 and signal_strength >= 85:  # High signal strength can override ML
-                    prediction = 'strength_override'
-                else:
-                    # More informative rejection reasons
-                    rejection_reason = []
-                    if confidence < 45:
-                        rejection_reason.append(f"Low ML confidence ({confidence:.1f}%)")
-                    if profit_amount <= 0:
-                        rejection_reason.append("Negative expected profit")
-                    if risk_prob >= 0.5:
-                        rejection_reason.append(f"High risk probability ({risk_prob*100:.1f}%)")
-                    if signal_strength < 60:
-                        rejection_reason.append(f"Low signal strength ({signal_strength:.1f}%)")
-
-                    return {
-                        'prediction': 'filtered_out',
-                        'confidence': confidence,
-                        'expected_profit': profit_amount,
-                        'risk_probability': max(0, min(100, risk_prob * 100)),
-                        'recommendation': f'Signal filtered: {"; ".join(rejection_reason)}',
-                        'model_accuracy': self.model_performance.get('signal_accuracy', 0) * 100,
-                        'trades_learned_from': self.model_performance.get('total_trades_learned', 0),
-                        'rejection_reasons': rejection_reason
-                    }
+            # Multi-factor decision making
+            if confidence >= 75 and profit_amount > 0 and risk_prob < 0.3 and signal_strength >= 80:
+                prediction = 'highly_favorable'
+            elif confidence >= 65 and profit_amount > 0 and risk_prob < 0.4 and signal_strength >= 70:
+                prediction = 'favorable'
+            elif confidence >= 55 and profit_amount > 0 and risk_prob < 0.5 and signal_strength >= 60:
+                prediction = 'above_neutral'
+            elif confidence >= 45 and signal_strength >= 85:  # High signal strength can override ML
+                prediction = 'strength_override'
+            else:
+                # More informative rejection reasons
+                rejection_reason = []
+                if confidence < 45:
+                    rejection_reason.append(f"Low ML confidence ({confidence:.1f}%)")
+                if profit_amount <= 0:
+                    rejection_reason.append("Negative expected profit")
+                if risk_prob >= 0.5:
+                    rejection_reason.append(f"High risk probability ({risk_prob*100:.1f}%)")
+                if signal_strength < 60:
+                    rejection_reason.append(f"Low signal strength ({signal_strength:.1f}%)")
 
                 return {
-                    'prediction': prediction,
+                    'prediction': 'filtered_out',
                     'confidence': confidence,
                     'expected_profit': profit_amount,
-                    'risk_probability': max(0, min(100, risk_prob * 100)),
-                    'recommendation': self._get_ml_recommendation(prediction, confidence, profit_amount, risk_prob),
+                    'risk_probability': risk_prob * 100,
+                    'recommendation': f'Signal filtered: {"; ".join(rejection_reason)}',
                     'model_accuracy': self.model_performance.get('signal_accuracy', 0) * 100,
                     'trades_learned_from': self.model_performance.get('total_trades_learned', 0),
-                    'signal_strength': signal_strength
+                    'rejection_reasons': rejection_reason
                 }
 
-            except Exception as decision_error:
-                self.logger.error(f"Decision making error: {decision_error}")
-                return self._fallback_prediction(signal_data)
+            return {
+                'prediction': prediction,
+                'confidence': confidence,
+                'expected_profit': profit_amount,
+                'risk_probability': risk_prob * 100,
+                'recommendation': self._get_ml_recommendation(prediction, confidence, profit_amount, risk_prob),
+                'model_accuracy': self.model_performance.get('signal_accuracy', 0) * 100,
+                'trades_learned_from': self.model_performance.get('total_trades_learned', 0),
+                'signal_strength': signal_strength
+            }
 
         except Exception as e:
             self.logger.error(f"Error in ML prediction: {e}")
@@ -1176,15 +1006,6 @@ class AdvancedMLTradeAnalyzer:
     def _get_ml_recommendation(self, prediction: str, confidence: float, profit: float, risk: float) -> str:
         """Get ML-based recommendation"""
         return "Signal Strength Based: Favorable"
-
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB"""
-        try:
-            import psutil
-            process = psutil.Process(os.getpid())
-            return round(process.memory_info().rss / 1024 / 1024, 1)
-        except Exception:
-            return 0.0
 
     def _fallback_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback prediction when ML models not available - balanced approach"""
@@ -1406,21 +1227,11 @@ class UltimateTradingBot:
         self.closed_trades_scanner = None
         if self.bot_token:
             try:
-                # Try to import from local directory first
-                import sys
-                from pathlib import Path
-                current_dir = Path(__file__).parent
-                sys.path.insert(0, str(current_dir))
-                
                 from telegram_closed_trades_scanner import TelegramClosedTradesScanner
                 self.closed_trades_scanner = TelegramClosedTradesScanner(self.bot_token, self.target_channel)
                 self.logger.info("📊 Telegram Closed Trades Scanner initialized")
-            except ImportError as import_error:
-                self.logger.warning(f"Telegram closed trades scanner not available: {import_error}")
-                self.closed_trades_scanner = None
             except Exception as e:
                 self.logger.warning(f"Could not initialize closed trades scanner: {e}")
-                self.closed_trades_scanner = None
 
         self.logger.info("🚀 Ultimate Trading Bot initialized with Advanced ML")
         self._write_pid_file()
@@ -3183,14 +2994,9 @@ Exchange: BinanceFutures"""
 
     def generate_chart(self, symbol: str, df: pd.DataFrame, signal: Dict[str, Any]) -> Optional[str]:
         """Generate professional dynamic candlestick chart with perfect styling"""
-        fig = None
         try:
-            if not CHART_AVAILABLE:
-                self.logger.debug(f"Chart libraries not available for {symbol}")
-                return None
-                
-            if df is None or len(df) < 10:
-                self.logger.debug(f"Insufficient data for {symbol} chart: {len(df) if df is not None else 0} candles")
+            if not CHART_AVAILABLE or df is None or len(df) < 10:
+                self.logger.warning(f"Chart generation skipped for {symbol}: insufficient data or libraries")
                 return None
 
             # Prepare data for candlestick chart
@@ -3198,7 +3004,7 @@ Exchange: BinanceFutures"""
             chart_df = df.tail(data_len).copy()
 
             if len(chart_df) < 5:
-                self.logger.debug(f"Not enough chart data for {symbol}: {len(chart_df)} candles")
+                plt.close() if 'fig' in locals() else None
                 return None
 
             # Create professional chart layout
@@ -3401,22 +3207,9 @@ Exchange: BinanceFutures"""
 
         except Exception as e:
             self.logger.error(f"Error generating candlestick chart for {symbol}: {e}")
-            # Ensure proper cleanup
-            try:
-                if fig is not None:
-                    plt.close(fig)
-                elif CHART_AVAILABLE:
-                    plt.close('all')  # Close any stray figures
-            except Exception as cleanup_error:
-                self.logger.debug(f"Chart cleanup error: {cleanup_error}")
+            if 'fig' in locals():
+                plt.close(fig)
             return None
-        finally:
-            # Additional cleanup to prevent memory leaks
-            if CHART_AVAILABLE:
-                try:
-                    plt.ioff()  # Turn off interactive mode
-                except Exception:
-                    pass
 
     async def send_photo(self, chat_id: str, photo_data: str, caption: str = "") -> bool:
         """Send photo to Telegram"""
@@ -3643,7 +3436,7 @@ Type `/help` for complete command list
 **💾 Data & Logs:**
 • **Persistent Logs:** {persistent_logs_count}
 • **Session Duration:** {uptime.days}d {uptime.seconds//3600}h {(uptime.seconds%3600)//60}m
-• **Memory Usage:** {self._get_memory_usage()} MB
+• **Memory Usage:** {self._get_memory_usage() if hasattr(self, '_get_memory_usage') else 'N/A'} MB
 
 **📊 Active Symbols:** {active_symbols_list}"""
                 await self.send_message(chat_id, stats_msg)
@@ -5244,26 +5037,16 @@ Use /train to manually scan and train""")
         """Scan channel for closed trades and train ML"""
         try:
             if not self.closed_trades_scanner:
-                self.logger.info("📊 Closed trades scanner not available - using alternative training method")
-                # Alternative: scan recent signals and simulate outcomes for training
-                await self._alternative_training_method()
+                self.logger.warning("Closed trades scanner not available")
                 return
 
             self.logger.info("🔍 Scanning Telegram channel for closed trades...")
 
             # First get unprocessed trades from database
-            try:
-                unprocessed_trades = await self.closed_trades_scanner.get_unprocessed_trades()
-            except Exception as db_error:
-                self.logger.warning(f"Database access error: {db_error}")
-                unprocessed_trades = []
+            unprocessed_trades = await self.closed_trades_scanner.get_unprocessed_trades()
 
             # Scan for new closed trades
-            try:
-                new_closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=48)
-            except Exception as scan_error:
-                self.logger.warning(f"Channel scanning error: {scan_error}")
-                new_closed_trades = []
+            new_closed_trades = await self.closed_trades_scanner.scan_for_closed_trades(hours_back=48)
 
             # Combine all trades for processing
             all_trades = unprocessed_trades + new_closed_trades
@@ -5288,19 +5071,13 @@ Use /train to manually scan and train""")
                         continue
 
                 # Mark trades as processed
-                if processed_ids and hasattr(self.closed_trades_scanner, 'mark_trades_as_processed'):
-                    try:
-                        await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
-                    except Exception as mark_error:
-                        self.logger.warning(f"Error marking trades as processed: {mark_error}")
+                if processed_ids:
+                    await self.closed_trades_scanner.mark_trades_as_processed(processed_ids)
 
                 # Retrain ML models with new data if we have enough trades
                 if processed_count >= 5:
-                    try:
-                        await self.ml_analyzer.retrain_models()
-                        self.logger.info(f"✅ ML models retrained with {processed_count} closed trades")
-                    except Exception as retrain_error:
-                        self.logger.error(f"ML retraining failed: {retrain_error}")
+                    await self.ml_analyzer.retrain_models()
+                    self.logger.info(f"✅ ML models retrained with {processed_count} closed trades")
                 else:
                     self.logger.info(f"📊 Processed {processed_count} trades (need 5+ for retraining)")
 
@@ -5309,111 +5086,6 @@ Use /train to manually scan and train""")
 
         except Exception as e:
             self.logger.error(f"Error scanning for closed trades: {e}")
-
-    async def _alternative_training_method(self):
-        """Alternative training method when closed trades scanner is not available"""
-        try:
-            self.logger.info("🔄 Using alternative training method...")
-            
-            # Generate synthetic training data based on current market conditions
-            synthetic_trades = []
-            
-            # Sample some symbols for training data
-            sample_symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT']
-            
-            for symbol in sample_symbols[:3]:  # Limit to prevent overload
-                try:
-                    df = await self.get_binance_data(symbol, '1h', 100)
-                    if df is not None and len(df) > 50:
-                        # Generate synthetic training data based on market analysis
-                        indicators = self.calculate_advanced_indicators(df)
-                        if indicators:
-                            # Create synthetic trade outcome based on indicators
-                            synthetic_trade = self._create_synthetic_trade(symbol, indicators)
-                            if synthetic_trade:
-                                synthetic_trades.append(synthetic_trade)
-                except Exception as synthetic_error:
-                    self.logger.debug(f"Error creating synthetic trade for {symbol}: {synthetic_error}")
-                    continue
-
-            # Process synthetic trades for ML training
-            if synthetic_trades:
-                for trade in synthetic_trades:
-                    try:
-                        await self.ml_analyzer.record_trade_outcome(trade)
-                    except Exception as record_error:
-                        self.logger.debug(f"Error recording synthetic trade: {record_error}")
-                        continue
-
-                self.logger.info(f"📊 Created {len(synthetic_trades)} synthetic training samples")
-                
-                # Try to retrain with synthetic data
-                if len(synthetic_trades) >= 3:
-                    try:
-                        await self.ml_analyzer.retrain_models()
-                        self.logger.info("✅ ML models updated with synthetic training data")
-                    except Exception as retrain_error:
-                        self.logger.warning(f"Synthetic data retraining failed: {retrain_error}")
-
-        except Exception as e:
-            self.logger.error(f"Alternative training method failed: {e}")
-
-    def _create_synthetic_trade(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Create synthetic trade data for training"""
-        try:
-            # Determine synthetic outcome based on indicators
-            signal_strength = 0
-            
-            # Simple scoring system
-            if indicators.get('ema_bullish', False):
-                signal_strength += 25
-            if indicators.get('rsi', 50) < 30 or indicators.get('rsi', 50) > 70:
-                signal_strength += 20
-            if indicators.get('macd_bullish', False):
-                signal_strength += 15
-            if indicators.get('volume_ratio', 1) > 1.2:
-                signal_strength += 20
-            if indicators.get('supertrend_direction', 0) != 0:
-                signal_strength += 20
-
-            # Create synthetic trade based on signal strength
-            direction = 'BUY' if indicators.get('ema_bullish', True) else 'SELL'
-            
-            # Simulate trade outcome
-            profit_probability = min(0.9, signal_strength / 100)
-            profit_loss = np.random.normal(2.0 if np.random.random() < profit_probability else -1.5, 1.0)
-            
-            return {
-                'symbol': symbol,
-                'direction': direction,
-                'entry_price': indicators.get('current_price', 100),
-                'exit_price': indicators.get('current_price', 100) * (1 + profit_loss/100),
-                'stop_loss': 0,
-                'take_profit_1': 0,
-                'take_profit_2': 0,
-                'take_profit_3': 0,
-                'signal_strength': signal_strength,
-                'leverage': 35,
-                'profit_loss': profit_loss,
-                'trade_result': 'PROFIT' if profit_loss > 0 else 'LOSS',
-                'duration_minutes': np.random.randint(30, 240),
-                'market_volatility': indicators.get('market_volatility', 0.02),
-                'volume_ratio': indicators.get('volume_ratio', 1.0),
-                'rsi_value': indicators.get('rsi', 50),
-                'macd_signal': 'bullish' if indicators.get('macd_bullish', False) else 'bearish',
-                'ema_alignment': indicators.get('ema_bullish', False),
-                'cvd_trend': indicators.get('cvd_trend', 'neutral'),
-                'indicators_data': ['synthetic_training_data'],
-                'ml_prediction': 'synthetic',
-                'ml_confidence': 50,
-                'entry_time': datetime.now() - timedelta(hours=np.random.randint(1, 48)),
-                'exit_time': datetime.now(),
-                'data_source': 'synthetic_training'
-            }
-
-        except Exception as e:
-            self.logger.debug(f"Error creating synthetic trade: {e}")
-            return None
 
     async def _scan_channel_for_closed_trades(self) -> List[Dict[str, Any]]:
         """Scan channel messages for closed/completed trades"""

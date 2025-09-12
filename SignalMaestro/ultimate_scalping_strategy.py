@@ -57,27 +57,41 @@ class UltimateScalpingStrategy:
         self.margin_type = "cross"  # Cross margin only
         self.risk_percentage = 2.0  # 2% risk per trade
         
-        # Signal filtering
-        self.min_signal_strength = 85  # High threshold for quality
-        self.min_trade_interval = 900  # 15 minutes minimum between trades
+        # Signal filtering - Optimized for higher win rate & more trades
+        self.min_signal_strength = 78  # Balanced threshold for quality vs frequency
+        self.min_trade_interval = 300  # 5 minutes minimum between trades
         self.last_trade_time = {}
         
-        # Indicator weights for confluence scoring
+        # Optimized indicator weights for confluence scoring (favor trend/momentum)
         self.indicator_weights = {
-            'supertrend': 0.15,
-            'ema_confluence': 0.15,
-            'rsi_divergence': 0.12,
-            'macd_momentum': 0.10,
-            'volume_profile': 0.10,
-            'bollinger_squeeze': 0.08,
-            'stochastic_oversold': 0.08,
-            'vwap_position': 0.07,
-            'support_resistance': 0.07,
-            'market_structure': 0.08
+            'supertrend': 0.18,        # Increased - Most reliable trend indicator
+            'ema_confluence': 0.17,    # Increased - Strong trend confirmation
+            'rsi_divergence': 0.14,    # Increased - Powerful momentum signal
+            'macd_momentum': 0.12,     # Increased - Key momentum indicator
+            'volume_profile': 0.09,    # Slightly reduced
+            'bollinger_squeeze': 0.08, # Maintained
+            'stochastic_oversold': 0.07, # Slightly reduced
+            'vwap_position': 0.06,     # Slightly reduced
+            'support_resistance': 0.06, # Slightly reduced
+            'market_structure': 0.03   # Reduced to balance total = 1.0
         }
         
         # Profitability optimizations
         self.profit_multipliers = [1.0, 2.0, 3.0]  # TP1, TP2, TP3 ratios
+        
+        # Adaptive signal strength thresholds based on market volatility
+        self.volatility_thresholds = {
+            'low': 0.5,      # ATR% < 0.5% - Low volatility
+            'normal': 1.5,   # ATR% 0.5-1.5% - Normal volatility
+            'high': 3.0      # ATR% > 1.5% - High volatility
+        }
+        
+        # Adaptive minimum signal strength based on volatility
+        self.adaptive_signal_strength = {
+            'low': self.min_signal_strength - 8,     # 70% in low volatility
+            'normal': self.min_signal_strength,      # 78% in normal volatility
+            'high': self.min_signal_strength + 7     # 85% in high volatility
+        }
         
     async def analyze_symbol(self, symbol: str, ohlcv_data: Dict[str, List]) -> Optional[UltimateSignal]:
         """Analyze symbol with ultimate scalping strategy"""
@@ -100,10 +114,17 @@ class UltimateScalpingStrategy:
             for tf, df in tf_data.items():
                 indicators[tf] = await self._calculate_ultimate_indicators(df)
             
-            # Generate signal with confluence analysis
-            signal = await self._generate_ultimate_signal(symbol, indicators, tf_data)
+            # Get market volatility for adaptive thresholding
+            primary_tf = '1h' if '1h' in indicators else '15m' if '15m' in indicators else list(indicators.keys())[0]
+            atr = indicators[primary_tf].get('atr', 0)
+            current_price = indicators[primary_tf].get('current_price', 1)
+            volatility_state = self._get_market_volatility_state(atr, current_price)
+            adaptive_threshold = self._get_adaptive_signal_threshold(volatility_state)
             
-            if signal and signal.signal_strength >= self.min_signal_strength:
+            # Generate signal with confluence analysis
+            signal = await self._generate_ultimate_signal(symbol, indicators, tf_data, volatility_state)
+            
+            if signal and signal.signal_strength >= adaptive_threshold:
                 # Record trade time
                 self.last_trade_time[symbol] = datetime.now()
                 return signal
@@ -115,12 +136,30 @@ class UltimateScalpingStrategy:
             return None
     
     def _can_trade_symbol(self, symbol: str) -> bool:
-        """Check if we can trade this symbol (15-minute minimum interval)"""
+        """Check if we can trade this symbol (5-minute minimum interval)"""
         if symbol not in self.last_trade_time:
             return True
         
         time_diff = (datetime.now() - self.last_trade_time[symbol]).total_seconds()
         return time_diff >= self.min_trade_interval
+    
+    def _get_market_volatility_state(self, atr: float, current_price: float) -> str:
+        """Determine market volatility state for adaptive signal strength"""
+        try:
+            atr_percentage = (atr / current_price) * 100
+            
+            if atr_percentage < self.volatility_thresholds['low']:
+                return 'low'
+            elif atr_percentage < self.volatility_thresholds['normal']:
+                return 'normal'
+            else:
+                return 'high'
+        except:
+            return 'normal'  # Default to normal volatility
+    
+    def _get_adaptive_signal_threshold(self, volatility_state: str) -> float:
+        """Get adaptive signal strength threshold based on market volatility"""
+        return self.adaptive_signal_strength.get(volatility_state, self.min_signal_strength)
     
     def _prepare_dataframe(self, ohlcv: List[List]) -> pd.DataFrame:
         """Prepare OHLCV dataframe"""
@@ -640,8 +679,8 @@ class UltimateScalpingStrategy:
         except:
             return {'structure': 'unclear', 'strength': 20}
     
-    async def _generate_ultimate_signal(self, symbol: str, indicators: Dict[str, Dict], tf_data: Dict[str, pd.DataFrame]) -> Optional[UltimateSignal]:
-        """Generate ultimate signal with all indicators confluence"""
+    async def _generate_ultimate_signal(self, symbol: str, indicators: Dict[str, Dict], tf_data: Dict[str, pd.DataFrame], volatility_state: str = 'normal') -> Optional[UltimateSignal]:
+        """Generate ultimate signal with all indicators confluence and adaptive filtering"""
         try:
             # Use primary timeframe for signal generation (15m or 1h)
             primary_tf = '1h' if '1h' in indicators else '15m' if '15m' in indicators else list(indicators.keys())[0]
@@ -722,15 +761,39 @@ class UltimateScalpingStrategy:
             elif ms.get('structure') == 'downtrend':
                 bearish_score += self.indicator_weights['market_structure'] * (ms.get('strength', 0) / 100)
             
-            # Determine signal direction and strength
-            if bullish_score > bearish_score and bullish_score > 0.6:
-                direction = 'LONG'
-                signal_strength = min(bullish_score * 100, 100)
-            elif bearish_score > bullish_score and bearish_score > 0.6:
-                direction = 'SHORT'
-                signal_strength = min(bearish_score * 100, 100)
+            # Enhanced signal direction determination with adaptive filtering
+            # Adjust confluence requirement based on volatility
+            base_confluence_req = 0.6
+            if volatility_state == 'high':
+                confluence_requirement = base_confluence_req + 0.1  # Require 70% confluence in high volatility
+            elif volatility_state == 'low':
+                confluence_requirement = base_confluence_req - 0.05  # Accept 55% confluence in low volatility
             else:
-                return None  # Not enough confluence
+                confluence_requirement = base_confluence_req  # 60% confluence in normal volatility
+            
+            # Additional reliability checks for higher win rate
+            trend_momentum_score = 0
+            trend_momentum_score += (st.get('strength', 0) / 100) * self.indicator_weights['supertrend']
+            trend_momentum_score += (ema.get('strength', 0) / 100) * self.indicator_weights['ema_confluence']
+            trend_momentum_score += (macd.get('strength', 0) / 100) * self.indicator_weights['macd_momentum']
+            
+            # Require strong trend/momentum signals for reliability
+            min_trend_momentum = 0.25 if volatility_state == 'high' else 0.20
+            
+            if (bullish_score > bearish_score and 
+                bullish_score > confluence_requirement and 
+                trend_momentum_score > min_trend_momentum):
+                direction = 'LONG'
+                # Boost signal strength for strong trend confluence
+                signal_strength = min(bullish_score * 100 * (1 + trend_momentum_score), 100)
+            elif (bearish_score > bullish_score and 
+                  bearish_score > confluence_requirement and 
+                  trend_momentum_score > min_trend_momentum):
+                direction = 'SHORT'
+                # Boost signal strength for strong trend confluence  
+                signal_strength = min(bearish_score * 100 * (1 + trend_momentum_score), 100)
+            else:
+                return None  # Not enough confluence or trend strength
             
             # Calculate precise SL and TP levels
             atr = primary_indicators.get('atr', current_price * 0.02)

@@ -1977,7 +1977,7 @@ class UltimateTradingBot:
             # Dynamic 3-trade limit check
             if len(self.active_trades) >= self.max_concurrent_trades:
                 self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Waiting for trades to close.")
-                break # This should be a return None, not break
+                return None
 
             if symbol in self.active_symbols:
                 self.logger.debug(f"🔒 Skipping {symbol} - active trade already exists")
@@ -4144,7 +4144,7 @@ Use /train to manually scan and train""")
                         # Dynamic 3-trade limit check
                         if len(self.active_trades) >= self.max_concurrent_trades:
                             self.logger.info(f"🔒 Maximum concurrent trades reached ({self.max_concurrent_trades}). Waiting for trades to close.")
-                            break # This should be a return None, not break
+                            break
 
                         try:
                             self.signal_counter += 1

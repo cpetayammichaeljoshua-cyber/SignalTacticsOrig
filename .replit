@@ -182,6 +182,15 @@ mode = "sequential"
 task = "shell.exec"
 args = "python run_enhanced_backtest_sequence.py"
 
+[[workflows.workflow]]
+name = "Comprehensive Dynamic Signal Bot"
+author = 46895846
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_comprehensive_dynamic_signal_bot.py"
+
 [[ports]]
 localPort = 3000
 externalPort = 80

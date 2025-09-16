@@ -43,7 +43,7 @@ class TechnicalSignalProvider:
             self.price_action_analyzer = None
             self.logger.warning("⚠️ Advanced Price Action Analyzer not available")
     
-    def generate_signals(self, df: pd.DataFrame, symbol: str) -> List[Dict[str, Any]]:
+    async def generate_signals(self, df: pd.DataFrame, symbol: str) -> List[Dict[str, Any]]:
         """Generate technical analysis signals with adaptive filtering and advanced price action"""
         
         try:
@@ -431,7 +431,7 @@ class MLSignalFilter:
         
         self.logger.debug(f"Adaptive confidence threshold adjusted to {self.adaptive_confidence:.3f}")
 
-def generate_trading_signals(df: pd.DataFrame, symbol: str, 
+async def generate_trading_signals(df: pd.DataFrame, symbol: str, 
                            use_ml_filter: bool = True) -> List[Dict[str, Any]]:
     """
     Generate filtered trading signals for backtesting
@@ -447,7 +447,7 @@ def generate_trading_signals(df: pd.DataFrame, symbol: str,
     
     # Generate technical signals
     signal_provider = TechnicalSignalProvider()
-    signals = signal_provider.generate_signals(df, symbol)
+    signals = await signal_provider.generate_signals(df, symbol)
     
     if not signals:
         return []

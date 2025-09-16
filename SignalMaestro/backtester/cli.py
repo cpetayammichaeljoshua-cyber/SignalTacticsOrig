@@ -104,7 +104,7 @@ class ComprehensiveBacktester:
                     continue
                 
                 # Generate trading signals
-                signals = generate_trading_signals(df, symbol, use_ml_filter=True)
+                signals = await generate_trading_signals(df, symbol, use_ml_filter=True)
                 self.signals_generated += len(signals)
                 
                 if not signals:

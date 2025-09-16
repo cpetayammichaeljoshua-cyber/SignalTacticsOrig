@@ -209,15 +209,6 @@ mode = "sequential"
 task = "shell.exec"
 args = "python perfect_telegram_signal_pusher.py"
 
-[[workflows.workflow]]
-name = "Live Advanced Trading Bot"
-author = 46895846
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python live_advanced_trading_bot.py"
-
 [[ports]]
 localPort = 3000
 externalPort = 80

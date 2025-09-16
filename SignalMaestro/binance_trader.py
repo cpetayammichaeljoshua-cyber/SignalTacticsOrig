@@ -23,7 +23,7 @@ from technical_analysis import TechnicalAnalysis
 # Enhanced error handling imports
 try:
     from advanced_error_handler import (
-        handle_errors, RetryConfigs, CircuitBreaker,
+        handle_errors, RetryConfig, RetryConfigs, CircuitBreaker,
         APIException, NetworkException, TradingException,
         InsufficientFundsException, RateLimitException
     )
@@ -32,14 +32,17 @@ try:
 except ImportError:
     ENHANCED_ERROR_HANDLING = False
     # Create fallback decorators
-    def handle_errors(*args, **kwargs):
+    def handle_errors(retry_config=None, circuit_breaker_name=None, context=None):
         def decorator(func):
             return func
         return decorator
-    def resilient_api_call(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+    def resilient_api_call(func):
+        return func
+    
+    # Create fallback RetryConfigs class
+    class RetryConfigs:
+        class API_RETRY:
+            pass
 
 class BinanceTrader:
     """Binance trading interface using ccxt with enhanced error handling"""
@@ -124,7 +127,7 @@ class BinanceTrader:
                 self.logger.error(f"Binance completely inaccessible: {e2}")
                 return False
     
-    @handle_errors(max_retries=3, retry_delay=2.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @handle_errors(RetryConfigs.API_RETRY, "binance_api")
     @resilient_api_call
     async def get_account_balance(self) -> Dict[str, Dict[str, float]]:
         """Get account balance for all assets with enhanced error handling"""
@@ -187,7 +190,7 @@ class BinanceTrader:
             self.logger.error(f"Error calculating portfolio value: {e}")
             return 0.0
     
-    @handle_errors(max_retries=3, retry_delay=1.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @handle_errors(RetryConfigs.API_RETRY, "binance_api")
     @resilient_api_call
     async def get_current_price(self, symbol: str) -> float:
         """Get current market price for symbol with enhanced error handling"""
@@ -223,7 +226,7 @@ class BinanceTrader:
                     raise APIException(f"API error getting price for {symbol}: {e}")
             return 0.0
     
-    @handle_errors(max_retries=3, retry_delay=1.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @handle_errors(RetryConfigs.API_RETRY, "binance_api")
     @resilient_api_call
     async def get_market_data(self, symbol: str, timeframe: str = '1h', limit: int = 100) -> List[List]:
         """Get OHLCV market data with enhanced error handling"""

@@ -27,7 +27,7 @@ try:
     from config import Config
     from signal_parser import SignalParser
     from risk_manager import RiskManager
-    from binance_trader import BinanceTrader
+    from SignalMaestro.binance_trader import BinanceTrader
     from database import Database
     from advanced_trading_strategy import AdvancedTradingStrategy
     from ultimate_trading_bot import UltimateTradingBot

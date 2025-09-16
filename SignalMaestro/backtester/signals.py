@@ -10,6 +10,13 @@ from typing import Dict, Any, List, Optional, Protocol
 from abc import ABC, abstractmethod
 import logging
 
+# Import advanced price action analyzer
+try:
+    from advanced_price_action_analyzer import AdvancedPriceActionAnalyzer
+    ADVANCED_PRICE_ACTION_AVAILABLE = True
+except ImportError:
+    ADVANCED_PRICE_ACTION_AVAILABLE = False
+
 class SignalProvider(Protocol):
     """Signal provider interface"""
     
@@ -19,7 +26,7 @@ class SignalProvider(Protocol):
         pass
 
 class TechnicalSignalProvider:
-    """Technical analysis signal generator with adaptive thresholds"""
+    """Technical analysis signal generator with adaptive thresholds and advanced price action"""
     
     def __init__(self, min_signal_strength: float = 60.0, adaptive_threshold: bool = True):
         self.logger = logging.getLogger(__name__)
@@ -27,9 +34,17 @@ class TechnicalSignalProvider:
         self.adaptive_threshold = adaptive_threshold
         self.signals_generated = 0
         self.target_signals_per_week = 20  # Minimum to avoid 0-trade runs
+        
+        # Initialize advanced price action analyzer
+        if ADVANCED_PRICE_ACTION_AVAILABLE:
+            self.price_action_analyzer = AdvancedPriceActionAnalyzer()
+            self.logger.info("✅ Advanced Price Action Analyzer initialized")
+        else:
+            self.price_action_analyzer = None
+            self.logger.warning("⚠️ Advanced Price Action Analyzer not available")
     
     def generate_signals(self, df: pd.DataFrame, symbol: str) -> List[Dict[str, Any]]:
-        """Generate technical analysis signals with adaptive filtering"""
+        """Generate technical analysis signals with adaptive filtering and advanced price action"""
         
         try:
             if len(df) < 50:
@@ -40,7 +55,40 @@ class TechnicalSignalProvider:
             # Calculate additional technical indicators
             df = self._add_signal_indicators(df.copy())
             
-            # Generate signals for recent periods (last 20% of data)
+            # Generate advanced price action signals if available
+            if self.price_action_analyzer:
+                try:
+                    advanced_signal = await self.price_action_analyzer.generate_trading_signal(df, symbol)
+                    if advanced_signal and advanced_signal.confidence >= 0.6:
+                        # Convert to standard signal format
+                        pa_signal = {
+                            'timestamp': advanced_signal.timestamp,
+                            'symbol': symbol,
+                            'direction': advanced_signal.direction,
+                            'signal_strength': advanced_signal.strength,
+                            'price': advanced_signal.entry_price,
+                            'atr_percentage': self._calculate_atr_percentage(df),
+                            'volume_ratio': df.get('volume_ratio', pd.Series([1.0] * len(df))).iloc[-1],
+                            'trend_strength': advanced_signal.timing_score,
+                            'rsi': df.get('rsi', pd.Series([50] * len(df))).iloc[-1],
+                            'reasons': ['Advanced Price Action Analysis'],
+                            'volatility_category': self._get_volatility_category(self._calculate_atr_percentage(df)),
+                            'liquidity_analysis': advanced_signal.liquidity_analysis,
+                            'schelling_points': advanced_signal.schelling_points,
+                            'order_flow_analysis': advanced_signal.order_flow_analysis,
+                            'strategic_positioning': advanced_signal.strategic_positioning,
+                            'risk_reward_ratio': advanced_signal.risk_reward_ratio,
+                            'advanced_stop_losses': {
+                                'primary_sl': advanced_signal.stop_loss,
+                                'take_profits': advanced_signal.take_profit
+                            }
+                        }
+                        signals.append(pa_signal)
+                        self.logger.info(f"✅ Generated advanced price action signal for {symbol}")
+                except Exception as e:
+                    self.logger.warning(f"Advanced price action analysis failed: {e}")
+            
+            # Generate traditional technical signals
             start_idx = int(len(df) * 0.8)  # Start from 80% through the data
             
             for i in range(start_idx, len(df) - 1):
@@ -58,19 +106,20 @@ class TechnicalSignalProvider:
                 original_threshold = self.min_signal_strength
                 self.min_signal_strength = max(50.0, self.min_signal_strength - 10.0)
                 
-                signals = []
+                additional_signals = []
                 for i in range(start_idx, len(df) - 1):
                     current_row = df.iloc[i]
                     prev_row = df.iloc[i - 1] if i > 0 else current_row
                     
                     signal = self._evaluate_signal_conditions(current_row, prev_row, symbol, i)
                     if signal:
-                        signals.append(signal)
+                        additional_signals.append(signal)
                 
+                signals.extend(additional_signals)
                 self.min_signal_strength = original_threshold  # Reset
             
             self.signals_generated += len(signals)
-            self.logger.info(f"Generated {len(signals)} signals for {symbol}")
+            self.logger.info(f"Generated {len(signals)} total signals for {symbol} (including advanced price action)")
             
             return signals
             
@@ -254,6 +303,21 @@ class TechnicalSignalProvider:
             self.logger.error(f"Error evaluating signal conditions: {e}")
             return None
     
+    def _calculate_atr_percentage(self, df: pd.DataFrame, period: int = 14) -> float:
+        """Calculate ATR as percentage of price"""
+        try:
+            high_low = df['high'] - df['low']
+            high_close = np.abs(df['high'] - df['close'].shift())
+            low_close = np.abs(df['low'] - df['close'].shift())
+            
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(window=period).mean().iloc[-1]
+            atr_percentage = (atr / df['close'].iloc[-1]) * 100
+            
+            return atr_percentage if not np.isnan(atr_percentage) else 1.0
+        except Exception:
+            return 1.0
+
     def _get_volatility_category(self, atr_percentage: float) -> str:
         """Get volatility category string"""
         if atr_percentage <= 0.5:

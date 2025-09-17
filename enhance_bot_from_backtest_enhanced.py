@@ -11,6 +11,7 @@ import logging
 import json
 import sys
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List
@@ -36,6 +37,24 @@ class EnhancedBacktestOptimizer:
             ]
         )
         return logging.getLogger(__name__)
+    
+    def _extract_percent_after_colon(self, line: str) -> float:
+        """Extract percentage value after colon, handling annotations"""
+        try:
+            sub = line.split(':', 1)[1]
+            # First try to find percentage with % symbol
+            m = re.search(r"([-+]?\d+(?:\.\d+)?)\s*%", sub)
+            if m:
+                return float(m.group(1))
+            # Fallback to first number
+            m = re.search(r"([-+]?\d+(?:\.\d+)?)", sub)
+            if m:
+                val = float(m.group(1))
+                # If value is <= 1, assume it's a fraction and convert to percentage
+                return val * 100 if val <= 1 else val
+            return 0.0
+        except (ValueError, AttributeError):
+            return 0.0
     
     async def analyze_advanced_backtest_results(self) -> Dict[str, Any]:
         """Analyze enhanced backtest results with advanced analytics"""
@@ -97,8 +116,8 @@ class EnhancedBacktestOptimizer:
             for line in lines:
                 if 'Total Trades:' in line:
                     metrics['total_trades'] = int(line.split(':')[1].strip())
-                elif 'Win Rate:' in line and '%' in line:
-                    metrics['win_rate'] = float(line.split(':')[1].strip().replace('%', ''))
+                elif 'Win Rate:' in line:
+                    metrics['win_rate'] = self._extract_percent_after_colon(line)
                 elif 'Total P&L:' in line:
                     pnl_str = line.split(':')[1].strip().replace('$', '').replace(',', '')
                     metrics['total_pnl'] = float(pnl_str)

@@ -2,49 +2,49 @@
 ================================================================================
 
 📊 BASIC PERFORMANCE METRICS
-Total Trades: 163
-Winning Trades: 91
-Losing Trades: 72
-Win Rate: 55.8%
+Total Trades: 161
+Winning Trades: 104
+Losing Trades: 57
+Win Rate: 64.6%
 
 💰 FINANCIAL PERFORMANCE
-Total P&L: $142.89
-Return: 1428.9%
-Final Capital: $152.89
-Gross Profit: $195.55
-Gross Loss: $52.65
-Profit Factor: 3.71
+Total P&L: $181.04
+Return: 1810.4%
+Final Capital: $191.04
+Gross Profit: $221.21
+Gross Loss: $40.18
+Profit Factor: 5.51
 
 🔥 CONSECUTIVE PERFORMANCE
-Max Consecutive Wins: 6
+Max Consecutive Wins: 9
 Max Consecutive Losses: 4
-Current Consecutive Wins: 0
-Current Consecutive Losses: 1
+Current Consecutive Wins: 5
+Current Consecutive Losses: 0
 
 ⏰ TIMING METRICS
-Trades per Hour: 0.970
-Trades per Day: 23.29
-Avg Trade Duration: 127.7 minutes
+Trades per Hour: 0.958
+Trades per Day: 23.00
+Avg Trade Duration: 134.0 minutes
 
 📉 RISK METRICS
-Max Drawdown: 5.2%
-Sharpe Ratio: 0.62
-Peak Capital: $154.54
+Max Drawdown: 8.2%
+Sharpe Ratio: 0.78
+Peak Capital: $191.04
 
 ⚡ LEVERAGE ANALYSIS
-Avg Leverage Used: 41.9x
-Leverage Efficiency: 55.9%
+Avg Leverage Used: 41.8x
+Leverage Efficiency: 55.7%
 Performance by Leverage: 28 levels analyzed
 
 📈 ADVANCED ANALYTICS
 Direction Performance:
-  Long Trades: 92 (Win Rate: 50.0%)
-  Short Trades: 71 (Win Rate: 63.4%)
-  Best Direction: SHORT
+  Long Trades: 91 (Win Rate: 63.7%)
+  Short Trades: 70 (Win Rate: 65.7%)
+  Best Direction: LONG
 
 Commission Impact:
-  Total Commission: $3.48
+  Total Commission: $3.44
   Avg per Trade: $0.021
-  Impact on Returns: 2.43%
+  Impact on Returns: 1.90%
 
 ================================================================================

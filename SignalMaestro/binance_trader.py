@@ -124,7 +124,7 @@ class BinanceTrader:
                 self.logger.error(f"Binance completely inaccessible: {e2}")
                 return False
     
-    @handle_errors(max_retries=3, retry_delay=2.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @handle_errors(retry_config=RetryConfigs.API_RETRY)
     @resilient_api_call
     async def get_account_balance(self) -> Dict[str, Dict[str, float]]:
         """Get account balance for all assets with enhanced error handling"""
@@ -187,7 +187,7 @@ class BinanceTrader:
             self.logger.error(f"Error calculating portfolio value: {e}")
             return 0.0
     
-    @handle_errors(max_retries=3, retry_delay=1.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @handle_errors(retry_config=RetryConfigs.API_RETRY)
     @resilient_api_call
     async def get_current_price(self, symbol: str) -> float:
         """Get current market price for symbol with enhanced error handling"""
@@ -223,7 +223,7 @@ class BinanceTrader:
                     raise APIException(f"API error getting price for {symbol}: {e}")
             return 0.0
     
-    @handle_errors(max_retries=3, retry_delay=1.0, exceptions=(NetworkException, APIException, RateLimitException))
+    @handle_errors(retry_config=RetryConfigs.API_RETRY)
     @resilient_api_call
     async def get_market_data(self, symbol: str, timeframe: str = '1h', limit: int = 100) -> List[List]:
         """Get OHLCV market data with enhanced error handling"""

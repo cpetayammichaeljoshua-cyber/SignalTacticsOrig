@@ -29,6 +29,10 @@ except ImportError:
     class MLTradeAnalyzer:
         def __init__(self):
             self.model_performance = {'signal_accuracy': 0.5}
+        
+        def retrain_models(self, *args, **kwargs):
+            """Fallback retrain method"""
+            return True
     
     class AdvancedErrorHandler:
         pass

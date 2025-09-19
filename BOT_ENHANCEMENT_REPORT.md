@@ -1,20 +1,20 @@
 
 # BOT ENHANCEMENT REPORT
-Generated on: 2025-09-17 09:10:54
+Generated on: 2025-09-17 09:31:52
 
 ## BACKTEST ANALYSIS SUMMARY
 {
-  "total_trades": 161,
-  "win_rate": 65.7,
-  "total_pnl": 181.04,
-  "return_percentage": 1810.4,
-  "profit_factor": 5.51,
-  "max_consecutive_wins": 9,
+  "total_trades": 163,
+  "win_rate": 63.4,
+  "total_pnl": 185.21,
+  "return_percentage": 1852.1,
+  "profit_factor": 5.49,
+  "max_consecutive_wins": 10,
   "max_consecutive_losses": 4,
-  "trades_per_hour": 0.958,
-  "max_drawdown": 8.2,
-  "sharpe_ratio": 0.78,
-  "avg_leverage": 41.8
+  "trades_per_hour": 0.97,
+  "max_drawdown": 7.1,
+  "sharpe_ratio": 0.77,
+  "avg_leverage": 41.9
 }
 
 ## OPTIMIZATION OPPORTUNITIES
@@ -25,7 +25,7 @@ Generated on: 2025-09-17 09:10:54
 ### Parameter Updates
 {
   "risk_percentage": 10.0,
-  "max_concurrent_trades": 4,
+  "max_concurrent_trades": 3,
   "max_leverage": 75,
   "sl1_percent": 1.5,
   "sl2_percent": 4.0,
@@ -33,8 +33,6 @@ Generated on: 2025-09-17 09:10:54
 }
 
 ### New Features Enabled
-- Aggressive signal mode
-- Higher concurrent trades limit
 - Enhanced leverage utilization
 
 

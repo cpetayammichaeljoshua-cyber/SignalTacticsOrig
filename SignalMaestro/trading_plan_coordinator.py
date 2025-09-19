@@ -64,13 +64,12 @@ class TradingPlanCoordinator:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Initialize all trading strategies
+        # Initialize MACD ANTI strategy - replaces all traditional strategies
+        from .macd_anti_strategy import MACDAntiStrategy
         self.strategies = {
-            'ultimate_scalping': UltimateScalpingStrategy(),
-            'fibonacci_time': AdvancedTimeFibonacciStrategy(),
-            'momentum_scalping': MomentumScalpingStrategy(),
-            'volume_breakout': VolumeBreakoutScalpingStrategy(),
-            'lightning_scalping': LightningScalpingStrategy()
+            'macd_anti_primary': MACDAntiStrategy(),
+            'macd_anti_secondary': MACDAntiStrategy(),
+            'macd_anti_tertiary': MACDAntiStrategy()
         }
         
         # Initialize ML analyzer for enhanced decision making
@@ -80,11 +79,9 @@ class TradingPlanCoordinator:
         self.max_concurrent_signals = 3  # Maximum simultaneous signals
         self.min_signal_spacing_minutes = 5  # Minimum time between signals for same symbol
         self.strategy_weights = {
-            'ultimate_scalping': 0.25,
-            'fibonacci_time': 0.22,
-            'momentum_scalping': 0.20,
-            'volume_breakout': 0.18,
-            'lightning_scalping': 0.15
+            'macd_anti_primary': 0.50,    # Primary MACD ANTI with highest weight
+            'macd_anti_secondary': 0.30,  # Secondary for confirmation
+            'macd_anti_tertiary': 0.20    # Tertiary for additional validation
         }
         
         # Active signal tracking
@@ -94,7 +91,14 @@ class TradingPlanCoordinator:
         
         # Performance tracking
         self.strategy_performance = {
-            strategy: {'signals_generated': 0, 'avg_strength': 0, 'success_rate': 0}
+            strategy: {
+                'signals_generated': 0, 
+                'avg_strength': 0, 
+                'success_rate': 0,
+                'macd_anti_accuracy': 0,
+                'ai_confidence_score': 0,
+                'anti_trend_success': 0
+            }
             for strategy in self.strategies.keys()
         }
         

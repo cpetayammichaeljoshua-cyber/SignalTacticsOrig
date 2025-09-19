@@ -1454,14 +1454,32 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 50
 
-    async def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Generate signal with ML-enhanced SL/TP levels"""
+    async def generate_macd_anti_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Generate MACD ANTI signal with AI-enhanced SL/TP levels using Replit's high-power model"""
         try:
+            from .macd_anti_strategy import MACDAntiStrategy
+            
             # Check cooldown first
             if not self.cooldown_manager.can_send_signal(symbol):
                 cooldown_status = self.cooldown_manager.get_cooldown_status(symbol)
                 self.logger.info(f"⏰ Signal blocked by cooldown for {symbol}. Remaining: {cooldown_status.get('symbol_cooldown_remaining', 0):.0f}s")
                 self.performance_stats['cooldown_blocks'] += 1
+                return None
+            
+            # Initialize MACD ANTI strategy with AI power
+            macd_anti = MACDAntiStrategy()
+            
+            # Prepare market data for MACD ANTI analysis
+            market_data = {
+                '5m': indicators.get('5m_data', []),
+                '15m': indicators.get('15m_data', []),
+                '1h': indicators.get('1h_data', [])
+            }
+            
+            # Generate MACD ANTI signal
+            macd_signal = await macd_anti.analyze_symbol(symbol, market_data)
+            
+            if not macd_signal:
                 return None
 
             # Basic signal strength calculation

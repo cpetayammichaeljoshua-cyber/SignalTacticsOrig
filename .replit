@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk"]
 
 [workflows]
-runButton = "Enhanced Backtest & Optimize"
+runButton = "MACD ANTI AI Strategy"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -181,6 +181,15 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python run_enhanced_backtest_sequence.py"
+
+[[workflows.workflow]]
+name = "MACD ANTI AI Strategy"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/macd_anti_strategy.py"
 
 [[ports]]
 localPort = 3000

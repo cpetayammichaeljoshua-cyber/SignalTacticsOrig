@@ -101,22 +101,50 @@ class AdvancedTradingStrategy:
 
     async def scan_markets(self) -> List[Dict[str, Any]]:
         """
-        Scan multiple markets for trading opportunities
+        Scan multiple markets for MACD ANTI trading opportunities
         """
+        from .macd_anti_strategy import MACDAntiStrategy
+        
+        macd_anti = MACDAntiStrategy()
         signals = []
 
         for symbol in self.symbols:
             try:
-                signal = await self.analyze_symbol(symbol)
-                if signal and signal.get('strength', 0) >= self.min_signal_strength:
+                # Get market data for MACD ANTI analysis
+                market_data = {}
+                market_data['5m'] = await self.binance_trader.get_market_data(symbol, '5m', 100)
+                market_data['15m'] = await self.binance_trader.get_market_data(symbol, '15m', 50)
+                market_data['1h'] = await self.binance_trader.get_market_data(symbol, '1h', 30)
+                
+                # Analyze with MACD ANTI strategy
+                macd_signal = await macd_anti.analyze_symbol(symbol, market_data)
+                
+                if macd_signal and macd_signal.signal_strength >= self.min_signal_strength:
+                    # Convert to standard format
+                    signal = {
+                        'symbol': symbol,
+                        'action': macd_signal.direction,
+                        'strength': macd_signal.signal_strength,
+                        'entry_price': macd_signal.entry_price,
+                        'stop_loss': macd_signal.stop_loss,
+                        'take_profit_1': macd_signal.tp1,
+                        'take_profit_2': macd_signal.tp2,
+                        'take_profit_3': macd_signal.tp3,
+                        'leverage': macd_signal.leverage,
+                        'strategy': 'MACD_ANTI_AI_POWERED',
+                        'ai_confidence': macd_signal.ai_confidence_score,
+                        'anti_trend_confidence': macd_signal.anti_trend_confidence,
+                        'macd_divergence': macd_signal.macd_divergence_strength,
+                        'market_regime': macd_signal.market_regime
+                    }
                     signals.append(signal)
 
             except Exception as e:
-                self.logger.error(f"Error analyzing {symbol}: {e}")
+                self.logger.error(f"Error analyzing {symbol} with MACD ANTI: {e}")
                 continue
 
-        # Sort by signal strength
-        signals.sort(key=lambda x: x.get('strength', 0), reverse=True)
+        # Sort by AI confidence and signal strength
+        signals.sort(key=lambda x: (x.get('ai_confidence', 0) + x.get('strength', 0)) / 2, reverse=True)
 
         # Apply rate limiting
         return signals[:self.max_signals_per_hour]

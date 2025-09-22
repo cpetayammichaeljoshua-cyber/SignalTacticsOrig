@@ -220,7 +220,7 @@ args = "python bot_health_monitor.py"
 
 [[ports]]
 localPort = 3000
-externalPort = 80
+externalPort = 9000
 
 [[ports]]
 localPort = 5000

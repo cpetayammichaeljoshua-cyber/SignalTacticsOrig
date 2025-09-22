@@ -227,6 +227,15 @@ mode = "sequential"
 task = "shell.exec"
 args = "python ultimate_error_fixer_and_continuous_runner.py"
 
+[[workflows.workflow]]
+name = "Enhanced Continuous Operation"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python enhanced_ultimate_error_fixer_and_continuous_runner.py"
+
 [[ports]]
 localPort = 3000
 externalPort = 9000

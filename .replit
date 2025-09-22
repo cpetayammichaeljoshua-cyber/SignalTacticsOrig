@@ -98,12 +98,14 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 
 
-[[workflows.Enhanced_Futures_Signal_Bot]]
-language = "python3"
-[workflows.Enhanced_Futures_Signal_Bot.metadata]
-agent = "agent"
-[workflows.Enhanced_Futures_Signal_Bot.run]
-start = ["python", "start_enhanced_futures_bot.py"]
+[[workflows.workflow]]
+name = "Enhanced Futures Signal Bot"
+author = "agent"
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_enhanced_futures_bot.py"
 
 task = "shell.exec"
 args = "python start_ml_enhanced_bot.py"

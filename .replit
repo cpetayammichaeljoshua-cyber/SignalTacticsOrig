@@ -248,5 +248,9 @@ externalPort = 5173
 localPort = 8080
 externalPort = 8080
 
+[[ports]]
+localPort = 8083
+externalPort = 80
+
 [deployment]
 run = ["sh", "-c", "python start_enhanced_bot_v2.py"]

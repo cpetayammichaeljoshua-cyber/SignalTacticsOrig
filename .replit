@@ -200,6 +200,24 @@ mode = "sequential"
 task = "shell.exec"
 args = "python run_ultimate_combined_workflow.py"
 
+[[workflows.workflow]]
+name = "Continuous Bot Operation"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python continuous_bot_manager.py"
+
+[[workflows.workflow]]
+name = "Bot Health Monitor"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python bot_health_monitor.py"
+
 [[ports]]
 localPort = 3000
 externalPort = 80

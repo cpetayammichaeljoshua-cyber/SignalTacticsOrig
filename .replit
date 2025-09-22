@@ -4,10 +4,10 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk"]
 
 [workflows]
-runButton = "Project"
+runButton = "Ultimate Error Fixer & Continuous Runner"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -96,6 +96,15 @@ author = 34160275
 mode = "sequential"
 
 [[workflows.workflow.tasks]]
+
+
+[[workflows.Enhanced_Futures_Signal_Bot]]
+language = "python3"
+[workflows.Enhanced_Futures_Signal_Bot.metadata]
+agent = "agent"
+[workflows.Enhanced_Futures_Signal_Bot.run]
+start = ["python", "start_enhanced_futures_bot.py"]
+
 task = "shell.exec"
 args = "python start_ml_enhanced_bot.py"
 
@@ -173,9 +182,72 @@ args = "cd SignalMaestro && python ultimate_trading_bot.py"
 [workflows.workflow.metadata]
 outputType = "console"
 
+[[workflows.workflow]]
+name = "Enhanced Backtest & Optimize"
+author = 47020040
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python run_enhanced_backtest_sequence.py"
+
+[[workflows.workflow]]
+name = "MACD ANTI AI Strategy"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/macd_anti_strategy.py"
+
+[[workflows.workflow]]
+name = "Ultimate Combined Workflow"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python run_ultimate_combined_workflow.py"
+
+[[workflows.workflow]]
+name = "Continuous Bot Operation"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python continuous_bot_manager.py"
+
+[[workflows.workflow]]
+name = "Bot Health Monitor"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python bot_health_monitor.py"
+
+[[workflows.workflow]]
+name = "Ultimate Error Fixer & Continuous Runner"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python ultimate_error_fixer_and_continuous_runner.py"
+
+[[workflows.workflow]]
+name = "Enhanced Continuous Operation"
+author = 47142833
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python enhanced_ultimate_error_fixer_and_continuous_runner.py"
+
 [[ports]]
 localPort = 3000
-externalPort = 80
+externalPort = 9000
 
 [[ports]]
 localPort = 5000
@@ -184,6 +256,10 @@ externalPort = 5173
 [[ports]]
 localPort = 8080
 externalPort = 8080
+
+[[ports]]
+localPort = 8083
+externalPort = 80
 
 [deployment]
 run = ["sh", "-c", "python start_enhanced_bot_v2.py"]

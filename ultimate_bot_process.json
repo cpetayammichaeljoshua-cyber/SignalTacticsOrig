@@ -1,7 +1,7 @@
 {
-  "pid": 567,
+  "pid": 1260,
   "command": "python start_ultimate_bot.py",
   "description": "Ultimate Trading Bot V3 (Primary)",
-  "started_at": "2025-09-22T11:54:25.554651",
+  "started_at": "2025-09-22T12:09:44.011440",
   "status": "running"
 }

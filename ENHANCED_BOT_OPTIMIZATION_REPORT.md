@@ -1,19 +1,19 @@
 
 # ENHANCED BOT OPTIMIZATION REPORT
-Generated on: 2025-09-22 11:54:20
+Generated on: 2025-09-22 12:09:38
 
 ## ADVANCED BACKTEST ANALYSIS SUMMARY
 {
-  "total_trades": 161,
-  "win_rate": 70.0,
-  "total_pnl": 169.79,
-  "return_percentage": 1697.9,
-  "profit_factor": 4.72,
-  "max_consecutive_wins": 10,
-  "max_consecutive_losses": 5,
-  "trades_per_hour": 0.958,
-  "max_drawdown": 3.9,
-  "sharpe_ratio": 0.74
+  "total_trades": 163,
+  "win_rate": 67.1,
+  "total_pnl": 194.85,
+  "return_percentage": 1948.5,
+  "profit_factor": 5.73,
+  "max_consecutive_wins": 12,
+  "max_consecutive_losses": 4,
+  "trades_per_hour": 0.97,
+  "max_drawdown": 16.4,
+  "sharpe_ratio": 0.84
 }
 
 ## ADVANCED FEATURE PERFORMANCE
@@ -186,7 +186,7 @@ Generated on: 2025-09-22 11:54:20
 
 
 ### Performance Enhancements
-- Win rate target increased to 80.0%
+- Win rate target increased to 77.1%
 - Risk-adjusted return optimization enabled
 - Advanced pattern recognition activated
 - Market regime detection implemented

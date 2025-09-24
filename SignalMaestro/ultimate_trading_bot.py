@@ -1272,6 +1272,16 @@ class UltimateTradingBot:
         self.logger.info("✅ CRITICAL SYSTEMS VERIFIED: 3SL/1TP system ACTIVE")
         self.logger.info("✅ CRITICAL SYSTEMS VERIFIED: StopLossIntegrator ACTIVE")
 
+        # CRITICAL: Initialize stop_loss_integrator IMMEDIATELY after verification
+        # This must be done early to prevent AttributeError in signal generation
+        if STOP_LOSS_INTEGRATOR_AVAILABLE:
+            self.stop_loss_integrator = StopLossIntegrator(self)
+            self.logger.info("✅ CRITICAL: stop_loss_integrator initialized EARLY to prevent AttributeError")
+        else:
+            # This should never happen due to the check above, but provide fallback
+            self.stop_loss_integrator = None
+            self.logger.critical("🚨 CRITICAL: stop_loss_integrator could not be initialized")
+
         # Process management
         self.pid_file = Path("ultimate_trading_bot.pid")
         self.shutdown_requested = False
@@ -1381,6 +1391,62 @@ class UltimateTradingBot:
         self.cornix_integration_config = {'enabled': True, 'signal_format': 'cornix_compatible'}
         self.parallel_processing_config = {'enabled': True}
         
+        # ========================================
+        # CRITICAL: LEVERAGE CONFIGURATION - MUST BE EARLY
+        # ========================================
+        # Initialize leverage configuration immediately to prevent AttributeError
+        self.leverage_config = {
+            'min_leverage': 10,      # Minimum leverage for extreme volatility (maximum safety)
+            'max_leverage': 75,      # Maximum leverage for ultra-low volatility (maximum efficiency)
+            'base_leverage': 35,     # Default leverage for medium volatility
+            'volatility_threshold_low': 0.005,   # Ultra-low volatility threshold (0.5%)
+            'volatility_threshold_medium': 0.015, # Medium volatility threshold (1.5%)
+            'volatility_threshold_high': 0.03,   # High volatility threshold (3%)
+            'atr_period': 14,        # ATR period for volatility calculation
+            'margin_type': 'CROSSED', # Always use cross margin
+            'perfect_inverse': True,  # Enable perfect inverse volatility-leverage relationship
+            'smooth_transitions': True, # Enable smooth leverage transitions
+            'efficiency_optimization': True # Optimize for maximum capital efficiency
+        }
+
+        # Adaptive leveraging based on market conditions and past performance
+        self.adaptive_leverage = {
+            'recent_wins': 0,
+            'recent_losses': 0,
+            'consecutive_wins': 0,
+            'consecutive_losses': 0,
+            'performance_window': 20,
+            'leverage_adjustment_factor': 0.1
+        }
+        
+        # Initialize dynamic leverage system attributes early to prevent AttributeError
+        # These will be properly configured later in initialization
+        self.dynamic_leverage_manager = None
+        self.leverage_monitor = None
+        self.dynamic_leverage_enabled = False
+        self.current_volatility_profiles = {}
+        self.current_leverage_assignments = {}
+        self.leverage_change_history = {}
+        self.volatility_display_config = {
+            'show_real_time_metrics': False,
+            'show_leverage_changes': True,
+            'show_volatility_dashboard': False,
+            'alert_on_leverage_changes': False,
+            'log_volatility_reasoning': True,
+            'dashboard_update_interval': 300,
+            'volatility_alert_threshold': 5.0,
+        }
+        self.volatility_dashboard_data = {
+            'last_updated': datetime.now(),
+            'market_conditions': 'initializing',
+            'average_volatility_score': 0.0,
+            'portfolio_leverage': self.leverage_config['base_leverage'],
+            'active_alerts': [],
+            'volatility_trend': 'neutral'
+        }
+        
+        self.logger.info("✅ CRITICAL: Leverage configuration initialized early")
+        
         # Initialize Enhanced Systems (with fallback if not available)
         if ENHANCED_SYSTEMS_AVAILABLE and ADVANCED_ERROR_HANDLER_AVAILABLE:
             try:
@@ -1484,6 +1550,14 @@ class UltimateTradingBot:
                 self.stop_loss_config = None
                 self.active_stop_loss_managers = {}
                 self.market_analyzer = None
+            
+            # CRITICAL: Initialize stop_loss_integrator in fallback mode too
+            if STOP_LOSS_INTEGRATOR_AVAILABLE:
+                self.stop_loss_integrator = StopLossIntegrator(self)
+                self.logger.info("✅ 3SL/1TP Integration System initialized (fallback mode)")
+            else:
+                self.stop_loss_integrator = None
+                self.logger.warning("⚠️ StopLossIntegrator not available in fallback mode")
             
             # Initialize parallel processing in fallback mode
             self.parallel_processing_enabled = PARALLEL_PROCESSING_AVAILABLE
@@ -1597,36 +1671,9 @@ class UltimateTradingBot:
         }
 
         # ========================================
-        # PERFECT DYNAMIC VOLATILITY-BASED LEVERAGE SYSTEM
-        # ========================================
-        self.leverage_config = {
-            'min_leverage': 10,      # Minimum leverage for extreme volatility (maximum safety)
-            'max_leverage': 75,      # Maximum leverage for ultra-low volatility (maximum efficiency)
-            'base_leverage': 35,     # Default leverage for medium volatility
-            'volatility_threshold_low': 0.005,   # Ultra-low volatility threshold (0.5%)
-            'volatility_threshold_medium': 0.015, # Medium volatility threshold (1.5%)
-            'volatility_threshold_high': 0.03,   # High volatility threshold (3%)
-            'atr_period': 14,        # ATR period for volatility calculation
-            'margin_type': 'CROSSED', # Always use cross margin
-            'perfect_inverse': True,  # Enable perfect inverse volatility-leverage relationship
-            'smooth_transitions': True, # Enable smooth leverage transitions
-            'efficiency_optimization': True # Optimize for maximum capital efficiency
-        }
-
-        # Adaptive leveraging based on market conditions and past performance
-        self.adaptive_leverage = {
-            'recent_wins': 0,
-            'recent_losses': 0,
-            'consecutive_wins': 0,
-            'consecutive_losses': 0,
-            'performance_window': 20,
-            'leverage_adjustment_factor': 0.1
-        }
-
-        # ========================================
         # ENHANCED DYNAMIC LEVERAGE SYSTEM INTEGRATION
         # ========================================
-        # Initialize Dynamic Leverage Management System
+        # Update Dynamic Leverage Management System (attributes already initialized early)
         if DYNAMIC_LEVERAGE_SYSTEM_AVAILABLE:
             try:
                 # Initialize Dynamic Leverage Manager with database for comprehensive tracking
@@ -1637,8 +1684,8 @@ class UltimateTradingBot:
                 self.leverage_monitor = LeverageMonitor("leverage_monitoring.db")  
                 self.logger.info("📊 Leverage Monitor initialized - Real-time leverage tracking and alerts active")
                 
-                # Enhanced volatility display settings
-                self.volatility_display_config = {
+                # Update volatility display settings for enhanced mode
+                self.volatility_display_config.update({
                     'show_real_time_metrics': True,
                     'show_leverage_changes': True,
                     'show_volatility_dashboard': True,
@@ -1646,20 +1693,13 @@ class UltimateTradingBot:
                     'log_volatility_reasoning': True,
                     'dashboard_update_interval': 60,  # seconds
                     'volatility_alert_threshold': 3.0,  # volatility score threshold for alerts
-                }
+                })
                 
-                # Volatility-based leverage cache for real-time display
-                self.current_volatility_profiles = {}  # symbol -> VolatilityProfile
-                self.current_leverage_assignments = {}  # symbol -> current leverage
-                self.leverage_change_history = {}  # symbol -> list of recent changes
-                self.volatility_dashboard_data = {
-                    'last_updated': datetime.now(),
-                    'market_conditions': 'initializing',
-                    'average_volatility_score': 0.0,
+                # Update volatility dashboard data for enhanced mode
+                self.volatility_dashboard_data.update({
+                    'market_conditions': 'enhanced_mode',
                     'portfolio_leverage': 0.0,
-                    'active_alerts': [],
-                    'volatility_trend': 'neutral'
-                }
+                })
                 
                 self.dynamic_leverage_enabled = True
                 self.logger.info("✅ Enhanced Dynamic Leverage System fully integrated")
@@ -1670,11 +1710,10 @@ class UltimateTradingBot:
             except Exception as e:
                 self.logger.error(f"❌ Error initializing Dynamic Leverage System: {e}")
                 self.dynamic_leverage_enabled = False
-                self._init_fallback_leverage_system()
+                self.logger.warning("⚠️ Falling back to basic leverage system due to initialization error")
         else:
-            self.logger.warning("⚠️ Dynamic Leverage System not available - using fallback leverage system")
-            self.dynamic_leverage_enabled = False
-            self._init_fallback_leverage_system()
+            self.logger.warning("⚠️ Dynamic Leverage System not available - using basic leverage system")
+            # dynamic_leverage_enabled already set to False in early initialization
 
         # ========================================
         # PRECISE RISK MANAGEMENT CONFIGURATION
@@ -1965,8 +2004,20 @@ class UltimateTradingBot:
         Returns complete leverage analysis including volatility profile and reasoning
         """
         try:
+            # Defensive check for attributes - prevents AttributeError during initialization
+            if not hasattr(self, 'leverage_config') or not hasattr(self, 'dynamic_leverage_manager'):
+                self.logger.warning(f"⚠️ Leverage attributes not fully initialized yet for {symbol} - using basic fallback")
+                return {
+                    'leverage': 35,  # Safe default leverage
+                    'volatility_score': 0.0,
+                    'risk_level': 'unknown',
+                    'reason': 'initialization_pending',
+                    'volatility_metrics': {},
+                    'leverage_change': False
+                }
+                
             # If dynamic leverage system is available, use it for advanced calculations
-            if self.dynamic_leverage_enabled and self.dynamic_leverage_manager:
+            if getattr(self, 'dynamic_leverage_enabled', False) and getattr(self, 'dynamic_leverage_manager', None):
                 return await self._calculate_dynamic_leverage_with_monitoring(symbol, df, current_price, ohlcv_data)
             else:
                 # Fallback to original method with enhanced logging
@@ -1974,8 +2025,10 @@ class UltimateTradingBot:
                 
         except Exception as e:
             self.logger.error(f"❌ Error in enhanced volatility leverage calculation for {symbol}: {e}")
+            # Safe fallback with defensive attribute access
+            base_leverage = getattr(self, 'leverage_config', {}).get('base_leverage', 35)
             return {
-                'leverage': self.leverage_config['base_leverage'],
+                'leverage': base_leverage,
                 'volatility_score': 0.0,
                 'risk_level': 'unknown',
                 'reason': f'error_fallback: {str(e)}',

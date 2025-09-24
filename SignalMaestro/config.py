@@ -29,6 +29,7 @@ class Config:
 
         # Trading Configuration
         self.DEFAULT_RISK_PERCENTAGE = float(os.getenv("DEFAULT_RISK_PERCENTAGE", "5.0"))
+        self.CAPITAL_BASE = float(os.getenv("CAPITAL_BASE", "10.0"))
         self.MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "1000.0"))
         self.MIN_POSITION_SIZE = float(os.getenv("MIN_POSITION_SIZE", "10.0"))
         self.STOP_LOSS_PERCENTAGE = float(os.getenv("STOP_LOSS_PERCENTAGE", "3.0"))
@@ -88,6 +89,7 @@ class Config:
         """Get trading configuration as dictionary"""
         return {
             "default_risk_percentage": self.DEFAULT_RISK_PERCENTAGE,
+            "capital_base": self.CAPITAL_BASE,
             "max_position_size": self.MAX_POSITION_SIZE,
             "min_position_size": self.MIN_POSITION_SIZE,
             "stop_loss_percentage": self.STOP_LOSS_PERCENTAGE,

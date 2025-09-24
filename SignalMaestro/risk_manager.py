@@ -165,10 +165,10 @@ class RiskManager:
         """Calculate optimal position size based on risk management rules"""
         try:
             # This is a simplified calculation - in a real implementation,
-            # you would fetch actual account balance
+            # you would fetch actual account balance from the exchange
             
-            # Assume account balance (this should come from the exchange)
-            account_balance = 10  # USD - This should be fetched from Binance
+            # Use configurable capital base
+            account_balance = self.config.CAPITAL_BASE  # USD - Configurable capital base
             
             # Default risk percentage
             risk_percentage = self.config.DEFAULT_RISK_PERCENTAGE / 100

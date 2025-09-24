@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 # Enhanced systems imports with fallback
 try:
-    from dynamic_stop_loss_system import (
+    from SignalMaestro.dynamic_stop_loss_system import (
         create_stop_loss_manager, DynamicStopLoss, StopLossConfig,
         StopLossLevel, VolatilityLevel, MarketSession, get_stop_loss_manager
     )

@@ -1355,6 +1355,7 @@ class UltimateTradingBot:
         self.max_concurrent_trades = 3  # Perfect 3-trade management
         self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
         self.min_signal_strength = 75  # Signal quality threshold
+        self.min_confidence_for_signal = 68.0  # ML confidence threshold for signal acceptance
         
         # Early Telegram configuration to prevent attribute errors
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')

@@ -108,7 +108,7 @@ ENHANCED_SYSTEMS_AVAILABLE = False
 
 # Import error handling systems
 try:
-    from advanced_error_handler import (
+    from SignalMaestro.advanced_error_handler import (
         AdvancedErrorHandler, RetryConfig, CircuitBreaker,
         TradingBotException, NetworkException, APIException, RateLimitException,
         TimeoutException, TradingException, handle_errors, RetryConfigs, ErrorSeverity
@@ -119,7 +119,7 @@ except ImportError:
 
 # Import centralized error logger
 try:
-    from centralized_error_logger import (
+    from SignalMaestro.centralized_error_logger import (
         CentralizedErrorLogger, ErrorNotificationConfig, get_global_error_logger,
         setup_global_error_logger, log_error_globally
     )
@@ -1408,33 +1408,35 @@ class UltimateTradingBot:
         self.parallel_processing_config = {'enabled': True}
         
         # Initialize Enhanced Systems (with fallback if not available)
-        if ENHANCED_SYSTEMS_AVAILABLE:
+        if ENHANCED_SYSTEMS_AVAILABLE and ADVANCED_ERROR_HANDLER_AVAILABLE:
             try:
                 # Enhanced Error Handling System
                 self.error_handler = AdvancedErrorHandler(self.logger)
                 self.logger.info("✅ Advanced Error Handler initialized")
                 
                 # Enhanced Error Logging
-                notification_config = ErrorNotificationConfig(
-                    telegram_enabled=True,
-                    admin_chat_id=self.admin_chat_id,  # Use instance variable
-                    severity_threshold=ErrorSeverity.HIGH,
-                    cooldown_minutes=5,
-                    batch_notifications=True
-                )
-                self.error_logger = setup_global_error_logger(notification_config)
-                self.logger.info("✅ Centralized Error Logger initialized")
+                if CENTRALIZED_ERROR_LOGGER_AVAILABLE:
+                    notification_config = ErrorNotificationConfig(
+                        telegram_enabled=True,
+                        admin_chat_id=self.admin_chat_id,  # Use instance variable
+                        severity_threshold=ErrorSeverity.HIGH,
+                        cooldown_minutes=5,
+                        batch_notifications=True
+                    )
+                    self.error_logger = setup_global_error_logger(notification_config)
+                    self.logger.info("✅ Centralized Error Logger initialized")
                 
                 # API Resilience Manager
-                api_config = {
-                    'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN'),
-                    'binance_api_key': os.getenv('BINANCE_API_KEY', ''),
-                    'binance_api_secret': os.getenv('BINANCE_API_SECRET', ''),
-                    'binance_testnet': os.getenv('BINANCE_TESTNET', 'true').lower() == 'true',
-                    'cornix_webhook_url': os.getenv('CORNIX_WEBHOOK_URL', '')
-                }
-                self.resilience_manager = setup_global_resilience_manager(api_config)
-                self.logger.info("✅ API Resilience Manager initialized")
+                if API_RESILIENCE_AVAILABLE:
+                    api_config = {
+                        'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN'),
+                        'binance_api_key': os.getenv('BINANCE_API_KEY', ''),
+                        'binance_api_secret': os.getenv('BINANCE_API_SECRET', ''),
+                        'binance_testnet': os.getenv('BINANCE_TESTNET', 'true').lower() == 'true',
+                        'cornix_webhook_url': os.getenv('CORNIX_WEBHOOK_URL', '')
+                    }
+                    self.resilience_manager = setup_global_resilience_manager(api_config)
+                    self.logger.info("✅ API Resilience Manager initialized")
                 
                 # Dynamic Stop Loss System
                 self.stop_loss_config = StopLossConfig(

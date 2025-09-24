@@ -103,70 +103,67 @@ except ImportError:
             pass
         return result
 
-# Import new enhanced systems with error handling
+# Import enhanced systems
 ENHANCED_SYSTEMS_AVAILABLE = False
+
+# Import error handling systems
 try:
     from advanced_error_handler import (
         AdvancedErrorHandler, RetryConfig, CircuitBreaker,
         TradingBotException, NetworkException, APIException, RateLimitException,
         TimeoutException, TradingException, handle_errors, RetryConfigs
     )
+    ADVANCED_ERROR_HANDLER_AVAILABLE = True
+except ImportError:
+    ADVANCED_ERROR_HANDLER_AVAILABLE = False
+
+# Import centralized error logger
+try:
     from centralized_error_logger import (
         CentralizedErrorLogger, ErrorNotificationConfig, get_global_error_logger,
         setup_global_error_logger, log_error_globally
     )
+    CENTRALIZED_ERROR_LOGGER_AVAILABLE = True
+except ImportError:
+    CENTRALIZED_ERROR_LOGGER_AVAILABLE = False
+
+# Import dynamic stop loss system
+try:
     from dynamic_stop_loss_system import (
         TradeStopLossManager, DynamicStopLoss, StopLossConfig, MarketConditions,
         StopLossLevel, VolatilityLevel, MarketSession, MarketAnalyzer,
         create_stop_loss_manager, get_stop_loss_manager, get_all_active_managers,
         cleanup_inactive_managers
     )
+    DYNAMIC_STOP_LOSS_AVAILABLE = True
+except ImportError:
+    DYNAMIC_STOP_LOSS_AVAILABLE = False
+
+# Import API resilience layer
+try:
     from api_resilience_layer import (
         APIResilienceManager, TelegramAPIWrapper, BinanceAPIWrapper, CornixAPIWrapper,
         setup_global_resilience_manager, get_global_resilience_manager, resilient_api_call
     )
-    ENHANCED_SYSTEMS_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Enhanced systems not available: {e}")
-    
-    # Create fallback classes for compatibility
-    class AdvancedErrorHandler:
-        def __init__(self, logger): self.logger = logger
-        async def execute_with_retry(self, func, *args, **kwargs): return await func(*args, **kwargs)
-    
-    class CentralizedErrorLogger:
-        def __init__(self, *args, **kwargs): pass
-        async def log_error(self, *args, **kwargs): pass
-    
-    class TradeStopLossManager:
-        def __init__(self, *args, **kwargs): pass
-    
-    class APIResilienceManager:
-        def __init__(self, *args, **kwargs): pass
-    
-    class ErrorSeverity:
-        LOW = "low"
-        MEDIUM = "medium"
-        HIGH = "high"
-        CRITICAL = "critical"
-    
-    class ErrorNotificationConfig:
-        def __init__(self, *args, **kwargs): pass
-    
-    def setup_global_error_logger(*args, **kwargs): return CentralizedErrorLogger()
-    def setup_global_resilience_manager(*args, **kwargs): return APIResilienceManager()
-    
-    class StopLossConfig:
-        def __init__(self, *args, **kwargs):
-            self.sl1_base_percent = 1.5
-            self.sl2_base_percent = 4.0
-            self.sl3_base_percent = 7.5
-            self.trailing_enabled = True
-            self.trailing_distance_percent = 1.0
-    
-    class MarketAnalyzer:
-        def __init__(self): pass
-        def analyze_market_conditions(self, *args, **kwargs): return None
+    API_RESILIENCE_AVAILABLE = True
+except ImportError:
+    API_RESILIENCE_AVAILABLE = False
+
+# Import 3SL/1TP Integration Module
+try:
+    from stop_loss_integration_module import StopLossIntegrator, StopLossAction
+    STOP_LOSS_INTEGRATOR_AVAILABLE = True
+except ImportError:
+    STOP_LOSS_INTEGRATOR_AVAILABLE = False
+
+# Check if all enhanced systems are available
+ENHANCED_SYSTEMS_AVAILABLE = (
+    ADVANCED_ERROR_HANDLER_AVAILABLE and 
+    CENTRALIZED_ERROR_LOGGER_AVAILABLE and 
+    DYNAMIC_STOP_LOSS_AVAILABLE and 
+    API_RESILIENCE_AVAILABLE and
+    STOP_LOSS_INTEGRATOR_AVAILABLE
+)
 
 class AdvancedMLTradeAnalyzer:
     """Advanced ML Trade Analyzer with comprehensive learning capabilities"""
@@ -1201,6 +1198,24 @@ class UltimateTradingBot:
     def __init__(self):
         self.logger = self._setup_logging()
 
+        # CRITICAL: Fail-fast verification for live trading safety
+        self.logger.info("🔍 CRITICAL SYSTEMS VERIFICATION...")
+        
+        if not DYNAMIC_STOP_LOSS_AVAILABLE:
+            self.logger.critical("❌ CRITICAL FAILURE: DYNAMIC_STOP_LOSS_AVAILABLE is False")
+            self.logger.critical("🚨 The 3SL/1TP system is NOT available - trading would be UNSAFE")
+            self.logger.critical("🛑 ABORTING to prevent silent fallback to no-op logic")
+            raise SystemExit("CRITICAL: Dynamic Stop Loss system unavailable - aborting for trading safety")
+        
+        if not STOP_LOSS_INTEGRATOR_AVAILABLE:
+            self.logger.critical("❌ CRITICAL FAILURE: STOP_LOSS_INTEGRATOR_AVAILABLE is False")
+            self.logger.critical("🚨 The StopLossIntegrator is NOT available - positions won't be protected")
+            self.logger.critical("🛑 ABORTING to prevent silent fallback to no-op logic")
+            raise SystemExit("CRITICAL: StopLossIntegrator unavailable - aborting for trading safety")
+        
+        self.logger.info("✅ CRITICAL SYSTEMS VERIFIED: 3SL/1TP system ACTIVE")
+        self.logger.info("✅ CRITICAL SYSTEMS VERIFIED: StopLossIntegrator ACTIVE")
+
         # Process management
         self.pid_file = Path("ultimate_trading_bot.pid")
         self.shutdown_requested = False
@@ -1247,6 +1262,16 @@ class UltimateTradingBot:
                 self.active_stop_loss_managers = {}  # symbol -> TradeStopLossManager
                 self.market_analyzer = MarketAnalyzer()
                 self.logger.info("✅ Dynamic 3-Level Stop Loss System initialized")
+                
+                # 3SL/1TP Integration System
+                if STOP_LOSS_INTEGRATOR_AVAILABLE:
+                    self.stop_loss_integrator = StopLossIntegrator(self)
+                    self.logger.info("✅ 3SL/1TP Integration System initialized - Live Trading Active")
+                    self.logger.info("🛡️ POSITION PROTECTION ACTIVE: TP1/TP2/TP3/SL monitoring enabled")
+                else:
+                    # This should never happen due to fail-fast assertion above
+                    self.logger.critical("🚨 CRITICAL: StopLossIntegrator should be available but isn't")
+                    raise SystemExit("CRITICAL: StopLossIntegrator verification failed")
                 
                 self.enhanced_systems_active = True
                 
@@ -4907,6 +4932,35 @@ Use /train to manually scan and train""")
                 'monitoring_task': None
             }
 
+            # Initialize 3SL/1TP system for this trade with REAL position size
+            if self.stop_loss_integrator and ENHANCED_SYSTEMS_AVAILABLE:
+                try:
+                    # Calculate real position size based on risk management
+                    calculated_position_size = signal.get('position_size', None)
+                    if calculated_position_size is None:
+                        # Fallback calculation if not in signal
+                        calculated_position_size = signal.get('leverage', 1) * 0.001  # Conservative default
+                    
+                    self.logger.info(f"🔢 Creating 3SL/1TP with position size: {calculated_position_size} for {symbol}")
+                    
+                    sl_created = await self.stop_loss_integrator.create_trade_stop_loss(
+                        symbol=symbol,
+                        direction=signal['direction'],
+                        entry_price=signal['entry_price'],
+                        position_size=calculated_position_size
+                    )
+                    if sl_created:
+                        self.logger.critical(f"🛡️ 3SL/1TP SYSTEM ACTIVATED for {symbol}")
+                        self.logger.critical(f"   ✅ Position size: {calculated_position_size}")
+                        self.logger.critical(f"   ✅ Entry price: {signal['entry_price']}")
+                        self.logger.critical(f"   ✅ Direction: {signal['direction']}")
+                        self.logger.critical(f"   ✅ LIVE TRADING PROTECTION: ACTIVE")
+                    else:
+                        self.logger.critical(f"❌ CRITICAL FAILURE: 3SL/1TP activation failed for {symbol}")
+                        self.logger.critical(f"🚨 POSITION NOT PROTECTED - MANUAL INTERVENTION REQUIRED")
+                except Exception as e:
+                    self.logger.error(f"❌ Error activating 3SL/1TP for {symbol}: {e}")
+
             # Start real-time monitoring task for this trade
             monitoring_task = asyncio.create_task(self._monitor_open_trade_ml(symbol, signal))
             self.active_trades[symbol]['monitoring_task'] = monitoring_task
@@ -4951,6 +5005,23 @@ Use /train to manually scan and train""")
                     current_price = float(df['close'].iloc[-1])
                     current_time = datetime.now()
                     duration_minutes = (current_time - entry_time).total_seconds() / 60
+
+                    # 🚨 CRITICAL: Check 3SL/1TP system for triggers and execute actions
+                    if self.stop_loss_integrator and ENHANCED_SYSTEMS_AVAILABLE:
+                        try:
+                            # Update the 3SL/1TP system with current price
+                            triggered_actions = await self.stop_loss_integrator.update_stop_loss_price(symbol, current_price)
+                            
+                            # Execute any triggered actions (TP hits, SL moves, position closures)
+                            for action in triggered_actions:
+                                success = await self.stop_loss_integrator.execute_stop_loss_action(action)
+                                if success:
+                                    self.logger.info(f"✅ Executed 3SL/1TP action: {action.level} for {symbol} at {action.price}")
+                                else:
+                                    self.logger.warning(f"⚠️ Failed to execute 3SL/1TP action: {action.level} for {symbol}")
+                                    
+                        except Exception as sl_error:
+                            self.logger.error(f"❌ 3SL/1TP system error for {symbol}: {sl_error}")
 
                     # Track price movement
                     price_history.append(current_price)
@@ -5870,6 +5941,24 @@ Use /train to manually scan and train""")
 
 async def main():
     """Run the ultimate ML trading bot"""
+    # CRITICAL: Final fail-fast verification before bot startup
+    print("🔍 FINAL CRITICAL SYSTEMS CHECK...")
+    
+    if not DYNAMIC_STOP_LOSS_AVAILABLE:
+        print("❌ CRITICAL FAILURE: Dynamic Stop Loss system unavailable")
+        print("🚨 Trading would be UNSAFE - positions won't be protected")
+        print("🛑 ABORTING startup to prevent silent failure")
+        return False
+    
+    if not STOP_LOSS_INTEGRATOR_AVAILABLE:
+        print("❌ CRITICAL FAILURE: StopLossIntegrator unavailable")
+        print("🚨 Trading would be UNSAFE - no TP/SL execution")
+        print("🛑 ABORTING startup to prevent silent failure")
+        return False
+    
+    print("✅ CRITICAL SYSTEMS VERIFIED: Safe to start live trading")
+    print("🛡️ 3SL/1TP protection system ACTIVE")
+    
     bot = UltimateTradingBot()
 
     try:
@@ -5881,6 +5970,7 @@ async def main():
         print("📈 CVD Confluence Analysis")
         print("🧠 Continuous Learning System")
         print("🛡️ Auto-Restart Protection Active")
+        print("🔥 LIVE TRADING PROTECTION: 3SL/1TP system verified and ACTIVE")
         print("\nBot will run continuously and learn from every trade")
 
         await bot.run_bot()

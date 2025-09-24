@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Dynamic 3-Level Stop Loss System
-Implements sophisticated stop loss management with 3 independent levels that adapt to market conditions
+3SL/1TP Dynamic Stop Loss System
+Implements the exact logic requested:
+- TP1 reached → SL moves to entry price 
+- TP2 reached → SL moves to TP1 price
+- TP3 reached → close entire trade automatically
+
+Uses only 3 Stop Loss levels and 3 Take Profit levels as specified.
 """
 
 import asyncio
@@ -15,304 +20,115 @@ from enum import Enum
 import sqlite3
 from pathlib import Path
 
+# Explicit exports for compatibility with existing integrations
+__all__ = [
+    # Core 3SL/1TP classes
+    'ThreeSLOneTpManager', 'ThreeSLOneTpConfig', 'TakeProfitLevel', 'StopLossState',
+    'TakeProfitLevel_Data', 'StopLossData',
+    
+    # Legacy compatibility classes - REQUIRED for existing system integration
+    'TradeStopLossManager', 'DynamicStopLoss', 'StopLossConfig', 'MarketConditions',
+    'MarketAnalyzer', 'StopLossLevel', 'VolatilityLevel', 'MarketSession',
+    
+    # Core functions - REQUIRED for existing system integration  
+    'create_stop_loss_manager', 'get_stop_loss_manager', 'get_all_active_managers',
+    'cleanup_inactive_managers',
+    
+    # Internal functions (also exported for completeness)
+    'create_3sl1tp_manager', 'get_3sl1tp_manager', 'remove_3sl1tp_manager',
+    'get_all_active_3sl1tp_managers', 'cleanup_inactive_3sl1tp_managers'
+]
 
-class StopLossLevel(Enum):
-    """Stop loss level enumeration"""
-    SL1 = "sl1"  # Tight stop loss (1-2%)
-    SL2 = "sl2"  # Medium stop loss (3-5%)
-    SL3 = "sl3"  # Wide stop loss (5-10%)
+
+class TakeProfitLevel(Enum):
+    """Take profit level enumeration"""
+    TP1 = "tp1"  # First take profit
+    TP2 = "tp2"  # Second take profit  
+    TP3 = "tp3"  # Final take profit - close trade
 
 
-class MarketSession(Enum):
-    """Market session types"""
-    ASIA = "asia"
-    LONDON = "london"
-    NEW_YORK = "new_york"
-    OVERLAP = "overlap"
-
-
-class VolatilityLevel(Enum):
-    """Market volatility levels"""
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    EXTREME = "extreme"
+class StopLossState(Enum):
+    """Stop loss progression states"""
+    INITIAL = "initial"        # Original stop loss
+    AT_ENTRY = "at_entry"      # Moved to entry after TP1
+    AT_TP1 = "at_tp1"          # Moved to TP1 after TP2
+    CLOSED = "closed"          # Trade closed after TP3
 
 
 @dataclass
-class StopLossConfig:
-    """Configuration for stop loss levels"""
-    # Base percentages for each level
-    sl1_base_percent: float = 1.5  # 1.5% base for SL1
-    sl2_base_percent: float = 4.0  # 4.0% base for SL2
-    sl3_base_percent: float = 7.5  # 7.5% base for SL3
+class ThreeSLOneTpConfig:
+    """Configuration for the 3SL/1TP system"""
+    # Take profit levels as percentages from entry
+    tp1_percent: float = 2.0   # 2% for TP1
+    tp2_percent: float = 4.0   # 4% for TP2
+    tp3_percent: float = 6.0   # 6% for TP3
     
-    # Volatility multipliers
-    volatility_multipliers: Dict[VolatilityLevel, float] = None
+    # Initial stop loss percentage
+    initial_sl_percent: float = 1.5  # 1.5% initial stop loss
     
-    # Session adjustments
-    session_adjustments: Dict[MarketSession, float] = None
+    # Position management - what percentage to close at each TP
+    tp1_close_percent: float = 33.0   # Close 33% at TP1
+    tp2_close_percent: float = 33.0   # Close 33% at TP2
+    tp3_close_percent: float = 34.0   # Close remaining 34% at TP3
     
-    # Position size distribution when triggered
-    sl1_position_percent: float = 33.0  # Close 33% at SL1
-    sl2_position_percent: float = 33.0  # Close 33% at SL2
-    sl3_position_percent: float = 34.0  # Close 34% at SL3
-    
-    # Trailing configuration
-    trailing_enabled: bool = True
-    trailing_distance_percent: float = 1.0  # Trail 1% behind favorable price
-    
-    def __post_init__(self):
-        if self.volatility_multipliers is None:
-            self.volatility_multipliers = {
-                VolatilityLevel.LOW: 0.7,
-                VolatilityLevel.MEDIUM: 1.0,
-                VolatilityLevel.HIGH: 1.4,
-                VolatilityLevel.EXTREME: 2.0
-            }
-        
-        if self.session_adjustments is None:
-            self.session_adjustments = {
-                MarketSession.ASIA: 0.8,      # Lower volatility
-                MarketSession.LONDON: 1.2,    # Higher volatility
-                MarketSession.NEW_YORK: 1.0,  # Standard
-                MarketSession.OVERLAP: 1.3    # Highest volatility
-            }
+    # Buffer to prevent immediate re-trigger (in percentage)
+    buffer_percent: float = 0.1  # 0.1% buffer
 
 
 @dataclass
-class DynamicStopLoss:
-    """Individual stop loss level with dynamic adjustment capabilities"""
-    level: StopLossLevel
-    symbol: str
-    direction: str  # 'long' or 'short'
-    entry_price: float
+class TakeProfitLevel_Data:
+    """Take profit level data"""
+    level: TakeProfitLevel
+    price: float
+    hit: bool = False
+    hit_time: Optional[datetime] = None
+    close_percent: float = 33.0
+    
+
+@dataclass
+class StopLossData:
+    """Stop loss data with progression tracking"""
     current_price: float
-    original_sl_price: float
-    current_sl_price: float
-    triggered: bool = False
-    trigger_time: Optional[datetime] = None
-    trail_high_water_mark: Optional[float] = None  # For long positions
-    trail_low_water_mark: Optional[float] = None   # For short positions
-    position_percent: float = 33.0  # Percentage of position this SL protects
-    last_update_time: datetime = None
+    original_price: float
+    state: StopLossState = StopLossState.INITIAL
+    last_update_time: Optional[datetime] = None
     
     def __post_init__(self):
         if self.last_update_time is None:
             self.last_update_time = datetime.now()
-        
-        # Initialize trail water marks
-        if self.direction.lower() == 'long':
-            self.trail_high_water_mark = self.current_price
-        else:
-            self.trail_low_water_mark = self.current_price
 
 
-@dataclass
-class MarketConditions:
-    """Current market conditions for dynamic adjustments"""
-    volatility_level: VolatilityLevel
-    market_session: MarketSession
-    atr_value: float
-    volume_ratio: float
-    momentum_strength: float
-    support_resistance_distance: float
-    timestamp: datetime = None
-    
-    def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
-
-
-class MarketAnalyzer:
-    """Analyzes market conditions for dynamic stop loss adjustments"""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-    
-    def get_current_session(self, dt: datetime = None) -> MarketSession:
-        """Determine current market session"""
-        if dt is None:
-            dt = datetime.utcnow()
-        
-        hour = dt.hour
-        
-        # London session: 08:00 - 16:00 UTC
-        # NY session: 13:00 - 21:00 UTC
-        # Asia session: 21:00 - 05:00 UTC
-        
-        if 8 <= hour < 13:
-            return MarketSession.LONDON
-        elif 13 <= hour < 16:
-            return MarketSession.OVERLAP  # London-NY overlap
-        elif 16 <= hour < 21:
-            return MarketSession.NEW_YORK
-        else:
-            return MarketSession.ASIA
-    
-    def calculate_volatility_level(self, atr_value: float, avg_atr: float) -> VolatilityLevel:
-        """Calculate volatility level based on ATR"""
-        if avg_atr <= 0:
-            return VolatilityLevel.MEDIUM
-        
-        atr_ratio = atr_value / avg_atr
-        
-        if atr_ratio < 0.7:
-            return VolatilityLevel.LOW
-        elif atr_ratio < 1.3:
-            return VolatilityLevel.MEDIUM
-        elif atr_ratio < 2.0:
-            return VolatilityLevel.HIGH
-        else:
-            return VolatilityLevel.EXTREME
-    
-    def analyze_market_conditions(self, symbol: str, price_data: List[Dict], 
-                                current_price: float) -> MarketConditions:
-        """Analyze current market conditions"""
-        try:
-            # Calculate ATR
-            atr_value = self._calculate_atr(price_data)
-            
-            # Calculate average ATR for comparison
-            avg_atr = self._calculate_average_atr(price_data, period=20)
-            
-            # Determine volatility level
-            volatility_level = self.calculate_volatility_level(atr_value, avg_atr)
-            
-            # Get current session
-            market_session = self.get_current_session()
-            
-            # Calculate volume ratio
-            volume_ratio = self._calculate_volume_ratio(price_data)
-            
-            # Calculate momentum strength
-            momentum_strength = self._calculate_momentum_strength(price_data, current_price)
-            
-            # Calculate distance to support/resistance
-            support_resistance_distance = self._calculate_sr_distance(price_data, current_price)
-            
-            return MarketConditions(
-                volatility_level=volatility_level,
-                market_session=market_session,
-                atr_value=atr_value,
-                volume_ratio=volume_ratio,
-                momentum_strength=momentum_strength,
-                support_resistance_distance=support_resistance_distance
-            )
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing market conditions: {e}")
-            # Return default conditions
-            return MarketConditions(
-                volatility_level=VolatilityLevel.MEDIUM,
-                market_session=self.get_current_session(),
-                atr_value=0.01,
-                volume_ratio=1.0,
-                momentum_strength=0.5,
-                support_resistance_distance=0.02
-            )
-    
-    def _calculate_atr(self, price_data: List[Dict], period: int = 14) -> float:
-        """Calculate Average True Range"""
-        if len(price_data) < period + 1:
-            return 0.01  # Default value
-        
-        true_ranges = []
-        
-        for i in range(1, len(price_data)):
-            current = price_data[i]
-            previous = price_data[i-1]
-            
-            high_low = current['high'] - current['low']
-            high_close = abs(current['high'] - previous['close'])
-            low_close = abs(current['low'] - previous['close'])
-            
-            true_range = max(high_low, high_close, low_close)
-            true_ranges.append(true_range)
-        
-        if len(true_ranges) >= period:
-            return sum(true_ranges[-period:]) / period
-        else:
-            return sum(true_ranges) / len(true_ranges) if true_ranges else 0.01
-    
-    def _calculate_average_atr(self, price_data: List[Dict], period: int = 20) -> float:
-        """Calculate average ATR over a longer period"""
-        atr_values = []
-        
-        for i in range(14, len(price_data) - 14):
-            segment = price_data[i-14:i+1]
-            atr = self._calculate_atr(segment)
-            atr_values.append(atr)
-        
-        return sum(atr_values) / len(atr_values) if atr_values else 0.01
-    
-    def _calculate_volume_ratio(self, price_data: List[Dict]) -> float:
-        """Calculate current volume ratio to average"""
-        if len(price_data) < 20:
-            return 1.0
-        
-        recent_volumes = [candle.get('volume', 0) for candle in price_data[-20:]]
-        avg_volume = sum(recent_volumes) / len(recent_volumes)
-        
-        current_volume = price_data[-1].get('volume', avg_volume)
-        
-        if avg_volume > 0:
-            return current_volume / avg_volume
-        return 1.0
-    
-    def _calculate_momentum_strength(self, price_data: List[Dict], current_price: float) -> float:
-        """Calculate momentum strength (0-1 scale)"""
-        if len(price_data) < 10:
-            return 0.5
-        
-        # Simple momentum calculation based on price change
-        price_10_ago = price_data[-10]['close']
-        price_change = (current_price - price_10_ago) / price_10_ago
-        
-        # Normalize to 0-1 scale
-        momentum = min(abs(price_change) * 50, 1.0)  # Scale by 50 to get reasonable values
-        return momentum
-    
-    def _calculate_sr_distance(self, price_data: List[Dict], current_price: float) -> float:
-        """Calculate distance to nearest support/resistance level"""
-        if len(price_data) < 20:
-            return 0.02
-        
-        # Simple S/R calculation using recent highs and lows
-        recent_highs = [candle['high'] for candle in price_data[-20:]]
-        recent_lows = [candle['low'] for candle in price_data[-20:]]
-        
-        resistance = max(recent_highs)
-        support = min(recent_lows)
-        
-        # Distance to nearest level
-        distance_to_resistance = abs(resistance - current_price) / current_price
-        distance_to_support = abs(current_price - support) / current_price
-        
-        return min(distance_to_resistance, distance_to_support)
-
-
-class TradeStopLossManager:
-    """Manages all 3 stop loss levels for a single trade"""
+class ThreeSLOneTpManager:
+    """
+    Manages the 3SL/1TP system with exact logic:
+    - TP1 → SL to entry
+    - TP2 → SL to TP1  
+    - TP3 → close trade
+    """
     
     def __init__(self, 
                  symbol: str,
                  direction: str,
                  entry_price: float,
                  position_size: float,
-                 config: StopLossConfig = None):
+                 config: Optional[ThreeSLOneTpConfig] = None):
         self.symbol = symbol
         self.direction = direction.lower()
         self.entry_price = entry_price
         self.position_size = position_size
-        self.config = config or StopLossConfig()
+        self.config = config or ThreeSLOneTpConfig()
         
         self.logger = logging.getLogger(__name__)
-        self.market_analyzer = MarketAnalyzer()
         
-        # Initialize stop losses
-        self.stop_losses: Dict[StopLossLevel, DynamicStopLoss] = {}
-        self._initialize_stop_losses()
+        # Initialize take profit levels
+        self.take_profits: Dict[TakeProfitLevel, TakeProfitLevel_Data] = {}
+        self._initialize_take_profits()
+        
+        # Initialize stop loss
+        self.stop_loss = StopLossData(
+            current_price=self._calculate_initial_sl_price(),
+            original_price=self._calculate_initial_sl_price()
+        )
         
         # Trade state
         self.active = True
@@ -321,413 +137,520 @@ class TradeStopLossManager:
         self.creation_time = datetime.now()
         self.last_update_time = datetime.now()
         
-        # Performance tracking
-        self.trigger_history: List[Dict[str, Any]] = []
+        # Event tracking
+        self.event_history: List[Dict[str, Any]] = []
         
-    def _initialize_stop_losses(self):
-        """Initialize all three stop loss levels"""
-        # Calculate initial stop loss prices
-        sl1_price = self._calculate_initial_sl_price(self.config.sl1_base_percent)
-        sl2_price = self._calculate_initial_sl_price(self.config.sl2_base_percent)
-        sl3_price = self._calculate_initial_sl_price(self.config.sl3_base_percent)
-        
-        # Create stop loss objects
-        self.stop_losses[StopLossLevel.SL1] = DynamicStopLoss(
-            level=StopLossLevel.SL1,
-            symbol=self.symbol,
-            direction=self.direction,
-            entry_price=self.entry_price,
-            current_price=self.entry_price,
-            original_sl_price=sl1_price,
-            current_sl_price=sl1_price,
-            position_percent=self.config.sl1_position_percent
-        )
-        
-        self.stop_losses[StopLossLevel.SL2] = DynamicStopLoss(
-            level=StopLossLevel.SL2,
-            symbol=self.symbol,
-            direction=self.direction,
-            entry_price=self.entry_price,
-            current_price=self.entry_price,
-            original_sl_price=sl2_price,
-            current_sl_price=sl2_price,
-            position_percent=self.config.sl2_position_percent
-        )
-        
-        self.stop_losses[StopLossLevel.SL3] = DynamicStopLoss(
-            level=StopLossLevel.SL3,
-            symbol=self.symbol,
-            direction=self.direction,
-            entry_price=self.entry_price,
-            current_price=self.entry_price,
-            original_sl_price=sl3_price,
-            current_sl_price=sl3_price,
-            position_percent=self.config.sl3_position_percent
-        )
-        
-        self.logger.info(f"Initialized 3-level stop loss for {self.symbol} {self.direction}")
-        self.logger.info(f"SL1: {sl1_price:.6f}, SL2: {sl2_price:.6f}, SL3: {sl3_price:.6f}")
+        self.logger.info(f"Initialized 3SL/1TP system for {self.symbol} {self.direction}")
+        self.logger.info(f"Entry: {self.entry_price}, Initial SL: {self.stop_loss.current_price}")
+        self.logger.info(f"TP1: {self.take_profits[TakeProfitLevel.TP1].price}, "
+                        f"TP2: {self.take_profits[TakeProfitLevel.TP2].price}, "
+                        f"TP3: {self.take_profits[TakeProfitLevel.TP3].price}")
     
-    def _calculate_initial_sl_price(self, base_percent: float) -> float:
+    def _initialize_take_profits(self):
+        """Initialize all three take profit levels"""
+        # Calculate take profit prices
+        tp1_price = self._calculate_tp_price(self.config.tp1_percent)
+        tp2_price = self._calculate_tp_price(self.config.tp2_percent)
+        tp3_price = self._calculate_tp_price(self.config.tp3_percent)
+        
+        # Create take profit objects
+        self.take_profits[TakeProfitLevel.TP1] = TakeProfitLevel_Data(
+            level=TakeProfitLevel.TP1,
+            price=tp1_price,
+            close_percent=self.config.tp1_close_percent
+        )
+        
+        self.take_profits[TakeProfitLevel.TP2] = TakeProfitLevel_Data(
+            level=TakeProfitLevel.TP2,
+            price=tp2_price,
+            close_percent=self.config.tp2_close_percent
+        )
+        
+        self.take_profits[TakeProfitLevel.TP3] = TakeProfitLevel_Data(
+            level=TakeProfitLevel.TP3,
+            price=tp3_price,
+            close_percent=self.config.tp3_close_percent
+        )
+    
+    def _calculate_tp_price(self, percent: float) -> float:
+        """Calculate take profit price based on percentage"""
+        if self.direction == 'long':
+            return self.entry_price * (1 + percent / 100)
+        else:  # short
+            return self.entry_price * (1 - percent / 100)
+    
+    def _calculate_initial_sl_price(self) -> float:
         """Calculate initial stop loss price"""
         if self.direction == 'long':
-            return self.entry_price * (1 - base_percent / 100)
-        else:
-            return self.entry_price * (1 + base_percent / 100)
+            return self.entry_price * (1 - self.config.initial_sl_percent / 100)
+        else:  # short
+            return self.entry_price * (1 + self.config.initial_sl_percent / 100)
     
-    async def update_market_conditions(self, current_price: float, 
-                                     price_data: List[Dict] = None) -> List[Dict[str, Any]]:
-        """Update stop losses based on current market conditions"""
-        triggered_levels = []
+    async def update_price(self, current_price: float) -> List[Dict[str, Any]]:
+        """
+        Update current price and check for TP/SL triggers
+        Returns list of triggered events
+        """
+        if not self.active:
+            return []
+        
+        triggered_events = []
         
         try:
-            # Update current price for all stop losses
-            for sl in self.stop_losses.values():
-                sl.current_price = current_price
-                sl.last_update_time = datetime.now()
+            # Check for take profit hits in order (TP1, then TP2, then TP3)
+            for tp_level in [TakeProfitLevel.TP1, TakeProfitLevel.TP2, TakeProfitLevel.TP3]:
+                tp_data = self.take_profits[tp_level]
+                
+                if not tp_data.hit and self._is_take_profit_hit(tp_data, current_price):
+                    event = await self._handle_take_profit_hit(tp_level, current_price)
+                    triggered_events.append(event)
+                    
+                    # If TP3 is hit, trade is completely closed
+                    if tp_level == TakeProfitLevel.TP3:
+                        self.active = False
+                        break
             
-            # Analyze market conditions if price data available
-            if price_data:
-                market_conditions = self.market_analyzer.analyze_market_conditions(
-                    self.symbol, price_data, current_price
-                )
-                await self._adjust_stop_losses_for_conditions(market_conditions)
-            
-            # Check for triggers
-            triggered_levels = await self._check_stop_loss_triggers(current_price)
-            
-            # Update trailing stops
-            if self.config.trailing_enabled:
-                await self._update_trailing_stops(current_price)
+            # Check stop loss only if trade is still active
+            if self.active and self._is_stop_loss_hit(current_price):
+                event = await self._handle_stop_loss_hit(current_price)
+                triggered_events.append(event)
+                self.active = False
             
             self.last_update_time = datetime.now()
             
         except Exception as e:
-            self.logger.error(f"Error updating market conditions: {e}")
+            self.logger.error(f"Error updating price: {e}")
         
-        return triggered_levels
+        return triggered_events
     
-    async def _adjust_stop_losses_for_conditions(self, conditions: MarketConditions):
-        """Adjust stop loss levels based on market conditions"""
-        try:
-            # Calculate adjustment factors
-            volatility_factor = self.config.volatility_multipliers.get(
-                conditions.volatility_level, 1.0
-            )
-            session_factor = self.config.session_adjustments.get(
-                conditions.market_session, 1.0
-            )
-            
-            # Combined adjustment factor
-            total_factor = volatility_factor * session_factor
-            
-            # Additional adjustments based on other conditions
-            if conditions.volume_ratio > 2.0:  # High volume
-                total_factor *= 1.1
-            
-            if conditions.momentum_strength > 0.8:  # Strong momentum
-                total_factor *= 0.9  # Tighter stops
-            
-            # Apply adjustments to non-triggered stop losses
-            for level, sl in self.stop_losses.items():
-                if not sl.triggered:
-                    # Calculate new stop loss price
-                    base_percent = self._get_base_percent_for_level(level)
-                    adjusted_percent = base_percent * total_factor
-                    
-                    new_sl_price = self._calculate_adjusted_sl_price(adjusted_percent)
-                    
-                    # Only move stop loss in favorable direction
-                    if self._is_favorable_sl_move(sl.current_sl_price, new_sl_price):
-                        old_price = sl.current_sl_price
-                        sl.current_sl_price = new_sl_price
-                        
-                        self.logger.debug(
-                            f"Adjusted {level.value} from {old_price:.6f} to {new_sl_price:.6f} "
-                            f"(factor: {total_factor:.2f})"
-                        )
-            
-        except Exception as e:
-            self.logger.error(f"Error adjusting stop losses for conditions: {e}")
+    def _is_take_profit_hit(self, tp_data: TakeProfitLevel_Data, current_price: float) -> bool:
+        """Check if take profit level is hit"""
+        if self.direction == 'long':
+            return current_price >= tp_data.price
+        else:  # short
+            return current_price <= tp_data.price
     
-    def _get_base_percent_for_level(self, level: StopLossLevel) -> float:
-        """Get base percentage for stop loss level"""
-        base_percents = {
-            StopLossLevel.SL1: self.config.sl1_base_percent,
-            StopLossLevel.SL2: self.config.sl2_base_percent,
-            StopLossLevel.SL3: self.config.sl3_base_percent
+    def _is_stop_loss_hit(self, current_price: float) -> bool:
+        """Check if stop loss is hit"""
+        if self.direction == 'long':
+            return current_price <= self.stop_loss.current_price
+        else:  # short
+            return current_price >= self.stop_loss.current_price
+    
+    async def _handle_take_profit_hit(self, tp_level: TakeProfitLevel, current_price: float) -> Dict[str, Any]:
+        """Handle take profit hit and update stop loss accordingly"""
+        tp_data = self.take_profits[tp_level]
+        tp_data.hit = True
+        tp_data.hit_time = datetime.now()
+        
+        # Calculate position amount to close
+        close_amount = (tp_data.close_percent / 100) * self.remaining_position_size
+        self.remaining_position_size -= close_amount
+        self.total_closed_amount += close_amount
+        
+        # Create event data
+        event = {
+            'type': 'take_profit',
+            'level': tp_level.value,
+            'price': current_price,
+            'tp_price': tp_data.price,
+            'close_amount': close_amount,
+            'close_percent': tp_data.close_percent,
+            'remaining_position': self.remaining_position_size,
+            'timestamp': tp_data.hit_time,
+            'sl_action': None
         }
-        return base_percents.get(level, 2.0)
-    
-    def _calculate_adjusted_sl_price(self, adjusted_percent: float) -> float:
-        """Calculate adjusted stop loss price"""
-        if self.direction == 'long':
-            return self.entry_price * (1 - adjusted_percent / 100)
-        else:
-            return self.entry_price * (1 + adjusted_percent / 100)
-    
-    def _is_favorable_sl_move(self, current_sl: float, new_sl: float) -> bool:
-        """Check if stop loss move is favorable (reduces risk)"""
-        if self.direction == 'long':
-            return new_sl > current_sl  # Higher stop loss for long positions
-        else:
-            return new_sl < current_sl  # Lower stop loss for short positions
-    
-    async def _check_stop_loss_triggers(self, current_price: float) -> List[Dict[str, Any]]:
-        """Check if any stop losses are triggered"""
-        triggered_levels = []
         
-        for level, sl in self.stop_losses.items():
-            if sl.triggered:
-                continue
+        # Move stop loss according to the exact logic requested
+        if tp_level == TakeProfitLevel.TP1:
+            # TP1 reached → SL moves to entry price
+            old_sl = self.stop_loss.current_price
+            self.stop_loss.current_price = self.entry_price
+            self.stop_loss.state = StopLossState.AT_ENTRY
+            self.stop_loss.last_update_time = datetime.now()
             
-            # Check if stop loss is triggered
-            if self._is_stop_loss_triggered(sl, current_price):
-                sl.triggered = True
-                sl.trigger_time = datetime.now()
-                
-                # Calculate position amount to close
-                close_amount = (sl.position_percent / 100) * self.remaining_position_size
-                self.remaining_position_size -= close_amount
-                self.total_closed_amount += close_amount
-                
-                trigger_info = {
-                    'level': level.value,
-                    'trigger_price': current_price,
-                    'sl_price': sl.current_sl_price,
-                    'close_amount': close_amount,
-                    'remaining_position': self.remaining_position_size,
-                    'trigger_time': sl.trigger_time,
-                    'position_percent': sl.position_percent
-                }
-                
-                triggered_levels.append(trigger_info)
-                self.trigger_history.append(trigger_info)
-                
-                self.logger.warning(
-                    f"🛑 {level.value.upper()} TRIGGERED for {self.symbol}: "
-                    f"Price {current_price:.6f} hit SL {sl.current_sl_price:.6f}, "
-                    f"Closing {close_amount:.6f} ({sl.position_percent}%)"
-                )
-                
-                # Check if all stop losses triggered (full position closed)
-                if self.remaining_position_size <= 0.01:  # Small threshold for floating point
-                    self.active = False
-                    self.logger.info(f"All stop losses triggered for {self.symbol}, trade closed")
+            event['sl_action'] = {
+                'description': 'SL moved to entry price',
+                'old_sl': old_sl,
+                'new_sl': self.stop_loss.current_price
+            }
+            
+            self.logger.info(f"✅ TP1 HIT at {current_price:.6f}! Closing {close_amount:.6f} ({tp_data.close_percent}%). SL moved to entry: {self.entry_price:.6f}")
         
-        return triggered_levels
-    
-    def _is_stop_loss_triggered(self, sl: DynamicStopLoss, current_price: float) -> bool:
-        """Check if specific stop loss is triggered"""
-        if self.direction == 'long':
-            return current_price <= sl.current_sl_price
-        else:
-            return current_price >= sl.current_sl_price
-    
-    async def _update_trailing_stops(self, current_price: float):
-        """Update trailing stop losses"""
-        for sl in self.stop_losses.values():
-            if sl.triggered:
-                continue
+        elif tp_level == TakeProfitLevel.TP2:
+            # TP2 reached → SL moves to TP1 price
+            old_sl = self.stop_loss.current_price
+            self.stop_loss.current_price = self.take_profits[TakeProfitLevel.TP1].price
+            self.stop_loss.state = StopLossState.AT_TP1
+            self.stop_loss.last_update_time = datetime.now()
             
-            try:
-                if self.direction == 'long':
-                    # Update high water mark
-                    if sl.trail_high_water_mark is None or current_price > sl.trail_high_water_mark:
-                        sl.trail_high_water_mark = current_price
-                    
-                    # Calculate trailing stop price
-                    trailing_sl = sl.trail_high_water_mark * (1 - self.config.trailing_distance_percent / 100)
-                    
-                    # Move stop loss up if trailing price is higher
-                    if trailing_sl > sl.current_sl_price:
-                        sl.current_sl_price = trailing_sl
-                        self.logger.debug(f"Trailed {sl.level.value} up to {trailing_sl:.6f}")
-                
-                else:  # short position
-                    # Update low water mark
-                    if sl.trail_low_water_mark is None or current_price < sl.trail_low_water_mark:
-                        sl.trail_low_water_mark = current_price
-                    
-                    # Calculate trailing stop price
-                    trailing_sl = sl.trail_low_water_mark * (1 + self.config.trailing_distance_percent / 100)
-                    
-                    # Move stop loss down if trailing price is lower
-                    if trailing_sl < sl.current_sl_price:
-                        sl.current_sl_price = trailing_sl
-                        self.logger.debug(f"Trailed {sl.level.value} down to {trailing_sl:.6f}")
+            event['sl_action'] = {
+                'description': 'SL moved to TP1 price',
+                'old_sl': old_sl,
+                'new_sl': self.stop_loss.current_price
+            }
             
-            except Exception as e:
-                self.logger.error(f"Error updating trailing stop for {sl.level.value}: {e}")
+            self.logger.info(f"✅ TP2 HIT at {current_price:.6f}! Closing {close_amount:.6f} ({tp_data.close_percent}%). SL moved to TP1: {self.stop_loss.current_price:.6f}")
+        
+        elif tp_level == TakeProfitLevel.TP3:
+            # TP3 reached → close entire trade automatically
+            # Close any remaining position
+            self.remaining_position_size = 0
+            self.total_closed_amount = self.position_size
+            self.stop_loss.state = StopLossState.CLOSED
+            
+            event['close_amount'] = self.position_size - self.total_closed_amount + close_amount
+            event['sl_action'] = {
+                'description': 'Trade fully closed at TP3',
+                'old_sl': self.stop_loss.current_price,
+                'new_sl': 'N/A - Trade Closed'
+            }
+            
+            self.logger.info(f"✅ TP3 HIT at {current_price:.6f}! Trade FULLY CLOSED. Total position: {self.position_size:.6f}")
+        
+        # Add to event history
+        self.event_history.append(event)
+        
+        return event
     
-    def get_stop_loss_status(self) -> Dict[str, Any]:
-        """Get current status of all stop losses"""
-        status = {
+    async def _handle_stop_loss_hit(self, current_price: float) -> Dict[str, Any]:
+        """Handle stop loss hit - close remaining position"""
+        close_amount = self.remaining_position_size
+        self.total_closed_amount += close_amount
+        self.remaining_position_size = 0
+        
+        event = {
+            'type': 'stop_loss',
+            'price': current_price,
+            'sl_price': self.stop_loss.current_price,
+            'close_amount': close_amount,
+            'remaining_position': 0,
+            'sl_state': self.stop_loss.state.value,
+            'timestamp': datetime.now()
+        }
+        
+        self.event_history.append(event)
+        
+        self.logger.warning(f"🛑 STOP LOSS HIT at {current_price:.6f}! SL was at {self.stop_loss.current_price:.6f}. Closing remaining {close_amount:.6f}")
+        
+        return event
+    
+    def get_current_status(self) -> Dict[str, Any]:
+        """Get current status of the 3SL/1TP system"""
+        return {
             'symbol': self.symbol,
             'direction': self.direction,
             'entry_price': self.entry_price,
             'active': self.active,
             'remaining_position_size': self.remaining_position_size,
             'total_closed_amount': self.total_closed_amount,
+            'position_closed_percent': (self.total_closed_amount / self.position_size) * 100,
             'creation_time': self.creation_time.isoformat(),
             'last_update_time': self.last_update_time.isoformat(),
-            'stop_losses': {}
+            'stop_loss': {
+                'current_price': self.stop_loss.current_price,
+                'original_price': self.stop_loss.original_price,
+                'state': self.stop_loss.state.value,
+                'last_update': self.stop_loss.last_update_time.isoformat() if self.stop_loss.last_update_time else None
+            },
+            'take_profits': {
+                tp_level.value: {
+                    'price': tp_data.price,
+                    'hit': tp_data.hit,
+                    'hit_time': tp_data.hit_time.isoformat() if tp_data.hit_time else None,
+                    'close_percent': tp_data.close_percent
+                }
+                for tp_level, tp_data in self.take_profits.items()
+            },
+            'event_count': len(self.event_history)
         }
-        
-        for level, sl in self.stop_losses.items():
-            status['stop_losses'][level.value] = {
-                'original_price': sl.original_sl_price,
-                'current_price': sl.current_sl_price,
-                'triggered': sl.triggered,
-                'trigger_time': sl.trigger_time.isoformat() if sl.trigger_time else None,
-                'position_percent': sl.position_percent,
-                'trail_high_water_mark': sl.trail_high_water_mark,
-                'trail_low_water_mark': sl.trail_low_water_mark
-            }
-        
-        return status
     
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for this stop loss system"""
-        triggered_count = sum(1 for sl in self.stop_losses.values() if sl.triggered)
-        
-        # Calculate time active
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary"""
+        tp_hits = sum(1 for tp in self.take_profits.values() if tp.hit)
         time_active = (datetime.now() - self.creation_time).total_seconds() / 3600  # hours
         
         return {
-            'triggered_levels': triggered_count,
+            'tp_levels_hit': tp_hits,
             'remaining_position_percent': (self.remaining_position_size / self.position_size) * 100,
             'closed_position_percent': (self.total_closed_amount / self.position_size) * 100,
             'time_active_hours': time_active,
-            'trigger_history': self.trigger_history,
-            'is_complete': not self.active
+            'sl_progression': self.stop_loss.state.value,
+            'events_triggered': len(self.event_history),
+            'is_complete': not self.active,
+            'final_outcome': self._get_final_outcome()
         }
-
-
-class DynamicStopLossDatabase:
-    """Database for tracking stop loss performance and analytics"""
     
-    def __init__(self, db_path: str = "stop_loss_analytics.db"):
-        self.db_path = db_path
-        self._initialize_database()
-    
-    def _initialize_database(self):
-        """Initialize stop loss analytics database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+    def _get_final_outcome(self) -> str:
+        """Determine final outcome of the trade"""
+        if self.active:
+            return "active"
         
-        # Stop loss triggers table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sl_triggers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                direction TEXT NOT NULL,
-                entry_price REAL NOT NULL,
-                sl_level TEXT NOT NULL,
-                trigger_price REAL NOT NULL,
-                sl_price REAL NOT NULL,
-                position_percent REAL NOT NULL,
-                trigger_time TIMESTAMP NOT NULL,
-                market_session TEXT,
-                volatility_level TEXT,
-                profit_loss REAL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        tp_hits = sum(1 for tp in self.take_profits.values() if tp.hit)
         
-        # Performance metrics table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sl_performance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                direction TEXT NOT NULL,
-                total_triggers INTEGER NOT NULL,
-                position_saved_percent REAL NOT NULL,
-                time_active_hours REAL NOT NULL,
-                effectiveness_score REAL NOT NULL,
-                date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+        if tp_hits == 3:
+            return "all_tps_hit"
+        elif tp_hits > 0:
+            return f"partial_tp_hit_{tp_hits}"
+        else:
+            return "sl_only"
+
+
+# Global registry for active 3SL/1TP managers
+_active_3sl1tp_managers: Dict[str, ThreeSLOneTpManager] = {}
+
+
+def create_3sl1tp_manager(symbol: str, direction: str, entry_price: float, 
+                         position_size: float, config: Optional[ThreeSLOneTpConfig] = None) -> ThreeSLOneTpManager:
+    """Create and register a new 3SL/1TP manager"""
+    manager_id = f"{symbol}_{direction}_{int(entry_price * 1000000)}_{int(datetime.now().timestamp())}"
     
-    def log_trigger(self, trigger_data: Dict[str, Any]) -> bool:
-        """Log stop loss trigger event"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO sl_triggers (
-                    symbol, direction, entry_price, sl_level, trigger_price, sl_price,
-                    position_percent, trigger_time, market_session, volatility_level, profit_loss
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trigger_data.get('symbol'),
-                trigger_data.get('direction'),
-                trigger_data.get('entry_price'),
-                trigger_data.get('level'),
-                trigger_data.get('trigger_price'),
-                trigger_data.get('sl_price'),
-                trigger_data.get('position_percent'),
-                trigger_data.get('trigger_time'),
-                trigger_data.get('market_session'),
-                trigger_data.get('volatility_level'),
-                trigger_data.get('profit_loss', 0.0)
-            ))
-            
-            conn.commit()
-            conn.close()
-            return True
-            
-        except Exception as e:
-            print(f"Failed to log stop loss trigger: {e}")
-            return False
-
-
-# Global stop loss managers registry
-_active_stop_loss_managers: Dict[str, TradeStopLossManager] = {}
-
-
-def create_stop_loss_manager(symbol: str, direction: str, entry_price: float, 
-                           position_size: float, config: StopLossConfig = None) -> TradeStopLossManager:
-    """Create and register a new stop loss manager"""
-    manager_id = f"{symbol}_{direction}_{int(entry_price * 1000000)}"
-    
-    manager = TradeStopLossManager(symbol, direction, entry_price, position_size, config)
-    _active_stop_loss_managers[manager_id] = manager
+    manager = ThreeSLOneTpManager(symbol, direction, entry_price, position_size, config)
+    _active_3sl1tp_managers[manager_id] = manager
     
     return manager
 
 
-def get_stop_loss_manager(manager_id: str) -> Optional[TradeStopLossManager]:
-    """Get stop loss manager by ID"""
-    return _active_stop_loss_managers.get(manager_id)
+def get_3sl1tp_manager(manager_id: str) -> Optional[ThreeSLOneTpManager]:
+    """Get 3SL/1TP manager by ID"""
+    return _active_3sl1tp_managers.get(manager_id)
 
 
-def remove_stop_loss_manager(manager_id: str) -> bool:
-    """Remove stop loss manager from registry"""
-    if manager_id in _active_stop_loss_managers:
-        del _active_stop_loss_managers[manager_id]
+def remove_3sl1tp_manager(manager_id: str) -> bool:
+    """Remove 3SL/1TP manager from registry"""
+    if manager_id in _active_3sl1tp_managers:
+        del _active_3sl1tp_managers[manager_id]
         return True
     return False
 
 
-def get_all_active_managers() -> Dict[str, TradeStopLossManager]:
-    """Get all active stop loss managers"""
-    return _active_stop_loss_managers.copy()
+def get_all_active_3sl1tp_managers() -> Dict[str, ThreeSLOneTpManager]:
+    """Get all active 3SL/1TP managers"""
+    return _active_3sl1tp_managers.copy()
 
 
-def cleanup_inactive_managers():
-    """Remove inactive stop loss managers"""
+def cleanup_inactive_3sl1tp_managers() -> int:
+    """Remove inactive 3SL/1TP managers"""
     inactive_managers = [
-        manager_id for manager_id, manager in _active_stop_loss_managers.items()
+        manager_id for manager_id, manager in _active_3sl1tp_managers.items()
         if not manager.active
     ]
     
     for manager_id in inactive_managers:
-        del _active_stop_loss_managers[manager_id]
+        del _active_3sl1tp_managers[manager_id]
     
     return len(inactive_managers)
+
+
+# Compatibility aliases and classes for existing system
+class DynamicStopLoss:
+    """Compatibility alias for the old DynamicStopLoss class"""
+    def __init__(self, level, symbol, direction, entry_price, current_price, 
+                 original_sl_price, current_sl_price, triggered=False, 
+                 trigger_time=None, position_percent=33.0, **kwargs):
+        self.level = level
+        self.symbol = symbol
+        self.direction = direction
+        self.entry_price = entry_price
+        self.current_price = current_price
+        self.original_sl_price = original_sl_price
+        self.current_sl_price = current_sl_price
+        self.triggered = triggered
+        self.trigger_time = trigger_time
+        self.position_percent = position_percent
+        self.last_update_time = datetime.now()
+
+class StopLossConfig:
+    """Compatibility class for stop loss configuration"""
+    def __init__(self, sl1_base_percent=1.5, sl2_base_percent=4.0, sl3_base_percent=7.5,
+                 sl1_position_percent=33.0, sl2_position_percent=33.0, sl3_position_percent=34.0,
+                 trailing_enabled=True, trailing_distance_percent=1.0, **kwargs):
+        self.sl1_base_percent = sl1_base_percent
+        self.sl2_base_percent = sl2_base_percent
+        self.sl3_base_percent = sl3_base_percent
+        self.sl1_position_percent = sl1_position_percent
+        self.sl2_position_percent = sl2_position_percent
+        self.sl3_position_percent = sl3_position_percent
+        self.trailing_enabled = trailing_enabled
+        self.trailing_distance_percent = trailing_distance_percent
+
+class MarketConditions:
+    """Compatibility class for market conditions"""
+    def __init__(self, volatility_level="medium", market_session="new_york", 
+                 atr_value=0.01, volume_ratio=1.0, momentum_strength=0.5,
+                 support_resistance_distance=0.02, timestamp=None):
+        self.volatility_level = volatility_level
+        self.market_session = market_session
+        self.atr_value = atr_value
+        self.volume_ratio = volume_ratio
+        self.momentum_strength = momentum_strength
+        self.support_resistance_distance = support_resistance_distance
+        self.timestamp = timestamp or datetime.now()
+
+class MarketAnalyzer:
+    """Compatibility class for market analysis"""
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def analyze_market_conditions(self, symbol, price_data, current_price):
+        """Return default market conditions for compatibility"""
+        return MarketConditions()
+
+# Compatibility enums
+class StopLossLevel(Enum):
+    """Stop loss level enumeration - compatibility"""
+    SL1 = "sl1"
+    SL2 = "sl2" 
+    SL3 = "sl3"
+
+class VolatilityLevel(Enum):
+    """Volatility level enumeration - compatibility"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    EXTREME = "extreme"
+
+class MarketSession(Enum):
+    """Market session enumeration - compatibility"""
+    ASIA = "asia"
+    LONDON = "london"
+    NEW_YORK = "new_york"
+    OVERLAP = "overlap"
+
+# Compatibility functions to maintain interface with existing system
+async def create_stop_loss_manager(symbol: str, direction: str, entry_price: float, 
+                           position_size: float, config=None) -> ThreeSLOneTpManager:
+    """Compatibility function - creates 3SL/1TP manager"""
+    # Convert old config to new config if provided
+    new_config = None
+    if config:
+        new_config = ThreeSLOneTpConfig()
+        # Map old config attributes if they exist
+        if hasattr(config, 'sl1_base_percent'):
+            new_config.initial_sl_percent = config.sl1_base_percent
+        if hasattr(config, 'tp1_percent'):
+            new_config.tp1_percent = config.tp1_percent
+        if hasattr(config, 'tp2_percent'):
+            new_config.tp2_percent = config.tp2_percent
+        if hasattr(config, 'tp3_percent'):
+            new_config.tp3_percent = config.tp3_percent
+    else:
+        new_config = ThreeSLOneTpConfig()
+    
+    return create_3sl1tp_manager(symbol, direction, entry_price, position_size, new_config)
+
+def get_stop_loss_manager(manager_id: str):
+    """Compatibility function"""
+    return get_3sl1tp_manager(manager_id)
+
+def get_all_active_managers():
+    """Compatibility function"""
+    return get_all_active_3sl1tp_managers()
+
+def cleanup_inactive_managers():
+    """Compatibility function"""
+    return cleanup_inactive_3sl1tp_managers()
+
+
+class TradeStopLossManager:
+    """Compatibility class - wraps ThreeSLOneTpManager"""
+    
+    def __init__(self, symbol: str, direction: str, entry_price: float, 
+                 position_size: float, config=None):
+        # Convert old config to new config if provided
+        new_config = None
+        if config:
+            new_config = ThreeSLOneTpConfig()
+            # Map old config attributes if they exist
+            if hasattr(config, 'sl1_base_percent'):
+                new_config.initial_sl_percent = config.sl1_base_percent
+            if hasattr(config, 'tp1_percent'):
+                new_config.tp1_percent = config.tp1_percent
+            if hasattr(config, 'tp2_percent'):
+                new_config.tp2_percent = config.tp2_percent
+            if hasattr(config, 'tp3_percent'):
+                new_config.tp3_percent = config.tp3_percent
+        else:
+            new_config = ThreeSLOneTpConfig()
+        
+        self.manager = create_3sl1tp_manager(symbol, direction, entry_price, position_size, new_config)
+        
+    async def update_market_conditions(self, current_price: float, price_data=None):
+        """Compatibility method"""
+        return await self.manager.update_price(current_price)
+    
+    def get_stop_loss_status(self):
+        """Compatibility method"""
+        return self.manager.get_current_status()
+    
+    def get_performance_metrics(self):
+        """Compatibility method"""
+        return self.manager.get_performance_summary()
+    
+    @property
+    def active(self):
+        return self.manager.active
+    
+    @property
+    def symbol(self):
+        return self.manager.symbol
+    
+    @property
+    def direction(self):
+        return self.manager.direction
+    
+    @property
+    def entry_price(self):
+        return self.manager.entry_price
+    
+    @property
+    def remaining_position_size(self):
+        return self.manager.remaining_position_size
+
+
+if __name__ == "__main__":
+    # Example usage
+    async def test_3sl1tp_system():
+        """Test the 3SL/1TP system"""
+        logging.basicConfig(level=logging.INFO)
+        
+        # Create a long position
+        manager = create_3sl1tp_manager(
+            symbol="BTCUSDT",
+            direction="long", 
+            entry_price=50000.0,
+            position_size=1.0
+        )
+        
+        print("=== 3SL/1TP System Test ===")
+        print(f"Entry: {manager.entry_price}")
+        print(f"TP1: {manager.take_profits[TakeProfitLevel.TP1].price}")
+        print(f"TP2: {manager.take_profits[TakeProfitLevel.TP2].price}")
+        print(f"TP3: {manager.take_profits[TakeProfitLevel.TP3].price}")
+        print(f"Initial SL: {manager.stop_loss.current_price}")
+        
+        # Simulate price movements
+        test_prices = [50500, 51000, 52000, 53000]
+        
+        for price in test_prices:
+            print(f"\n--- Price Update: {price} ---")
+            events = await manager.update_price(price)
+            for event in events:
+                print(f"Event: {event}")
+            
+            status = manager.get_current_status()
+            print(f"SL State: {status['stop_loss']['state']}")
+            print(f"SL Price: {status['stop_loss']['current_price']}")
+            print(f"Remaining Position: {status['remaining_position_size']}")
+            
+            if not manager.active:
+                print("Trade completed!")
+                break
+        
+        print("\n=== Final Summary ===")
+        summary = manager.get_performance_summary()
+        print(summary)
+    
+    # Run test if executed directly
+    import asyncio
+    asyncio.run(test_3sl1tp_system())

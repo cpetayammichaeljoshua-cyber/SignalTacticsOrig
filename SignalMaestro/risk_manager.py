@@ -443,7 +443,7 @@ class RiskManager:
         else:
             return "Drawdown within acceptable limits - Continue normal trading"
     
-    async def get_risk_summary(self, user_id: int = None) -> Dict[str, Any]:
+    async def get_risk_summary(self, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get overall risk summary for user or system"""
         try:
             # This would typically fetch data from database

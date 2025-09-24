@@ -36,6 +36,9 @@ class TradingSignalBot:
         # Initialize strategy comparison service
         self.strategy_comparison = TelegramStrategyComparison(self.config)
         
+        # Initialize metrics manager
+        self.metrics_manager = None
+        
     async def initialize(self):
         """Initialize the Telegram bot application"""
         try:
@@ -50,6 +53,18 @@ class TradingSignalBot:
             self.application.add_handler(CommandHandler("settings", self.settings_command))
             self.application.add_handler(CommandHandler("status", self.status_command))
             self.application.add_handler(CommandHandler("history", self.history_command))
+            
+            # Add comprehensive metrics commands
+            self.application.add_handler(CommandHandler("metrics", self.metrics_command))
+            self.application.add_handler(CommandHandler("performance", self.performance_command))
+            self.application.add_handler(CommandHandler("stats", self.stats_command))
+            self.application.add_handler(CommandHandler("winrate", self.winrate_command))
+            self.application.add_handler(CommandHandler("pnl", self.pnl_command))
+            self.application.add_handler(CommandHandler("streaks", self.streaks_command))
+            self.application.add_handler(CommandHandler("pairs", self.pairs_performance_command))
+            self.application.add_handler(CommandHandler("hourly", self.hourly_performance_command))
+            self.application.add_handler(CommandHandler("risk", self.risk_metrics_command))
+            self.application.add_handler(CommandHandler("daily", self.daily_comparison_command))
             
             # Add strategy comparison commands
             self.application.add_handler(CommandHandler("strategies", self.strategies_command))
@@ -116,6 +131,18 @@ Hello {username}! I'm your automated cryptocurrency trading assistant.
 • `/history` - View trading history
 • `/help` - Show this help message
 
+**📊 Performance Metrics:**
+• `/metrics` - Complete performance overview
+• `/performance` - Detailed performance analysis
+• `/stats` - Quick statistics summary
+• `/winrate` - Win rate and streak analysis
+• `/pnl` - Profit & loss breakdown
+• `/streaks` - Winning/losing streak details
+• `/pairs` - Performance by trading pairs
+• `/hourly` - Success rate by hour
+• `/risk` - Risk metrics and analysis
+• `/daily` - Daily performance comparison
+
 **Strategy Comparison:**
 • `/strategies` - List available strategies
 • `/compare_run` - Start strategy comparison
@@ -155,6 +182,18 @@ Ready to start trading! Send me a signal or use the commands above.
 • `/status` - Check system status
 • `/history` - View recent trades
 • `/help` - Show this help
+
+**📊 Performance Metrics:**
+• `/metrics` - Complete performance overview
+• `/performance` - Detailed performance analysis
+• `/stats` - Quick statistics summary
+• `/winrate` - Win rate and streak analysis
+• `/pnl` - Profit & loss breakdown
+• `/streaks` - Winning/losing streak details
+• `/pairs` - Performance by trading pairs
+• `/hourly` - Success rate by hour
+• `/risk` - Risk metrics and analysis
+• `/daily` - Daily performance comparison
 
 **Signal Formats:**
 • `BUY BTCUSDT at 45000`
@@ -686,3 +725,516 @@ Send me a trading signal or use the commands above!
         except Exception as e:
             self.logger.error(f"Error in compare_help command: {e}")
             await update.message.reply_text("❌ Error loading help. Please try again later.")
+    
+    # ==================== COMPREHENSIVE METRICS COMMANDS ====================
+    
+    async def _ensure_metrics_manager(self):
+        """Ensure metrics manager is initialized"""
+        if self.metrics_manager is None:
+            try:
+                from trading_metrics_manager import get_global_metrics_manager
+                self.metrics_manager = await get_global_metrics_manager()
+            except Exception as e:
+                self.logger.error(f"Error initializing metrics manager: {e}")
+                return None
+        return self.metrics_manager
+    
+    async def metrics_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /metrics command - comprehensive trading metrics"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            await update.message.reply_text("📊 Loading comprehensive trading metrics...")
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available. Please try again later.")
+                return
+            
+            telegram_metrics = await metrics_manager.get_metrics_for_telegram()
+            await update.message.reply_text(telegram_metrics, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in metrics command: {e}")
+            await update.message.reply_text("❌ Error loading metrics. Please try again later.")
+    
+    async def performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /performance command - detailed performance analysis"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            await update.message.reply_text("📈 Analyzing trading performance...")
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available. Please try again later.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            performance_text = f"""📈 **DETAILED PERFORMANCE ANALYSIS**
+
+🎯 **Overall Statistics**
+• Total Trades: {metrics.total_trades}
+• Win Rate: {metrics.win_rate_percentage:.2f}% ({metrics.winning_trades}/{metrics.total_trades})
+• Total PnL: ${metrics.total_pnl:+,.2f}
+
+💰 **Profit & Loss**
+• Realized PnL: ${metrics.current_realized_pnl:+,.2f}
+• Unrealized PnL: ${metrics.current_unrealized_pnl:+,.2f}
+• Daily PnL: ${metrics.daily_pnl:+,.2f}
+
+🔥 **Trade Averages**
+• Avg Win: ${metrics.avg_profit_per_win:+,.2f}
+• Avg Loss: ${metrics.avg_loss_per_losing_trade:+,.2f}
+• Profit Factor: {(abs(metrics.avg_profit_per_win) / abs(metrics.avg_loss_per_losing_trade)):.2f} if metrics.avg_loss_per_losing_trade != 0 else "∞"
+
+📊 **Risk Analysis**
+• Sharpe Ratio: {metrics.sharpe_ratio:.3f}
+• Max Drawdown: ${metrics.maximum_drawdown:+,.2f} ({metrics.maximum_drawdown_percentage:.2f}%)
+
+⚡ **Activity**
+• Today's Trades: {metrics.trades_completed_today}
+• Trade Rate: {metrics.trades_per_hour:.2f}/hour
+
+🕐 Updated: {metrics.last_updated.strftime('%H:%M:%S')}"""
+            
+            await update.message.reply_text(performance_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in performance command: {e}")
+            await update.message.reply_text("❌ Error loading performance data. Please try again later.")
+    
+    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stats command - quick statistics overview"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            summary = await metrics_manager.get_metrics_summary()
+            
+            stats_text = f"""📊 **QUICK STATS**
+
+📈 Win Rate: {summary['win_rate']:.1f}% ({summary['total_trades']} trades)
+💰 Total PnL: ${summary['total_pnl']:+,.2f}
+📅 Daily PnL: ${summary['daily_pnl']:+,.2f}
+🔥 Current Streak: {'🟢' if summary['consecutive_wins'] > 0 else '🔴' if summary['consecutive_losses'] > 0 else '⚪'} {max(summary['consecutive_wins'], summary['consecutive_losses'])}
+⚡ Rate: {summary['trades_per_hour']:.1f}/hr | Today: {summary['trades_today']}
+📉 Max DD: ${summary['max_drawdown']:+,.2f} ({summary['max_drawdown_pct']:.1f}%)"""
+            
+            await update.message.reply_text(stats_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in stats command: {e}")
+            await update.message.reply_text("❌ Error loading stats.")
+    
+    async def winrate_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /winrate command - detailed win rate analysis"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            # Performance emoji based on win rate
+            if metrics.win_rate_percentage >= 80:
+                emoji = "🏆"
+            elif metrics.win_rate_percentage >= 70:
+                emoji = "🥇"
+            elif metrics.win_rate_percentage >= 60:
+                emoji = "🥈"
+            elif metrics.win_rate_percentage >= 50:
+                emoji = "🥉"
+            else:
+                emoji = "⚠️"
+            
+            winrate_text = f"""{emoji} **WIN RATE ANALYSIS**
+
+📊 **Overall Win Rate:** {metrics.win_rate_percentage:.2f}%
+• Winning Trades: {metrics.winning_trades}
+• Losing Trades: {metrics.losing_trades}
+• Total Trades: {metrics.total_trades}
+
+🔥 **Streak Performance:**
+• Current Streak: {'🟢 Wins' if metrics.current_streak_type == 'win' else '🔴 Losses' if metrics.current_streak_type == 'loss' else '⚪ None'}
+• Consecutive: {metrics.consecutive_wins if metrics.current_streak_type == 'win' else metrics.consecutive_losses if metrics.current_streak_type == 'loss' else 0}
+• Best Win Streak: 🏆 {metrics.best_winning_streak}
+• Worst Loss Streak: 💥 {metrics.worst_losing_streak}"""
+            
+            # Add comparison if available
+            if metrics.daily_comparison:
+                daily = metrics.daily_comparison
+                if 'pnl_change_percentage' in daily:
+                    trend_emoji = "📈" if daily['pnl_change_percentage'] > 0 else "📉" if daily['pnl_change_percentage'] < 0 else "➡️"
+                    winrate_text += f"""
+
+📅 **Daily Comparison:**
+• Performance: {trend_emoji} {daily['pnl_change_percentage']:+.1f}% vs yesterday
+• Trades: {daily['today_trades']} today vs {daily['yesterday_trades']} yesterday"""
+            
+            await update.message.reply_text(winrate_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in winrate command: {e}")
+            await update.message.reply_text("❌ Error loading win rate data.")
+    
+    async def pnl_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /pnl command - profit and loss analysis"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            def format_pnl(value):
+                return f"${value:+,.2f}" if value != 0 else "$0.00"
+            
+            def get_pnl_emoji(value):
+                if value > 100: return "🚀"
+                elif value > 50: return "💰"
+                elif value > 0: return "📈"
+                elif value > -50: return "📉"
+                else: return "💥"
+            
+            total_emoji = get_pnl_emoji(metrics.total_pnl)
+            daily_emoji = get_pnl_emoji(metrics.daily_pnl)
+            
+            pnl_text = f"""💰 **PROFIT & LOSS ANALYSIS**
+
+{total_emoji} **Total PnL:** {format_pnl(metrics.total_pnl)}
+• Realized PnL: {format_pnl(metrics.current_realized_pnl)}
+• Unrealized PnL: {format_pnl(metrics.current_unrealized_pnl)}
+
+{daily_emoji} **Daily PnL:** {format_pnl(metrics.daily_pnl)}
+
+📊 **Trade Averages:**
+• Avg Profit per Win: {format_pnl(metrics.avg_profit_per_win)}
+• Avg Loss per Trade: {format_pnl(metrics.avg_loss_per_losing_trade)}
+• Profit Factor: {(abs(metrics.avg_profit_per_win) / abs(metrics.avg_loss_per_losing_trade)):.2f}x if abs(metrics.avg_loss_per_losing_trade) > 0.001 else "∞"
+
+🛡️ **Risk Metrics:**
+• Sharpe Ratio: {metrics.sharpe_ratio:.3f}
+• Max Drawdown: {format_pnl(metrics.maximum_drawdown)} ({metrics.maximum_drawdown_percentage:.2f}%)"""
+            
+            # Add daily comparison
+            if metrics.daily_comparison and 'today_pnl' in metrics.daily_comparison:
+                daily_comp = metrics.daily_comparison
+                change_emoji = "📈" if daily_comp['pnl_change_percentage'] > 0 else "📉" if daily_comp['pnl_change_percentage'] < 0 else "➡️"
+                
+                pnl_text += f"""
+
+📅 **Daily Comparison:**
+• Today: {format_pnl(daily_comp['today_pnl'])}
+• Yesterday: {format_pnl(daily_comp['yesterday_pnl'])}
+• Change: {change_emoji} {daily_comp['pnl_change_percentage']:+.1f}%"""
+            
+            await update.message.reply_text(pnl_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in pnl command: {e}")
+            await update.message.reply_text("❌ Error loading PnL data.")
+    
+    async def streaks_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /streaks command - winning and losing streaks"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            def get_streak_emoji(streak_type):
+                if streak_type == "win":
+                    return "🟢"
+                elif streak_type == "loss":
+                    return "🔴"
+                else:
+                    return "⚪"
+            
+            current_emoji = get_streak_emoji(metrics.current_streak_type)
+            current_count = metrics.consecutive_wins if metrics.current_streak_type == "win" else metrics.consecutive_losses if metrics.current_streak_type == "loss" else 0
+            
+            streaks_text = f"""🔥 **STREAK ANALYSIS**
+
+{current_emoji} **Current Streak:**
+• Type: {metrics.current_streak_type.title() if metrics.current_streak_type != 'none' else 'None'}
+• Count: {current_count}
+
+🏆 **Record Streaks:**
+• Best Winning Streak: {metrics.best_winning_streak}
+• Worst Losing Streak: {metrics.worst_losing_streak}
+
+📊 **Current Status:**
+• Consecutive Wins: {'🟢 ' + str(metrics.consecutive_wins) if metrics.consecutive_wins > 0 else '⚪ 0'}
+• Consecutive Losses: {'🔴 ' + str(metrics.consecutive_losses) if metrics.consecutive_losses > 0 else '⚪ 0'}
+
+💡 **Streak Performance:**
+• Win Rate: {metrics.win_rate_percentage:.1f}%
+• {'Hot Streak! 🔥' if current_count >= 3 and metrics.current_streak_type == 'win' else 'Cold Streak ❄️' if current_count >= 3 and metrics.current_streak_type == 'loss' else 'Neutral 📊'}"""
+            
+            await update.message.reply_text(streaks_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in streaks command: {e}")
+            await update.message.reply_text("❌ Error loading streak data.")
+    
+    async def pairs_performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /pairs command - performance by trading pair"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            if not metrics.performance_by_trading_pair:
+                await update.message.reply_text("📭 No trading pair data available yet.")
+                return
+            
+            # Sort pairs by total PnL
+            sorted_pairs = sorted(
+                metrics.performance_by_trading_pair.items(), 
+                key=lambda x: x[1]['total_pnl'], 
+                reverse=True
+            )
+            
+            pairs_text = "🏆 **TRADING PAIRS PERFORMANCE**\n\n"
+            
+            for i, (pair, stats) in enumerate(sorted_pairs[:10], 1):  # Top 10 pairs
+                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}️⃣"
+                pnl_emoji = "📈" if stats['total_pnl'] > 0 else "📉" if stats['total_pnl'] < 0 else "➡️"
+                
+                pairs_text += f"{emoji} **{pair}**\n"
+                pairs_text += f"• PnL: {pnl_emoji} ${stats['total_pnl']:+,.2f}\n"
+                pairs_text += f"• Win Rate: {stats['win_rate']:.1f}% ({stats['winning_trades']}/{stats['total_trades']})\n"
+                pairs_text += f"• Avg Trade: ${stats['avg_profit']:+,.2f}\n"
+                pairs_text += f"• Best: ${stats['best_trade']:+,.2f} | Worst: ${stats['worst_trade']:+,.2f}\n\n"
+            
+            if len(sorted_pairs) > 10:
+                pairs_text += f"... and {len(sorted_pairs) - 10} more pairs"
+            
+            await update.message.reply_text(pairs_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in pairs command: {e}")
+            await update.message.reply_text("❌ Error loading pairs data.")
+    
+    async def hourly_performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /hourly command - success rate by time of day"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            if not metrics.success_rate_by_time:
+                await update.message.reply_text("📭 No hourly performance data available yet.")
+                return
+            
+            # Sort by success rate
+            sorted_hours = sorted(
+                metrics.success_rate_by_time.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )
+            
+            hourly_text = "🕐 **HOURLY PERFORMANCE**\n\n"
+            hourly_text += "🏆 **Best Trading Hours:**\n"
+            
+            for i, (time_period, win_rate) in enumerate(sorted_hours[:5], 1):
+                emoji = "🎯" if win_rate > 80 else "📈" if win_rate > 60 else "📊"
+                hourly_text += f"{i}. {emoji} {time_period}: {win_rate:.1f}%\n"
+            
+            if len(sorted_hours) > 5:
+                hourly_text += "\n💡 **Other Hours:**\n"
+                for time_period, win_rate in sorted_hours[5:10]:
+                    emoji = "📊" if win_rate > 50 else "⚠️"
+                    hourly_text += f"• {emoji} {time_period}: {win_rate:.1f}%\n"
+            
+            # Add current hour if available
+            current_hour = datetime.now().hour
+            current_period = f"{current_hour:02d}:00-{current_hour:02d}:59"
+            if current_period in metrics.success_rate_by_time:
+                current_rate = metrics.success_rate_by_time[current_period]
+                hourly_text += f"\n🕐 **Current Hour ({current_period}):** {current_rate:.1f}%"
+            
+            await update.message.reply_text(hourly_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in hourly command: {e}")
+            await update.message.reply_text("❌ Error loading hourly data.")
+    
+    async def risk_metrics_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /risk command - risk analysis metrics"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            def get_sharpe_emoji(sharpe):
+                if sharpe > 2: return "🎯"
+                elif sharpe > 1: return "📈" 
+                elif sharpe > 0: return "📊"
+                else: return "⚠️"
+            
+            def get_drawdown_emoji(dd_pct):
+                if dd_pct < 5: return "🛡️"
+                elif dd_pct < 10: return "⚠️"
+                elif dd_pct < 20: return "🔴"
+                else: return "💥"
+            
+            sharpe_emoji = get_sharpe_emoji(metrics.sharpe_ratio)
+            dd_emoji = get_drawdown_emoji(metrics.maximum_drawdown_percentage)
+            
+            risk_text = f"""🛡️ **RISK ANALYSIS**
+
+{sharpe_emoji} **Sharpe Ratio:** {metrics.sharpe_ratio:.3f}
+{'• Excellent risk-adjusted returns!' if metrics.sharpe_ratio > 2 else '• Good risk-adjusted returns' if metrics.sharpe_ratio > 1 else '• Acceptable risk-adjusted returns' if metrics.sharpe_ratio > 0 else '• Poor risk-adjusted returns'}
+
+{dd_emoji} **Maximum Drawdown:**
+• Amount: ${metrics.maximum_drawdown:+,.2f}
+• Percentage: {metrics.maximum_drawdown_percentage:.2f}%
+
+📊 **Risk Assessment:**
+• Win Rate: {metrics.win_rate_percentage:.1f}%
+• Avg Win: ${metrics.avg_profit_per_win:+,.2f}
+• Avg Loss: ${metrics.avg_loss_per_losing_trade:+,.2f}
+• Risk/Reward: 1:{abs(metrics.avg_profit_per_win) / abs(metrics.avg_loss_per_losing_trade):.2f} if abs(metrics.avg_loss_per_losing_trade) > 0.001 else "1:∞"
+
+🎯 **Risk Status:**
+{'🟢 Low Risk' if metrics.maximum_drawdown_percentage < 5 and metrics.sharpe_ratio > 1 else '🟡 Medium Risk' if metrics.maximum_drawdown_percentage < 15 and metrics.sharpe_ratio > 0 else '🔴 High Risk'}"""
+            
+            await update.message.reply_text(risk_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in risk command: {e}")
+            await update.message.reply_text("❌ Error loading risk metrics.")
+    
+    async def daily_comparison_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /daily command - daily performance comparison"""
+        try:
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            metrics_manager = await self._ensure_metrics_manager()
+            if not metrics_manager:
+                await update.message.reply_text("❌ Metrics system not available.")
+                return
+            
+            metrics = await metrics_manager.calculate_comprehensive_metrics()
+            
+            if not metrics.daily_comparison:
+                await update.message.reply_text("📭 No daily comparison data available yet.")
+                return
+            
+            daily = metrics.daily_comparison
+            weekly = metrics.weekly_comparison or {}
+            
+            def get_trend_emoji(value):
+                if value > 10: return "🚀"
+                elif value > 0: return "📈"
+                elif value > -10: return "📉"
+                else: return "💥"
+            
+            pnl_emoji = get_trend_emoji(daily.get('pnl_change_percentage', 0))
+            trades_emoji = get_trend_emoji(daily.get('trades_change_percentage', 0))
+            
+            daily_text = f"""📅 **DAILY COMPARISON**
+
+{pnl_emoji} **PnL Performance:**
+• Today: ${daily.get('today_pnl', 0):+,.2f}
+• Yesterday: ${daily.get('yesterday_pnl', 0):+,.2f}
+• Change: {daily.get('pnl_change_percentage', 0):+.1f}%
+
+{trades_emoji} **Trading Activity:**
+• Today: {daily.get('today_trades', 0)} trades
+• Yesterday: {daily.get('yesterday_trades', 0)} trades
+• Change: {daily.get('trades_change_percentage', 0):+.1f}%"""
+            
+            if weekly:
+                weekly_trend = weekly.get('performance_trend', 'unknown')
+                trend_emoji = "📈" if weekly_trend == 'improving' else "📉" if weekly_trend == 'declining' else "➡️"
+                
+                daily_text += f"""
+
+📊 **Weekly Overview:**
+• This Week Total: ${weekly.get('total_week_pnl', 0):+,.2f}
+• Daily Average: ${weekly.get('avg_daily_pnl_this_week', 0):+,.2f}
+• Total Trades: {weekly.get('total_week_trades', 0)}
+• Trend: {trend_emoji} {weekly_trend.title()}"""
+            
+            daily_text += f"\n\n🕐 Updated: {metrics.last_updated.strftime('%H:%M:%S')}"
+            
+            await update.message.reply_text(daily_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            self.logger.error(f"Error in daily command: {e}")
+            await update.message.reply_text("❌ Error loading daily comparison.")
+    
+    # ==================== END METRICS COMMANDS ====================

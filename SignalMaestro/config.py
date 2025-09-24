@@ -27,11 +27,14 @@ class Config:
             "snfpdA4kx+l9/+w0qMi3DzmND+CqQx/XUG0f4irkipuqmxNH++NpQ738XBdURGSuM574qS0iQsabmf6vmiwa2g=="
         )
 
-        # Trading Configuration
+        # Trading Configuration - Optimized for $10 Capital Base
         self.DEFAULT_RISK_PERCENTAGE = float(os.getenv("DEFAULT_RISK_PERCENTAGE", "5.0"))
         self.CAPITAL_BASE = float(os.getenv("CAPITAL_BASE", "10.0"))
-        self.MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "1000.0"))
-        self.MIN_POSITION_SIZE = float(os.getenv("MIN_POSITION_SIZE", "10.0"))
+        # Position size limits optimized for small capital ($10 base)
+        # Max position: 80% of capital ($8.00) to prevent over-exposure
+        self.MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "8.0"))
+        # Min position: $0.10 for micro-trading with small capital
+        self.MIN_POSITION_SIZE = float(os.getenv("MIN_POSITION_SIZE", "0.10"))
         self.STOP_LOSS_PERCENTAGE = float(os.getenv("STOP_LOSS_PERCENTAGE", "3.0"))
         self.TAKE_PROFIT_PERCENTAGE = float(os.getenv("TAKE_PROFIT_PERCENTAGE", "6.0"))
 

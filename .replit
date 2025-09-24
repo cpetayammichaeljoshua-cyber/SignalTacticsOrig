@@ -160,10 +160,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Signal Bot"
+args = "Trading Bot Console"
 
 [[workflows.workflow]]
-name = "Signal Bot"
+name = "Trading Bot Console"
 author = "agent"
 
 [[workflows.workflow.tasks]]

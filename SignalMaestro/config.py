@@ -74,6 +74,31 @@ class Config:
         # Webhook Security
         self.WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
+        # Dynamic Leverage Configuration
+        self.ENABLE_DYNAMIC_LEVERAGE = os.getenv("ENABLE_DYNAMIC_LEVERAGE", "true").lower() == "true"
+        self.MIN_LEVERAGE = int(os.getenv("MIN_LEVERAGE", "2"))
+        self.MAX_LEVERAGE = int(os.getenv("MAX_LEVERAGE", "10"))
+        self.DEFAULT_LEVERAGE = int(os.getenv("DEFAULT_LEVERAGE", "5"))
+        self.CONSERVATIVE_MAX_LEVERAGE = int(os.getenv("CONSERVATIVE_MAX_LEVERAGE", "6"))
+        self.AGGRESSIVE_MAX_LEVERAGE = int(os.getenv("AGGRESSIVE_MAX_LEVERAGE", "10"))
+
+        # Futures Trading Configuration
+        self.ENABLE_FUTURES_TRADING = os.getenv("ENABLE_FUTURES_TRADING", "true").lower() == "true"
+        self.FUTURES_DEFAULT_TYPE = os.getenv("FUTURES_DEFAULT_TYPE", "future")  # 'future' for USDM futures
+        self.MAX_PORTFOLIO_LEVERAGE = float(os.getenv("MAX_PORTFOLIO_LEVERAGE", "5.0"))
+        
+        # Volatility-based Leverage Thresholds
+        self.VOLATILITY_THRESHOLD_VERY_LOW = float(os.getenv("VOLATILITY_THRESHOLD_VERY_LOW", "0.5"))
+        self.VOLATILITY_THRESHOLD_LOW = float(os.getenv("VOLATILITY_THRESHOLD_LOW", "1.0"))
+        self.VOLATILITY_THRESHOLD_MEDIUM = float(os.getenv("VOLATILITY_THRESHOLD_MEDIUM", "2.0"))
+        self.VOLATILITY_THRESHOLD_HIGH = float(os.getenv("VOLATILITY_THRESHOLD_HIGH", "3.5"))
+        self.VOLATILITY_THRESHOLD_VERY_HIGH = float(os.getenv("VOLATILITY_THRESHOLD_VERY_HIGH", "5.0"))
+        
+        # Risk Management for Leverage
+        self.LEVERAGE_CHANGE_COOLDOWN = int(os.getenv("LEVERAGE_CHANGE_COOLDOWN", "300"))  # 5 minutes
+        self.EMERGENCY_VOLATILITY_THRESHOLD = float(os.getenv("EMERGENCY_VOLATILITY_THRESHOLD", "8.0"))
+        self.VOLATILITY_LOOKBACK_PERIODS = int(os.getenv("VOLATILITY_LOOKBACK_PERIODS", "100"))
+
     def _parse_authorized_users(self) -> list:
         """Parse authorized user IDs from environment variable"""
         users_str = os.getenv("AUTHORIZED_USERS", "")
@@ -97,6 +122,32 @@ class Config:
             "supported_pairs": self.SUPPORTED_PAIRS,
             "signal_validation_enabled": self.SIGNAL_VALIDATION_ENABLED,
             "auto_trade_enabled": self.AUTO_TRADE_ENABLED
+        }
+
+    def get_leverage_config(self) -> Dict[str, Any]:
+        """Get leverage configuration as dictionary"""
+        return {
+            "enable_dynamic_leverage": self.ENABLE_DYNAMIC_LEVERAGE,
+            "min_leverage": self.MIN_LEVERAGE,
+            "max_leverage": self.MAX_LEVERAGE,
+            "default_leverage": self.DEFAULT_LEVERAGE,
+            "conservative_max_leverage": self.CONSERVATIVE_MAX_LEVERAGE,
+            "aggressive_max_leverage": self.AGGRESSIVE_MAX_LEVERAGE,
+            "enable_futures_trading": self.ENABLE_FUTURES_TRADING,
+            "futures_default_type": self.FUTURES_DEFAULT_TYPE,
+            "max_portfolio_leverage": self.MAX_PORTFOLIO_LEVERAGE,
+            "volatility_thresholds": {
+                "very_low": self.VOLATILITY_THRESHOLD_VERY_LOW,
+                "low": self.VOLATILITY_THRESHOLD_LOW,
+                "medium": self.VOLATILITY_THRESHOLD_MEDIUM,
+                "high": self.VOLATILITY_THRESHOLD_HIGH,
+                "very_high": self.VOLATILITY_THRESHOLD_VERY_HIGH
+            },
+            "risk_management": {
+                "leverage_change_cooldown": self.LEVERAGE_CHANGE_COOLDOWN,
+                "emergency_volatility_threshold": self.EMERGENCY_VOLATILITY_THRESHOLD,
+                "volatility_lookback_periods": self.VOLATILITY_LOOKBACK_PERIODS
+            }
         }
 
     def is_authorized_user(self, user_id: int) -> bool:

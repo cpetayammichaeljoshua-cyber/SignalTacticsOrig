@@ -20,6 +20,13 @@ import time
 from config import Config
 from technical_analysis import TechnicalAnalysis
 
+# Import dynamic leverage manager
+try:
+    from dynamic_leverage_manager import DynamicLeverageManager
+    DYNAMIC_LEVERAGE_AVAILABLE = True
+except ImportError:
+    DYNAMIC_LEVERAGE_AVAILABLE = False
+
 # Enhanced error handling imports
 try:
     from advanced_error_handler import (
@@ -55,6 +62,19 @@ class BinanceTrader:
         self.circuit_breaker = None
         self.resilience_manager = None
         
+        # Dynamic leverage management
+        self.leverage_manager = None
+        if DYNAMIC_LEVERAGE_AVAILABLE and self.config.ENABLE_DYNAMIC_LEVERAGE:
+            try:
+                self.leverage_manager = DynamicLeverageManager()
+                self.logger.info("🎯 Dynamic leverage management enabled")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize dynamic leverage manager: {e}")
+        
+        # Current leverage settings per symbol
+        self.current_leverage = {}  # symbol -> leverage
+        self.last_leverage_check = {}  # symbol -> timestamp
+        
         if ENHANCED_ERROR_HANDLING:
             # Initialize circuit breaker for Binance API
             self.circuit_breaker = CircuitBreaker(
@@ -78,6 +98,9 @@ class BinanceTrader:
                           not self.config.BINANCE_API_SECRET or 
                           self.config.BINANCE_TESTNET)
             
+            # Configure for futures trading if enabled
+            default_type = 'future' if self.config.ENABLE_FUTURES_TRADING else 'spot'
+            
             self.exchange = ccxt.binance({
                 'apiKey': self.config.BINANCE_API_KEY or 'dummy_key',
                 'secret': self.config.BINANCE_API_SECRET or 'dummy_secret',
@@ -86,7 +109,7 @@ class BinanceTrader:
                 'rateLimit': 1200,
                 'enableRateLimit': True,
                 'options': {
-                    'defaultType': 'spot',
+                    'defaultType': default_type,
                 }
             })
             
@@ -346,13 +369,336 @@ class BinanceTrader:
             self.logger.error(f"Error getting open positions: {e}")
             return []
     
+    # =============================================================================
+    # DYNAMIC LEVERAGE MANAGEMENT METHODS
+    # =============================================================================
+    
+    async def adjust_leverage_dynamically(self, symbol: str) -> Dict[str, Any]:
+        """
+        Dynamically adjust leverage for a symbol based on current volatility
+        
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            
+        Returns:
+            Dictionary with adjustment results
+        """
+        try:
+            if not self.leverage_manager or not self.config.ENABLE_FUTURES_TRADING:
+                return {
+                    'success': False,
+                    'message': 'Dynamic leverage management not available or futures trading disabled'
+                }
+            
+            # Check if we need to update leverage (cooldown period)
+            current_time = time.time()
+            last_check = self.last_leverage_check.get(symbol, 0)
+            cooldown = self.config.LEVERAGE_CHANGE_COOLDOWN
+            
+            if current_time - last_check < cooldown:
+                return {
+                    'success': False,
+                    'message': f'Leverage check cooldown active for {symbol} ({int(cooldown - (current_time - last_check))}s remaining)'
+                }
+            
+            # Get current market data for volatility calculation
+            ohlcv_data = {}
+            timeframes = ['5m', '15m', '1h', '4h']
+            
+            for tf in timeframes:
+                try:
+                    market_data = await self.get_market_data(symbol, tf, 100)
+                    if market_data:
+                        ohlcv_data[tf] = market_data
+                except Exception as e:
+                    self.logger.warning(f"Failed to get {tf} data for {symbol}: {e}")
+            
+            if len(ohlcv_data) < 2:
+                return {
+                    'success': False,
+                    'message': f'Insufficient market data for volatility analysis of {symbol}'
+                }
+            
+            # Get current leverage
+            current_leverage = self.current_leverage.get(symbol, self.config.DEFAULT_LEVERAGE)
+            
+            # Calculate optimal leverage using the leverage manager
+            adjustment = await self.leverage_manager.adjust_leverage_for_symbol(
+                symbol, current_leverage, ohlcv_data
+            )
+            
+            if not adjustment:
+                self.last_leverage_check[symbol] = current_time
+                return {
+                    'success': True,
+                    'message': f'No leverage adjustment needed for {symbol}',
+                    'current_leverage': current_leverage
+                }
+            
+            # Apply the new leverage
+            try:
+                await self.set_leverage(symbol, adjustment.new_leverage)
+                self.current_leverage[symbol] = adjustment.new_leverage
+                self.last_leverage_check[symbol] = current_time
+                
+                return {
+                    'success': True,
+                    'message': f'Leverage adjusted for {symbol}',
+                    'old_leverage': adjustment.old_leverage,
+                    'new_leverage': adjustment.new_leverage,
+                    'volatility_score': adjustment.volatility_score,
+                    'reason': adjustment.reason,
+                    'position_size_impact': adjustment.position_size_impact
+                }
+                
+            except Exception as e:
+                self.logger.error(f"Failed to set leverage for {symbol}: {e}")
+                return {
+                    'success': False,
+                    'message': f'Failed to apply leverage adjustment for {symbol}: {e}'
+                }
+            
+        except Exception as e:
+            self.logger.error(f"Error in dynamic leverage adjustment for {symbol}: {e}")
+            return {
+                'success': False,
+                'message': f'Error in leverage adjustment: {e}'
+            }
+    
+    async def set_leverage(self, symbol: str, leverage: int) -> bool:
+        """
+        Set leverage for a futures symbol
+        
+        Args:
+            symbol: Trading symbol
+            leverage: Leverage value (2-125 depending on symbol)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.config.ENABLE_FUTURES_TRADING:
+                self.logger.warning("Futures trading is disabled - cannot set leverage")
+                return False
+            
+            # Validate leverage range
+            min_lev = self.config.MIN_LEVERAGE
+            max_lev = self.config.MAX_LEVERAGE
+            
+            if leverage < min_lev or leverage > max_lev:
+                self.logger.warning(f"Leverage {leverage}x outside allowed range ({min_lev}x-{max_lev}x)")
+                leverage = max(min_lev, min(leverage, max_lev))
+            
+            # Set leverage using ccxt
+            response = await self.exchange.set_leverage(leverage, symbol)
+            
+            if response:
+                self.current_leverage[symbol] = leverage
+                self.logger.info(f"⚡ {symbol}: Leverage set to {leverage}x")
+                return True
+            else:
+                self.logger.warning(f"Failed to set leverage for {symbol}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error setting leverage for {symbol}: {e}")
+            return False
+    
+    async def get_current_leverage(self, symbol: str) -> int:
+        """
+        Get current leverage for a symbol
+        
+        Args:
+            symbol: Trading symbol
+            
+        Returns:
+            Current leverage value
+        """
+        try:
+            if symbol in self.current_leverage:
+                return self.current_leverage[symbol]
+            
+            if not self.config.ENABLE_FUTURES_TRADING:
+                return 1  # Spot trading has 1x leverage
+            
+            # Try to get from exchange if not cached
+            try:
+                positions = await self.exchange.fetch_positions([symbol])
+                if positions and len(positions) > 0:
+                    leverage = positions[0].get('leverage', self.config.DEFAULT_LEVERAGE)
+                    self.current_leverage[symbol] = int(leverage)
+                    return int(leverage)
+            except Exception as e:
+                self.logger.debug(f"Could not fetch leverage from exchange for {symbol}: {e}")
+            
+            # Return default if not found
+            return self.config.DEFAULT_LEVERAGE
+            
+        except Exception as e:
+            self.logger.error(f"Error getting current leverage for {symbol}: {e}")
+            return self.config.DEFAULT_LEVERAGE
+    
+    async def get_futures_account_balance(self) -> Dict[str, Any]:
+        """Get futures account balance"""
+        try:
+            if not self.config.ENABLE_FUTURES_TRADING:
+                self.logger.warning("Futures trading is disabled")
+                return {}
+            
+            # Get futures account info
+            balance = await self.exchange.fetch_balance()
+            
+            if 'USDT' in balance:
+                usdt_info = balance['USDT']
+                return {
+                    'total_wallet_balance': usdt_info.get('total', 0),
+                    'available_balance': usdt_info.get('free', 0),
+                    'used_margin': usdt_info.get('used', 0),
+                    'unrealized_pnl': balance.get('info', {}).get('totalUnrealizedProfit', 0),
+                    'margin_ratio': balance.get('info', {}).get('totalMarginBalance', 0)
+                }
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.error(f"Error getting futures account balance: {e}")
+            return {}
+    
+    async def get_futures_positions(self) -> List[Dict[str, Any]]:
+        """Get all open futures positions"""
+        try:
+            if not self.config.ENABLE_FUTURES_TRADING:
+                return []
+            
+            positions = await self.exchange.fetch_positions()
+            
+            # Filter open positions
+            open_positions = []
+            for position in positions:
+                if position['contracts'] > 0:  # Position size > 0
+                    open_positions.append({
+                        'symbol': position['symbol'],
+                        'side': position['side'],
+                        'size': position['contracts'],
+                        'notional': position['notional'],
+                        'entry_price': position['entryPrice'],
+                        'mark_price': position['markPrice'],
+                        'leverage': position.get('leverage', 1),
+                        'unrealized_pnl': position['unrealizedPnl'],
+                        'unrealized_pnl_percentage': position['percentage'],
+                        'margin_used': position['initialMargin']
+                    })
+            
+            return open_positions
+            
+        except Exception as e:
+            self.logger.error(f"Error getting futures positions: {e}")
+            return []
+    
+    async def calculate_optimal_leverage_for_trade(self, symbol: str, trade_direction: str, 
+                                                 trade_size_usdt: float) -> Dict[str, Any]:
+        """
+        Calculate optimal leverage for a specific trade
+        
+        Args:
+            symbol: Trading symbol
+            trade_direction: 'LONG' or 'SHORT'
+            trade_size_usdt: Trade size in USDT
+            
+        Returns:
+            Dictionary with optimal leverage and risk analysis
+        """
+        try:
+            if not self.leverage_manager:
+                return {
+                    'recommended_leverage': self.config.DEFAULT_LEVERAGE,
+                    'max_leverage': self.config.MAX_LEVERAGE,
+                    'risk_analysis': 'Dynamic leverage management not available',
+                    'confidence': 'low'
+                }
+            
+            # Get market data for volatility analysis
+            ohlcv_data = {}
+            timeframes = ['5m', '15m', '1h', '4h']
+            
+            for tf in timeframes:
+                try:
+                    market_data = await self.get_market_data(symbol, tf, 100)
+                    if market_data:
+                        ohlcv_data[tf] = market_data
+                except Exception:
+                    continue
+            
+            if len(ohlcv_data) < 2:
+                return {
+                    'recommended_leverage': self.config.DEFAULT_LEVERAGE,
+                    'max_leverage': self.config.MAX_LEVERAGE,
+                    'risk_analysis': 'Insufficient data for volatility analysis',
+                    'confidence': 'low'
+                }
+            
+            # Get optimal leverage recommendation
+            leverage_analysis = await self.leverage_manager.get_optimal_leverage_for_trade(
+                symbol, trade_direction, trade_size_usdt, ohlcv_data
+            )
+            
+            self.logger.info(f"📊 {symbol}: Optimal leverage {leverage_analysis['recommended_leverage']}x "
+                           f"(Volatility: {leverage_analysis.get('volatility_score', 'N/A'):.2f}, "
+                           f"Risk: {leverage_analysis.get('risk_level', 'unknown')})")
+            
+            return leverage_analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating optimal leverage for {symbol}: {e}")
+            return {
+                'recommended_leverage': self.config.DEFAULT_LEVERAGE,
+                'max_leverage': self.config.MAX_LEVERAGE,
+                'risk_analysis': f'Error in analysis: {e}',
+                'confidence': 'low'
+            }
+    
+    async def monitor_portfolio_risk(self) -> Dict[str, Any]:
+        """Monitor overall portfolio leverage and risk"""
+        try:
+            if not self.leverage_manager:
+                return {'error': 'Dynamic leverage management not available'}
+            
+            # Get current positions
+            positions = await self.get_futures_positions()
+            
+            # Monitor portfolio leverage
+            portfolio_analysis = await self.leverage_manager.monitor_portfolio_leverage(positions)
+            
+            # Log important portfolio metrics
+            if portfolio_analysis.get('portfolio_leverage', 0) > self.config.MAX_PORTFOLIO_LEVERAGE:
+                self.logger.warning(f"⚠️ Portfolio leverage ({portfolio_analysis['portfolio_leverage']:.1f}x) "
+                                  f"exceeds maximum ({self.config.MAX_PORTFOLIO_LEVERAGE}x)")
+            
+            return portfolio_analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error monitoring portfolio risk: {e}")
+            return {'error': str(e)}
+    
+    # =============================================================================
+    # ENHANCED TRADING METHODS WITH LEVERAGE SUPPORT
+    # =============================================================================
+    
     async def execute_trade(self, signal: Dict[str, Any], user_settings: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a trade based on signal and user settings"""
+        """Execute a trade based on signal and user settings with dynamic leverage management"""
         try:
             symbol = signal['symbol']
             action = signal['action'].upper()
             
-            # Calculate position size
+            # Get current price for calculations
+            current_price = await self.get_current_price(symbol)
+            if not current_price:
+                return {
+                    'success': False,
+                    'error': f'Could not get current price for {symbol}'
+                }
+            
+            # Calculate initial position size
             position_size = await self._calculate_position_size(signal, user_settings)
             
             if position_size <= 0:
@@ -360,6 +706,40 @@ class BinanceTrader:
                     'success': False,
                     'error': 'Invalid position size calculated'
                 }
+            
+            # Calculate trade size in USDT for leverage optimization
+            trade_size_usdt = position_size * current_price
+            
+            # Dynamic leverage adjustment if enabled
+            leverage_info = None
+            if self.config.ENABLE_FUTURES_TRADING and self.leverage_manager:
+                try:
+                    # Get optimal leverage for this trade
+                    leverage_info = await self.calculate_optimal_leverage_for_trade(
+                        symbol, action, trade_size_usdt
+                    )
+                    
+                    optimal_leverage = leverage_info.get('recommended_leverage', self.config.DEFAULT_LEVERAGE)
+                    
+                    # Apply leverage adjustment if needed
+                    current_leverage = await self.get_current_leverage(symbol)
+                    if current_leverage != optimal_leverage:
+                        self.logger.info(f"🎯 {symbol}: Adjusting leverage {current_leverage}x → {optimal_leverage}x for trade")
+                        leverage_set = await self.set_leverage(symbol, optimal_leverage)
+                        if not leverage_set:
+                            self.logger.warning(f"⚠️ Failed to set optimal leverage for {symbol}, using current leverage")
+                    
+                    # Adjust position size based on leverage for futures
+                    if self.config.ENABLE_FUTURES_TRADING:
+                        # For futures, position size calculation considers leverage
+                        leverage_multiplier = optimal_leverage / self.config.DEFAULT_LEVERAGE
+                        position_size = position_size * leverage_multiplier
+                        
+                        self.logger.info(f"📊 {symbol}: Position adjusted for {optimal_leverage}x leverage "
+                                       f"(Size: {position_size:.6f}, Value: ${trade_size_usdt:.2f})")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error in dynamic leverage adjustment for {symbol}: {e}")
             
             # Determine order type and price
             order_type = 'market'  # Default to market orders
@@ -370,6 +750,7 @@ class BinanceTrader:
                 price = signal['price']
             
             # Execute the trade
+            order = None
             if action in ['BUY', 'LONG']:
                 order = await self._execute_buy_order(symbol, position_size, order_type, price)
             elif action in ['SELL', 'SHORT']:
@@ -384,7 +765,10 @@ class BinanceTrader:
                 # Set stop loss and take profit if specified
                 await self._set_stop_loss_take_profit(order, signal, user_settings)
                 
-                return {
+                # Log leverage information if available
+                leverage_used = await self.get_current_leverage(symbol) if self.config.ENABLE_FUTURES_TRADING else 1
+                
+                result = {
                     'success': True,
                     'order_id': order['id'],
                     'symbol': symbol,
@@ -392,8 +776,24 @@ class BinanceTrader:
                     'amount': order['amount'],
                     'price': order.get('price', order.get('average', 0)),
                     'fee': order.get('fee', {}),
-                    'timestamp': order['timestamp']
+                    'timestamp': order['timestamp'],
+                    'leverage_used': leverage_used,
+                    'trade_value_usdt': trade_size_usdt
                 }
+                
+                # Add leverage analysis to result if available
+                if leverage_info:
+                    result['leverage_analysis'] = {
+                        'volatility_score': leverage_info.get('volatility_score', 'N/A'),
+                        'risk_level': leverage_info.get('risk_level', 'unknown'),
+                        'confidence': leverage_info.get('confidence', 'low'),
+                        'risk_factors': leverage_info.get('risk_factors', [])
+                    }
+                
+                self.logger.info(f"✅ {symbol}: Trade executed - {action} {order['amount']:.6f} @ {result['price']:.4f} "
+                               f"(Leverage: {leverage_used}x, Value: ${trade_size_usdt:.2f})")
+                
+                return result
             else:
                 return {
                     'success': False,
@@ -401,7 +801,7 @@ class BinanceTrader:
                 }
                 
         except Exception as e:
-            self.logger.error(f"Error executing trade: {e}")
+            self.logger.error(f"❌ Error executing trade for {symbol}: {e}")
             return {
                 'success': False,
                 'error': str(e)

@@ -29,7 +29,7 @@ class AdvancedScalpingSignal:
     tp2: float
     tp3: float
     signal_strength: float
-    leverage: int = 35  # Default in 25x-50x range
+    leverage: int = 5  # Default leverage, will be dynamically adjusted
     time_session: str = "UNKNOWN"
     fibonacci_level: float = 0.0
     time_confluence: float = 0.0
@@ -39,12 +39,24 @@ class AdvancedScalpingSignal:
     session_volatility: float = 1.0
     fibonacci_extension: float = 0.0
     timestamp: Optional[datetime] = None
+    # New fields for dynamic leverage system
+    volatility_score: float = 0.0
+    recommended_leverage: int = 5
+    max_safe_leverage: int = 5
+    risk_level: str = "medium"
+    leverage_confidence: str = "medium"
 
 class AdvancedTimeFibonacciStrategy:
     """Advanced strategy combining time theory and Fibonacci analysis"""
 
-    def __init__(self):
+    def __init__(self, leverage_manager=None):
         self.logger = logging.getLogger(__name__)
+        self.leverage_manager = leverage_manager
+        
+        # Dynamic leverage integration
+        self.dynamic_leverage_enabled = leverage_manager is not None
+        if self.dynamic_leverage_enabled:
+            self.logger.info("🎯 Advanced strategy integrated with dynamic leverage management")
 
         # Time-based trading windows (UTC)
         self.trading_sessions = {
@@ -138,7 +150,7 @@ class AdvancedTimeFibonacciStrategy:
 
             # Generate signal with time and Fibonacci confluence
             signal = await self._generate_advanced_signal(
-                symbol, primary_df, fib_analysis, time_analysis, ml_analyzer
+                symbol, primary_df, fib_analysis, time_analysis, ml_analyzer, ohlcv_data
             )
 
             if signal and signal.signal_strength >= self.min_signal_strength:
@@ -525,7 +537,8 @@ class AdvancedTimeFibonacciStrategy:
             return {'volume_confirmed': False, 'volume_strength': 0.0}
 
     async def _generate_advanced_signal(self, symbol: str, df: pd.DataFrame, fib_analysis: Dict[str, Any], 
-                                      time_analysis: Dict[str, Any], ml_analyzer=None) -> Optional[AdvancedScalpingSignal]:
+                                      time_analysis: Dict[str, Any], ml_analyzer=None, 
+                                      ohlcv_data: Dict[str, List] = None) -> Optional[AdvancedScalpingSignal]:
         """Generate advanced signal combining time and Fibonacci analysis"""
         try:
             current_price = fib_analysis['current_price']
@@ -641,37 +654,13 @@ class AdvancedTimeFibonacciStrategy:
 
             signal_strength = min(base_strength, 100)
 
-            # Dynamic leverage based on signal strength, confluence, and ML confidence
-            leverage = 25  # Minimum leverage
-            if signal_strength >= 90:
-                leverage = min(50, 25 + int((signal_strength - 90) * 2.5))  # Up to 50x for strongest signals
-            elif signal_strength >= 85:
-                leverage = min(45, 25 + int((signal_strength - 85) * 4))     # Up to 45x
-            elif signal_strength >= 80:
-                leverage = min(40, 25 + int((signal_strength - 80) * 3))     # Up to 40x
-            else:
-                leverage = min(35, 25 + int((signal_strength - 75) * 2))     # Up to 35x
-                
-            # Apply ML confidence-based leverage adjustment
-            confidence_band_data = self.ml_confidence_bands[confidence_band]
-            leverage = int(leverage * confidence_band_data['leverage_multiplier'])
-            leverage = max(20, min(75, leverage))  # Ensure within safe bounds
-
-            # Session-based leverage boost for high volatility periods
-            current_session = time_analysis['session']
-            session_volatility = time_analysis['volatility_factor']
+            # Calculate leverage using dynamic leverage manager if available
+            leverage_info = await self._calculate_dynamic_leverage(
+                symbol, signal_strength, time_analysis, fib_analysis, 
+                ml_prediction, ohlcv_data, direction
+            )
             
-            if current_session in ['NY_OVERLAP', 'LONDON_OPEN']:
-                # Boost leverage by 10-20% during peak volatility sessions
-                volatility_boost = min(1.2, 1.0 + (session_volatility - 1.0) * 0.5)
-                leverage = min(75, int(leverage * volatility_boost))  # Cap at 75x maximum
-            elif current_session in ['LONDON_MAIN', 'NY_MAIN'] and session_volatility > 1.1:
-                # Moderate boost during main sessions with good volatility
-                leverage = min(60, int(leverage * 1.1))  # Cap at 60x
-            
-            # Additional confluence-based leverage boost
-            if fib_analysis['confluence_strength'] > 0.8 and time_analysis['time_strength'] > 0.85:
-                leverage = min(75, int(leverage * 1.15))  # Premium confluence bonus
+            leverage = leverage_info['recommended_leverage']
 
             # Create advanced signal with enhanced data
             signal = AdvancedScalpingSignal(
@@ -684,6 +673,11 @@ class AdvancedTimeFibonacciStrategy:
                 tp3=tp3,
                 signal_strength=signal_strength,
                 leverage=leverage,
+                volatility_score=leverage_info.get('volatility_score', 0.0),
+                recommended_leverage=leverage_info['recommended_leverage'],
+                max_safe_leverage=leverage_info.get('max_leverage', leverage),
+                risk_level=leverage_info.get('risk_level', 'medium'),
+                leverage_confidence=leverage_info.get('confidence', 'medium'),
                 time_session=time_analysis['session'],
                 fibonacci_level=closest_fib['price'] if closest_fib else 0.0,
                 time_confluence=time_analysis['time_strength'],
@@ -740,6 +734,154 @@ class AdvancedTimeFibonacciStrategy:
         except Exception as e:
             self.logger.error(f"Error calculating ATR: {e}")
             return df['high'].iloc[-1] - df['low'].iloc[-1]
+
+    async def _calculate_dynamic_leverage(self, symbol: str, signal_strength: float,
+                                        time_analysis: Dict[str, Any], fib_analysis: Dict[str, Any],
+                                        ml_prediction: Optional[Dict[str, Any]], 
+                                        ohlcv_data: Dict[str, List],
+                                        direction: str) -> Dict[str, Any]:
+        """
+        Calculate dynamic leverage using the leverage manager or fallback to signal-based calculation
+        
+        Args:
+            symbol: Trading symbol
+            signal_strength: Calculated signal strength
+            time_analysis: Time-based analysis results
+            fib_analysis: Fibonacci analysis results
+            ml_prediction: ML prediction results
+            ohlcv_data: OHLCV data for volatility calculation
+            direction: Trade direction ('LONG' or 'SHORT')
+            
+        Returns:
+            Dictionary with leverage recommendation and analysis
+        """
+        try:
+            # Use dynamic leverage manager if available
+            if self.leverage_manager and ohlcv_data:
+                # Calculate trade size for leverage optimization (based on $10 capital base)
+                capital_base = 10.0  # $10 capital base
+                risk_percentage = 5.0  # 5% risk management
+                trade_size_usdt = capital_base * (risk_percentage / 100)
+                
+                leverage_analysis = await self.leverage_manager.get_optimal_leverage_for_trade(
+                    symbol, direction, trade_size_usdt, ohlcv_data
+                )
+                
+                # Apply signal strength adjustments to recommended leverage
+                recommended_leverage = leverage_analysis['recommended_leverage']
+                
+                # Boost leverage for very strong signals
+                if signal_strength >= 95:
+                    recommended_leverage = min(10, int(recommended_leverage * 1.2))
+                elif signal_strength >= 90:
+                    recommended_leverage = min(9, int(recommended_leverage * 1.1))
+                elif signal_strength < 80:
+                    # Reduce leverage for weaker signals
+                    recommended_leverage = max(2, int(recommended_leverage * 0.9))
+                
+                # Apply ML confidence adjustments
+                if ml_prediction:
+                    ml_confidence = ml_prediction.get('confidence', 0) / 100.0
+                    if ml_confidence > 0.85:
+                        recommended_leverage = min(10, int(recommended_leverage * 1.1))
+                    elif ml_confidence < 0.70:
+                        recommended_leverage = max(2, int(recommended_leverage * 0.8))
+                
+                # Apply time and Fibonacci confluence adjustments
+                confluence_multiplier = 1.0
+                if (time_analysis['time_strength'] > 0.9 and 
+                    fib_analysis['confluence_strength'] > 0.85):
+                    confluence_multiplier = 1.15  # Premium confluence bonus
+                elif (time_analysis['time_strength'] > 0.8 and 
+                      fib_analysis['confluence_strength'] > 0.75):
+                    confluence_multiplier = 1.05  # Good confluence bonus
+                
+                recommended_leverage = min(10, max(2, int(recommended_leverage * confluence_multiplier)))
+                
+                return {
+                    'recommended_leverage': recommended_leverage,
+                    'max_leverage': leverage_analysis.get('max_leverage', recommended_leverage),
+                    'volatility_score': leverage_analysis.get('volatility_score', 'N/A'),
+                    'risk_level': leverage_analysis.get('risk_level', 'medium'),
+                    'confidence': leverage_analysis.get('confidence', 'medium'),
+                    'risk_factors': leverage_analysis.get('risk_factors', []),
+                    'analysis_source': 'dynamic_volatility_manager',
+                    'signal_strength_adjustment': f"Signal: {signal_strength:.1f}%",
+                    'confluence_adjustment': f"Confluence: {confluence_multiplier:.2f}x"
+                }
+            
+            # Fallback to signal-based leverage calculation
+            else:
+                # Legacy calculation for backward compatibility
+                base_leverage = 5  # Conservative default
+                
+                # Signal strength adjustment
+                if signal_strength >= 95:
+                    base_leverage = 8
+                elif signal_strength >= 90:
+                    base_leverage = 7
+                elif signal_strength >= 85:
+                    base_leverage = 6
+                elif signal_strength >= 80:
+                    base_leverage = 5
+                else:
+                    base_leverage = 3
+                
+                # Time session adjustment
+                session_multiplier = 1.0
+                current_session = time_analysis.get('session', 'UNKNOWN')
+                if current_session in ['NY_OVERLAP', 'LONDON_OPEN']:
+                    session_multiplier = 1.2  # Higher leverage during peak sessions
+                elif current_session in ['LONDON_MAIN', 'NY_MAIN']:
+                    session_multiplier = 1.1
+                
+                # Fibonacci confluence adjustment
+                fib_multiplier = 1.0
+                fib_strength = fib_analysis.get('confluence_strength', 0)
+                if fib_strength > 0.85:
+                    fib_multiplier = 1.15
+                elif fib_strength > 0.75:
+                    fib_multiplier = 1.05
+                
+                # ML prediction adjustment
+                ml_multiplier = 1.0
+                if ml_prediction and ml_prediction.get('prediction') == 'favorable':
+                    ml_confidence = ml_prediction.get('confidence', 0) / 100.0
+                    if ml_confidence > 0.80:
+                        ml_multiplier = 1.1
+                    elif ml_confidence < 0.70:
+                        ml_multiplier = 0.9
+                
+                # Calculate final leverage
+                final_leverage = int(base_leverage * session_multiplier * fib_multiplier * ml_multiplier)
+                final_leverage = max(2, min(10, final_leverage))
+                
+                return {
+                    'recommended_leverage': final_leverage,
+                    'max_leverage': final_leverage,
+                    'volatility_score': 'N/A (calculated from signal)',
+                    'risk_level': 'signal_based',
+                    'confidence': 'medium',
+                    'risk_factors': ['Using signal-based calculation'],
+                    'analysis_source': 'signal_based_fallback',
+                    'signal_strength_adjustment': f"Signal: {signal_strength:.1f}%",
+                    'confluence_adjustment': f"Combined: {session_multiplier * fib_multiplier * ml_multiplier:.2f}x"
+                }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating dynamic leverage for {symbol}: {e}")
+            # Safe fallback
+            return {
+                'recommended_leverage': 5,
+                'max_leverage': 5,
+                'volatility_score': 'Error in calculation',
+                'risk_level': 'safe_fallback',
+                'confidence': 'low',
+                'risk_factors': [f'Error: {e}'],
+                'analysis_source': 'error_fallback',
+                'signal_strength_adjustment': 'Error',
+                'confluence_adjustment': 'Error'
+            }
 
     def get_signal_summary(self, signal: AdvancedScalpingSignal) -> Dict[str, Any]:
         """Get comprehensive signal summary with enhanced metrics"""

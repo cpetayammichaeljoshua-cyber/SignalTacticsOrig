@@ -1222,102 +1222,7 @@ class AdvancedMLTradeAnalyzer:
             'ml_available': ML_AVAILABLE
         }
 
-    async def load_external_config(self, config_path: Path) -> bool:
-        """Load external configuration from JSON file"""
-        try:
-            with open(config_path, 'r') as f:
-                self.external_config = json.load(f)
-            
-            # Update configuration values
-            if 'trading_config' in self.external_config:
-                trading_config = self.external_config['trading_config']
-                
-                # Update account balance and risk
-                if 'capital_base' in trading_config:
-                    self.account_balance = trading_config['capital_base']
-                if 'risk_percentage' in trading_config:
-                    self.risk_per_trade_percentage = trading_config['risk_percentage']
-                
-                # Recalculate risk amount
-                self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)
-                
-                # Update other trading parameters
-                if 'max_concurrent_trades' in trading_config:
-                    self.max_concurrent_trades = trading_config['max_concurrent_trades']
-                if 'max_leverage' in trading_config:
-                    self.max_leverage = trading_config['max_leverage']
-                if 'market_type' in trading_config:
-                    self.market_type = trading_config['market_type']
-                
-            self.logger.info(f"✅ External config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to load external config: {e}")
-            return False
     
-    def _get_config_value(self, key: str, default_value: Any) -> Any:
-        """Get configuration value with external config override"""
-        if self.external_config and 'trading_config' in self.external_config:
-            trading_config = self.external_config['trading_config']
-            if key in trading_config:
-                return trading_config[key]
-        return default_value
-    
-    async def load_external_config(self, config_path: Path) -> bool:
-        """Load external configuration from JSON file and update bot settings"""
-        try:
-            with open(config_path, 'r') as f:
-                self.external_config = json.load(f)
-            
-            # Update configuration values
-            if 'trading_config' in self.external_config:
-                trading_config = self.external_config['trading_config']
-                
-                # Update account balance and risk
-                if 'capital_base' in trading_config:
-                    self.account_balance = trading_config['capital_base']
-                if 'risk_percentage' in trading_config:
-                    self.risk_per_trade_percentage = trading_config['risk_percentage']
-                
-                # Recalculate risk amount
-                self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)
-                
-                # Update other trading parameters
-                if 'max_concurrent_trades' in trading_config:
-                    self.max_concurrent_trades = trading_config['max_concurrent_trades']
-                if 'max_leverage' in trading_config:
-                    self.max_leverage = trading_config['max_leverage']
-                if 'market_type' in trading_config:
-                    self.market_type = trading_config['market_type']
-                    
-                # Update stop-loss movement rules
-                if 'stop_loss_movement' in trading_config:
-                    self.stop_loss_movement_rules = trading_config['stop_loss_movement']
-                
-                # Update leverage settings
-                if 'dynamic_leverage_enabled' in trading_config:
-                    self.dynamic_leverage_enabled = trading_config['dynamic_leverage_enabled']
-                
-            # Update performance metrics tracking
-            if 'performance_metrics' in self.external_config:
-                self.performance_metrics_config = self.external_config['performance_metrics']
-                
-            # Update Cornix integration
-            if 'cornix_integration' in self.external_config:
-                self.cornix_integration_config = self.external_config['cornix_integration']
-                
-            # Update parallel processing
-            if 'parallel_processing' in self.external_config:
-                self.parallel_processing_config = self.external_config['parallel_processing']
-                
-            self.logger.info(f"✅ External config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%, Market={self.market_type}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to load external config: {e}")
-            return False
-
 class UltimateTradingBot:
     """Ultimate automated trading bot with advanced ML integration"""
 
@@ -1371,6 +1276,74 @@ class UltimateTradingBot:
         self.shutdown_requested = False
         self._setup_signal_handlers()
         atexit.register(self._cleanup_on_exit)
+        
+        # CRITICAL ATTRIBUTES - Initialize immediately to prevent AttributeError
+        # These attributes are accessed throughout the codebase and must be available early
+        self.session_secret = os.getenv('SESSION_SECRET', 'ultimate_trading_secret_key')
+        self.session_token = None
+        self.session_retry_count = 0
+        self.max_session_retries = 3
+        
+        # Target channel initialization - critical for Telegram operations
+        self.target_channel = os.getenv('TARGET_CHANNEL', "@SignalTactics")
+        self.channel_accessible = False
+        
+        # ML Analyzer - critical for all ML operations
+        self.ml_analyzer = AdvancedMLTradeAnalyzer()
+        try:
+            self.ml_analyzer.load_ml_models()
+        except Exception as e:
+            self.logger.warning(f"ML model loading failed during early initialization: {e}")
+            # Continue initialization - models can be loaded later
+        
+        # Symbols and timeframes - critical for run_bot method
+        self.symbols = [
+            # Major cryptocurrencies
+            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT', 'DOGEUSDT',
+            'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'ETCUSDT',
+            'ATOMUSDT', 'ALGOUSDT', 'XLMUSDT', 'VETUSDT', 'TRXUSDT', 'EOSUSDT', 'THETAUSDT',
+            # DeFi tokens
+            'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
+            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'ALPHAUSDT',
+            # Layer 2 & Scaling
+            'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
+            # Gaming & Metaverse
+            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
+            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT',
+            # AI & Data
+            'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT',
+            # New & Trending
+            'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'WLDUSDT',
+            'JUPUSDT', 'WIFUSDT', 'BOMEUSDT', 'NOTUSDT', 'REZUSDT'
+        ]
+        
+        # Optimized timeframes for scalping
+        self.timeframes = ['1m', '3m', '5m', '15m', '1h', '4h']
+        
+        # Active symbol tracking - critical for trade management
+        self.active_symbols = set()  # Track symbols with open trades
+        self.symbol_trade_lock = {}  # Lock mechanism for each symbol
+        
+        # CVD (Cumulative Volume Delta) tracking
+        self.cvd_data = {
+            'btc_perp_cvd': 0,
+            'cvd_trend': 'neutral',
+            'cvd_divergence': False,
+            'cvd_strength': 0
+        }
+        
+        # Signal tracking and hourly limits - critical for signal generation
+        self.last_signal_time = {}
+        self.min_signal_interval = 30  # 30 seconds between signals for same symbol
+        self.hourly_signal_count = 0
+        self.last_hour_reset = datetime.now().hour
+        self.unlimited_signals = True  # Flag for unlimited signal mode
+        self.signal_counter = 0
+        
+        # Trading limits and signal quality
+        self.max_concurrent_trades = 3  # Perfect 3-trade management
+        self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
+        self.min_signal_strength = 75  # Signal quality threshold
         
         # Early Telegram configuration to prevent attribute errors
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -1485,15 +1458,31 @@ class UltimateTradingBot:
     def _init_fallback_systems(self):
         """Initialize fallback systems when enhanced systems are not available"""
         try:
-            # Initialize basic error handling
-            self.error_handler = AdvancedErrorHandler(self.logger)
-            self.error_logger = CentralizedErrorLogger()
-            self.resilience_manager = APIResilienceManager()
+            # Initialize basic error handling with availability checks
+            if ADVANCED_ERROR_HANDLER_AVAILABLE:
+                self.error_handler = AdvancedErrorHandler(self.logger)
+            else:
+                self.error_handler = None
+                
+            if CENTRALIZED_ERROR_LOGGER_AVAILABLE:
+                self.error_logger = CentralizedErrorLogger()
+            else:
+                self.error_logger = None
+                
+            if API_RESILIENCE_AVAILABLE:
+                self.resilience_manager = APIResilienceManager()
+            else:
+                self.resilience_manager = None
             
             # Initialize basic stop loss system
-            self.stop_loss_config = StopLossConfig()
-            self.active_stop_loss_managers = {}
-            self.market_analyzer = MarketAnalyzer()
+            if DYNAMIC_STOP_LOSS_AVAILABLE:
+                self.stop_loss_config = StopLossConfig()
+                self.active_stop_loss_managers = {}
+                self.market_analyzer = MarketAnalyzer()
+            else:
+                self.stop_loss_config = None
+                self.active_stop_loss_managers = {}
+                self.market_analyzer = None
             
             # Initialize parallel processing in fallback mode
             self.parallel_processing_enabled = PARALLEL_PROCESSING_AVAILABLE
@@ -1556,46 +1545,17 @@ class UltimateTradingBot:
             self.leverage_change_history = {}
             self.volatility_dashboard_data = {'market_conditions': 'error'}
 
-        # Session management (enhanced with error recovery)
-        self.session_secret = os.getenv('SESSION_SECRET', 'ultimate_trading_secret_key')
-        self.session_token = None
-        self.session_retry_count = 0
-        self.max_session_retries = 3
+        # Session management (enhanced with error recovery) - already initialized above
+        # self.session_secret, self.session_token, etc. already set
 
-        # Additional bot settings with environment fallback
-        self.target_channel = os.getenv('TARGET_CHANNEL', "@SignalTactics")
-        self.channel_accessible = False
+        # Additional bot settings - already initialized above  
+        # self.target_channel, self.channel_accessible already set
 
-        # Enhanced symbol list (200+ pairs for maximum coverage)
-        self.symbols = [
-            # Major cryptocurrencies
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'SOLUSDT', 'DOGEUSDT',
-            'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'ETCUSDT',
-            'ATOMUSDT', 'ALGOUSDT', 'XLMUSDT', 'VETUSDT', 'TRXUSDT', 'EOSUSDT', 'THETAUSDT',
-
-            # DeFi tokens
-            'UNIUSDT', 'AAVEUSDT', 'COMPUSDT', 'MKRUSDT', 'YFIUSDT', 'SUSHIUSDT', 'CAKEUSDT',
-            'CRVUSDT', '1INCHUSDT', 'SNXUSDT', 'ALPHAUSDT',
-
-            # Layer 2 & Scaling
-            'ARBUSDT', 'OPUSDT', 'METISUSDT', 'STRKUSDT',
-
-            # Gaming & Metaverse
-            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'GALAUSDT', 'ENJUSDT', 'CHZUSDT',
-            'FLOWUSDT', 'IMXUSDT', 'GMTUSDT',
-
-            # AI & Data
-            'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT',
-
-            # Meme coins
-
-            # New & Trending
-            'APTUSDT', 'SUIUSDT', 'ARKMUSDT', 'SEIUSDT', 'TIAUSDT', 'WLDUSDT',
-            'JUPUSDT', 'WIFUSDT', 'BOMEUSDT', 'NOTUSDT', 'REZUSDT'
-        ]
-
-        # Optimized timeframes for scalping
-        self.timeframes = ['1m', '3m', '5m', '15m', '1h', '4h']
+        # Symbol list - already initialized above
+        # self.symbols already set
+        
+        # Timeframes - already initialized above
+        # self.timeframes already set
 
         # CVD (Cumulative Volume Delta) tracking
         self.cvd_data = {
@@ -1734,31 +1694,22 @@ class UltimateTradingBot:
         
         self.logger.info(f"✅ Trading config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%, Market={self.market_type}")
         
-        # Trading limits
-        self.max_concurrent_trades = 3  # Perfect 3-trade management
-        self.risk_reward_ratio = 1.0  # 1:1 ratio as requested
-        self.min_signal_strength = 75  # Signal quality threshold
+        # Trading limits - already initialized above
+        # self.max_concurrent_trades, self.risk_reward_ratio, self.min_signal_strength already set
 
-        # Performance tracking
-        self.signal_counter = 0
+        # Performance tracking - already initialized above
+        # self.signal_counter already set
         # Note: active_trades and performance_stats already initialized above
 
-        # Prevent signal spam - greatly reduced restrictions
-        self.last_signal_time = {}
-        self.min_signal_interval = 30  # 30 seconds between signals for same symbol
+        # Signal tracking - already initialized above
+        # self.last_signal_time, self.min_signal_interval, etc. already set
+        # self.hourly_signal_count, self.last_hour_reset, etc. already set
 
-        # Hourly signal tracking - removed limitations
-        self.hourly_signal_count = 0
-        self.last_hour_reset = datetime.now().hour
-        self.unlimited_signals = True  # Flag for unlimited signal mode
+        # Active symbol tracking - already initialized above
+        # self.active_symbols and self.symbol_trade_lock already set
 
-        # Active symbol tracking - enforce single trade per symbol
-        self.active_symbols = set()  # Track symbols with open trades
-        self.symbol_trade_lock = {}  # Lock mechanism for each symbol
-
-        # Advanced ML Trade Analyzer
-        self.ml_analyzer = AdvancedMLTradeAnalyzer()
-        self.ml_analyzer.load_ml_models()
+        # Advanced ML Trade Analyzer - already initialized above
+        # self.ml_analyzer already set and models loaded
         
         # Initialize comprehensive metrics manager
         self._initialize_metrics_manager()
@@ -1871,6 +1822,68 @@ class UltimateTradingBot:
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
+
+    def _get_config_value(self, key: str, default_value: Any) -> Any:
+        """Get configuration value with external config override"""
+        if self.external_config and 'trading_config' in self.external_config:
+            trading_config = self.external_config['trading_config']
+            if key in trading_config:
+                return trading_config[key]
+        return default_value
+
+    async def load_external_config(self, config_path: Path) -> bool:
+        """Load external configuration from JSON file and update bot settings"""
+        try:
+            with open(config_path, 'r') as f:
+                self.external_config = json.load(f)
+            
+            # Update configuration values
+            if 'trading_config' in self.external_config:
+                trading_config = self.external_config['trading_config']
+                
+                # Update account balance and risk
+                if 'capital_base' in trading_config:
+                    self.account_balance = trading_config['capital_base']
+                if 'risk_percentage' in trading_config:
+                    self.risk_per_trade_percentage = trading_config['risk_percentage']
+                
+                # Recalculate risk amount
+                self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)
+                
+                # Update other trading parameters
+                if 'max_concurrent_trades' in trading_config:
+                    self.max_concurrent_trades = trading_config['max_concurrent_trades']
+                if 'max_leverage' in trading_config:
+                    self.max_leverage = trading_config['max_leverage']
+                if 'market_type' in trading_config:
+                    self.market_type = trading_config['market_type']
+                    
+                # Update stop-loss movement rules
+                if 'stop_loss_movement' in trading_config:
+                    self.stop_loss_movement_rules = trading_config['stop_loss_movement']
+                
+                # Update leverage settings
+                if 'dynamic_leverage_enabled' in trading_config:
+                    self.dynamic_leverage_enabled = trading_config['dynamic_leverage_enabled']
+                
+            # Update performance metrics tracking
+            if 'performance_metrics' in self.external_config:
+                self.performance_metrics_config = self.external_config['performance_metrics']
+                
+            # Update Cornix integration
+            if 'cornix_integration' in self.external_config:
+                self.cornix_integration_config = self.external_config['cornix_integration']
+                
+            # Update parallel processing
+            if 'parallel_processing' in self.external_config:
+                self.parallel_processing_config = self.external_config['parallel_processing']
+                
+            self.logger.info(f"✅ External config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%, Market={self.market_type}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load external config: {e}")
+            return False
 
     def _write_pid_file(self):
         """Write process ID to file for monitoring"""

@@ -64,7 +64,7 @@ async def main():
         logging.info(f"🔧 Dry Run: {'ON' if args.dry_run else 'OFF'}")
         
         # Start the bot
-        await bot.start()
+        await bot.run_bot()
         
     except KeyboardInterrupt:
         logging.info("⏹️ Console bot stopped by user")

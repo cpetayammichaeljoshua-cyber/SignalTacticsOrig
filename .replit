@@ -166,12 +166,12 @@ args = "Trading Bot Console"
 name = "Trading Bot Console"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd SignalMaestro && python ultimate_trading_bot.py"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_console_bot.py --config trading_bot_config.json"
 
 [[ports]]
 localPort = 3000

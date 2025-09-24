@@ -129,7 +129,7 @@ except ImportError:
 
 # Import dynamic stop loss system
 try:
-    from dynamic_stop_loss_system import (
+    from SignalMaestro.dynamic_stop_loss_system import (
         TradeStopLossManager, DynamicStopLoss, StopLossConfig, MarketConditions,
         StopLossLevel, VolatilityLevel, MarketSession, MarketAnalyzer,
         create_stop_loss_manager, get_stop_loss_manager, get_all_active_managers,
@@ -141,7 +141,7 @@ except ImportError:
 
 # Import API resilience layer
 try:
-    from api_resilience_layer import (
+    from SignalMaestro.api_resilience_layer import (
         APIResilienceManager, TelegramAPIWrapper, BinanceAPIWrapper, CornixAPIWrapper,
         setup_global_resilience_manager, get_global_resilience_manager, resilient_api_call
     )
@@ -151,14 +151,14 @@ except ImportError:
 
 # Import 3SL/1TP Integration Module
 try:
-    from stop_loss_integration_module import StopLossIntegrator, StopLossAction
+    from SignalMaestro.stop_loss_integration_module import StopLossIntegrator, StopLossAction
     STOP_LOSS_INTEGRATOR_AVAILABLE = True
 except ImportError:
     STOP_LOSS_INTEGRATOR_AVAILABLE = False
 
 # Import Dynamic Leverage Management System
 try:
-    from dynamic_leverage_manager import DynamicLeverageManager, VolatilityProfile, LeverageAdjustment
+    from SignalMaestro.dynamic_leverage_manager import DynamicLeverageManager, VolatilityProfile, LeverageAdjustment
     from leverage_monitor import LeverageMonitor, LeverageChangeEvent, PortfolioRiskAlert, VolatilityAlert
     DYNAMIC_LEVERAGE_SYSTEM_AVAILABLE = True
 except ImportError:
@@ -166,10 +166,10 @@ except ImportError:
 
 # Import Parallel Processing Systems
 try:
-    from parallel_processing_core import get_parallel_core, ParallelTask, shutdown_parallel_core
-    from parallel_market_data import get_market_data_fetcher, MarketDataRequest, ParallelMarketDataFetcher
-    from parallel_technical_indicators import get_technical_indicators, IndicatorRequest, ParallelTechnicalIndicators
-    from parallel_strategy_executor import get_strategy_executor, StrategyRequest, ParallelStrategyExecutor
+    from SignalMaestro.parallel_processing_core import get_parallel_core, ParallelTask, shutdown_parallel_core
+    from SignalMaestro.parallel_market_data import get_market_data_fetcher, MarketDataRequest, ParallelMarketDataFetcher
+    from SignalMaestro.parallel_technical_indicators import get_technical_indicators, IndicatorRequest, ParallelTechnicalIndicators
+    from SignalMaestro.parallel_strategy_executor import get_strategy_executor, StrategyRequest, ParallelStrategyExecutor
     PARALLEL_PROCESSING_AVAILABLE = True
     
     # Initialize parallel processing components
@@ -1222,6 +1222,102 @@ class AdvancedMLTradeAnalyzer:
             'ml_available': ML_AVAILABLE
         }
 
+    async def load_external_config(self, config_path: Path) -> bool:
+        """Load external configuration from JSON file"""
+        try:
+            with open(config_path, 'r') as f:
+                self.external_config = json.load(f)
+            
+            # Update configuration values
+            if 'trading_config' in self.external_config:
+                trading_config = self.external_config['trading_config']
+                
+                # Update account balance and risk
+                if 'capital_base' in trading_config:
+                    self.account_balance = trading_config['capital_base']
+                if 'risk_percentage' in trading_config:
+                    self.risk_per_trade_percentage = trading_config['risk_percentage']
+                
+                # Recalculate risk amount
+                self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)
+                
+                # Update other trading parameters
+                if 'max_concurrent_trades' in trading_config:
+                    self.max_concurrent_trades = trading_config['max_concurrent_trades']
+                if 'max_leverage' in trading_config:
+                    self.max_leverage = trading_config['max_leverage']
+                if 'market_type' in trading_config:
+                    self.market_type = trading_config['market_type']
+                
+            self.logger.info(f"✅ External config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load external config: {e}")
+            return False
+    
+    def _get_config_value(self, key: str, default_value: Any) -> Any:
+        """Get configuration value with external config override"""
+        if self.external_config and 'trading_config' in self.external_config:
+            trading_config = self.external_config['trading_config']
+            if key in trading_config:
+                return trading_config[key]
+        return default_value
+    
+    async def load_external_config(self, config_path: Path) -> bool:
+        """Load external configuration from JSON file and update bot settings"""
+        try:
+            with open(config_path, 'r') as f:
+                self.external_config = json.load(f)
+            
+            # Update configuration values
+            if 'trading_config' in self.external_config:
+                trading_config = self.external_config['trading_config']
+                
+                # Update account balance and risk
+                if 'capital_base' in trading_config:
+                    self.account_balance = trading_config['capital_base']
+                if 'risk_percentage' in trading_config:
+                    self.risk_per_trade_percentage = trading_config['risk_percentage']
+                
+                # Recalculate risk amount
+                self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)
+                
+                # Update other trading parameters
+                if 'max_concurrent_trades' in trading_config:
+                    self.max_concurrent_trades = trading_config['max_concurrent_trades']
+                if 'max_leverage' in trading_config:
+                    self.max_leverage = trading_config['max_leverage']
+                if 'market_type' in trading_config:
+                    self.market_type = trading_config['market_type']
+                    
+                # Update stop-loss movement rules
+                if 'stop_loss_movement' in trading_config:
+                    self.stop_loss_movement_rules = trading_config['stop_loss_movement']
+                
+                # Update leverage settings
+                if 'dynamic_leverage_enabled' in trading_config:
+                    self.dynamic_leverage_enabled = trading_config['dynamic_leverage_enabled']
+                
+            # Update performance metrics tracking
+            if 'performance_metrics' in self.external_config:
+                self.performance_metrics_config = self.external_config['performance_metrics']
+                
+            # Update Cornix integration
+            if 'cornix_integration' in self.external_config:
+                self.cornix_integration_config = self.external_config['cornix_integration']
+                
+            # Update parallel processing
+            if 'parallel_processing' in self.external_config:
+                self.parallel_processing_config = self.external_config['parallel_processing']
+                
+            self.logger.info(f"✅ External config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%, Market={self.market_type}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load external config: {e}")
+            return False
+
 class UltimateTradingBot:
     """Ultimate automated trading bot with advanced ML integration"""
 
@@ -1229,8 +1325,27 @@ class UltimateTradingBot:
         self.logger = self._setup_logging()
         
         # Initialize configuration first (required by other systems)
-        from config import Config
+        try:
+            from SignalMaestro.config import Config
+        except ImportError:
+            try:
+                from config import Config
+            except ImportError:
+                # Create a minimal config fallback
+                class Config:
+                    CAPITAL_BASE = 10.0
+                    DEFAULT_RISK_PERCENTAGE = 5.0
+                    BINANCE_API_KEY = ''
+                    BINANCE_API_SECRET = ''
+                    TELEGRAM_BOT_TOKEN = ''
+        
         self.config = Config()
+        
+        # External config override capability
+        self.external_config = None
+        self.deployment_mode = "standard"
+        self.dry_run_mode = False
+        
         self.logger.info(f"✅ Configuration initialized: Capital=${self.config.CAPITAL_BASE}, Risk={self.config.DEFAULT_RISK_PERCENTAGE}%")
 
         # CRITICAL: Fail-fast verification for live trading safety
@@ -1281,6 +1396,16 @@ class UltimateTradingBot:
         # Initialize comprehensive metrics manager
         self.metrics_manager = None
         self.last_metrics_log = datetime.now() - timedelta(hours=1)  # Force first metrics log
+        
+        # Initialize default configuration attributes
+        self.stop_loss_movement_rules = {
+            'move_sl_to_entry_after_tp1': True,
+            'move_sl_to_tp1_after_tp2': True,
+            'close_after_tp3': True
+        }
+        self.performance_metrics_config = {'enabled': True}
+        self.cornix_integration_config = {'enabled': True, 'signal_format': 'cornix_compatible'}
+        self.parallel_processing_config = {'enabled': True}
         
         # Initialize Enhanced Systems (with fallback if not available)
         if ENHANCED_SYSTEMS_AVAILABLE:
@@ -1591,12 +1716,21 @@ class UltimateTradingBot:
         # ========================================
         # PRECISE RISK MANAGEMENT CONFIGURATION
         # ========================================
-        # Account Balance: $10 USDT (configurable via config.py)
-        self.account_balance = self.config.CAPITAL_BASE  # Use config value: $10 USDT
+        # Account Balance: Configurable via config.py or external config
+        self.account_balance = self._get_config_value('capital_base', self.config.CAPITAL_BASE)
         
-        # Risk Management: 5% per trade = $0.50 per trade (fixed for all trades)
-        self.risk_per_trade_percentage = self.config.DEFAULT_RISK_PERCENTAGE  # Use config: 5%
-        self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)  # 5% of $10 = $0.50
+        # Risk Management: Configurable percentage per trade
+        self.risk_per_trade_percentage = self._get_config_value('risk_percentage', self.config.DEFAULT_RISK_PERCENTAGE)
+        self.risk_per_trade_amount = (self.account_balance * self.risk_per_trade_percentage / 100)
+        
+        # Market type for futures trading
+        self.market_type = self._get_config_value('market_type', 'futures_usdm')
+        
+        # Dynamic leverage settings
+        self.dynamic_leverage_enabled = self._get_config_value('dynamic_leverage_enabled', True)
+        self.max_leverage = self._get_config_value('max_leverage', 125)
+        
+        self.logger.info(f"✅ Trading config loaded: Capital=${self.account_balance}, Risk={self.risk_per_trade_percentage}%, Market={self.market_type}")
         
         # Trading limits
         self.max_concurrent_trades = 3  # Perfect 3-trade management

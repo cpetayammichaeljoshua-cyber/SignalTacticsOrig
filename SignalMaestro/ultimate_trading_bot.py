@@ -672,10 +672,11 @@ class AdvancedMLTradeAnalyzer:
                 'NY_MAIN': 3, 'NY_CLOSE': 4, 'ASIA_MAIN': 5, 'TRANSITION': 6
             }
 
-            features['direction_encoded'] = safe_pandas_replace(df['direction'].fillna('BUY'), direction_map, None).fillna(1)
-            features['macd_signal_encoded'] = safe_pandas_replace(df['macd_signal'].fillna('neutral'), macd_map, None).fillna(0)
-            features['cvd_trend_encoded'] = safe_pandas_replace(df['cvd_trend'].fillna('neutral'), cvd_map, None).fillna(0)
-            features['time_session_encoded'] = safe_pandas_replace(df['time_session'].fillna('NY_MAIN'), session_map, None).fillna(3)
+            # Use map instead of replace for dictionary mappings
+            features['direction_encoded'] = df['direction'].fillna('BUY').map(direction_map).fillna(1)
+            features['macd_signal_encoded'] = df['macd_signal'].fillna('neutral').map(macd_map).fillna(0)
+            features['cvd_trend_encoded'] = df['cvd_trend'].fillna('neutral').map(cvd_map).fillna(0)
+            features['time_session_encoded'] = df['time_session'].fillna('NY_MAIN').map(session_map).fillna(3)
             features['ema_alignment'] = df['ema_alignment'].fillna(False).astype(int)
 
             # Time features with consistent naming
@@ -3083,7 +3084,7 @@ class UltimateTradingBot:
                     indicators = await self.calculate_indicators_parallel(symbol, tf, data)
                     
                     # Generate ML-enhanced signal
-                    signal = await self.generate_ml_enhanced_signal(symbol, indicators, data)
+                    signal = await self.generate_ml_enhanced_signal(symbol, indicators, data, market_data)
                     
                     symbol_analysis['timeframes'][tf] = {
                         'indicators': indicators,
@@ -4644,7 +4645,7 @@ class UltimateTradingBot:
             self.logger.error(f"Error calculating performance factor: {e}")
             return 0.25  # Default positive factor on error
 
-    async def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Optional[Dict[str, Any]]:
+    async def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any], df: Optional[pd.DataFrame] = None, multi_timeframe_data: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """Generate ML-enhanced scalping signal"""
         try:
             current_time = datetime.now()
@@ -4795,7 +4796,7 @@ class UltimateTradingBot:
                     symbol=symbol, 
                     df=df, 
                     current_price=current_price, 
-                    ohlcv_data=multi_timeframe_data
+                    ohlcv_data=multi_timeframe_data or {}
                 )
                 optimal_leverage = leverage_analysis['leverage']
                 
@@ -5092,7 +5093,7 @@ class UltimateTradingBot:
                         if not indicators or not isinstance(indicators, dict):
                             continue
 
-                        signal = await self.generate_ml_enhanced_signal(symbol, indicators, df)
+                        signal = await self.generate_ml_enhanced_signal(symbol, indicators, df, None)
                         if signal and isinstance(signal, dict) and 'signal_strength' in signal:
                             timeframe_scores[timeframe] = signal
                     except Exception as e:

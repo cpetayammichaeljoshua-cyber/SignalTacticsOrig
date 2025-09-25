@@ -57,8 +57,8 @@ class BotContinuationSystem:
             level=logging.INFO,
             format='%(asctime)s - BOT_CONTINUATION - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(log_dir / "bot_continuation.log"),
-                logging.StreamHandler(sys.stdout)
+                logging.FileHandler(log_dir / "bot_continuation_system.log"),
+                logging.StreamHandler()
             ]
         )
         self.logger = logging.getLogger(__name__)
@@ -70,159 +70,211 @@ class BotContinuationSystem:
         self.stop_all_processes()
         sys.exit(0)
     
+    def stop_all_processes(self):
+        """Stop all monitored processes"""
+        for proc_name, process in self.monitored_processes.items():
+            try:
+                if process and process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=10)
+                    self.logger.info(f"✅ Stopped {proc_name}")
+            except Exception as e:
+                self.logger.error(f"Error stopping {proc_name}: {e}")
+    
     async def check_ultimate_workflow_status(self) -> bool:
-        """Check if the ultimate workflow has completed"""
+        """Check if Ultimate Combined Workflow has completed"""
         try:
-            # Check for completion indicators
-            status_files = [
-                'ultimate_bot_process.json',
-                'ultimate_continuous_status.json',
-                'bot_status.json'
-            ]
-            
-            for status_file in status_files:
-                if Path(status_file).exists():
-                    with open(status_file, 'r') as f:
-                        status = json.load(f)
-                    
-                    # Check if workflow shows completion
-                    if 'completed' in status or 'finished' in status:
-                        self.logger.info(f"✅ Workflow completion detected in {status_file}")
+            # Check if workflow report exists
+            report_file = Path("ULTIMATE_COMBINED_WORKFLOW_REPORT.md")
+            if report_file.exists():
+                with open(report_file, 'r') as f:
+                    content = f.read()
+                    if "WORKFLOW COMPLETED SUCCESSFULLY" in content:
+                        self.logger.info("✅ Ultimate Combined Workflow completed successfully")
                         return True
             
-            # Check for process completion by examining running processes
-            result = subprocess.run(['pgrep', '-f', 'ultimate_trading_bot.py'], 
-                                  capture_output=True, text=True)
+            # Check process files
+            process_file = Path("ultimate_bot_process.json")
+            if process_file.exists():
+                with open(process_file, 'r') as f:
+                    process_info = json.load(f)
+                    pid = process_info.get('pid')
+                    
+                    if pid and psutil.pid_exists(pid):
+                        process = psutil.Process(pid)
+                        if process.is_running():
+                            self.logger.info(f"✅ Process {pid} still running")
+                            return False
             
-            if not result.stdout.strip():
-                self.logger.info("🔍 No ultimate trading bot process detected")
-                return True
-            
-            return False
+            return True  # Assume completed if no active processes
             
         except Exception as e:
             self.logger.error(f"Error checking workflow status: {e}")
-            return False
+            return True
+    
+    async def start_process(self, command: str, name: str, critical: bool = False) -> Optional[subprocess.Popen]:
+        """Start a new process"""
+        try:
+            self.logger.info(f"🚀 Starting {name}...")
+            self.logger.info(f"📝 Command: {command}")
+            
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
+            
+            process = subprocess.Popen(
+                command.split(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                text=True,
+                bufsize=1
+            )
+            
+            # Wait for process to stabilize
+            await asyncio.sleep(5)
+            
+            if process.poll() is None:
+                self.logger.info(f"✅ {name} started successfully (PID: {process.pid})")
+                self.monitored_processes[name] = process
+                
+                # Save process info
+                process_info = {
+                    'name': name,
+                    'pid': process.pid,
+                    'command': command,
+                    'start_time': datetime.now().isoformat(),
+                    'critical': critical
+                }
+                
+                with open(f'{name.lower().replace(" ", "_")}_process.json', 'w') as f:
+                    json.dump(process_info, f, indent=2)
+                
+                return process
+            else:
+                self.logger.error(f"❌ {name} failed to start")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error starting {name}: {e}")
+            return None
     
     async def ensure_critical_processes_running(self):
         """Ensure critical processes are running"""
         try:
-            self.logger.info("🔄 Ensuring critical processes are running...")
+            # Check if workflow has completed
+            workflow_completed = await self.check_ultimate_workflow_status()
             
-            for command, bot_name, is_critical in self.bot_priority:
-                if is_critical:
-                    # Check if process is already running
-                    script_name = command.split()[-1]
-                    result = subprocess.run(['pgrep', '-f', script_name], 
-                                          capture_output=True, text=True)
-                    
-                    if not result.stdout.strip():
-                        self.logger.info(f"🚀 Starting critical process: {bot_name}")
-                        process = subprocess.Popen(
-                            command.split(),
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            text=True
-                        )
+            if workflow_completed:
+                self.logger.info("🔄 Ultimate workflow completed, ensuring continuous operation...")
+                
+                # Start critical processes
+                for command, name, critical in self.bot_priority:
+                    if critical:
+                        # Check if already running
+                        if name in self.monitored_processes:
+                            process = self.monitored_processes[name]
+                            if process and process.poll() is None:
+                                continue  # Already running
                         
-                        self.monitored_processes[bot_name] = process
-                        
-                        # Save process info
-                        process_info = {
-                            'pid': process.pid,
-                            'command': command,
-                            'bot_name': bot_name,
-                            'is_critical': is_critical,
-                            'start_time': datetime.now().isoformat()
-                        }
-                        
-                        process_file = f"{bot_name.lower().replace(' ', '_')}_process.json"
-                        with open(process_file, 'w') as f:
-                            json.dump(process_info, f, indent=2)
-                        
-                        self.logger.info(f"✅ {bot_name} started with PID: {process.pid}")
-                    else:
-                        self.logger.info(f"✅ {bot_name} already running")
+                        # Start the process
+                        process = await self.start_process(command, name, critical)
+                        if process:
+                            break  # Successfully started critical process
+                
+                # Start supporting processes
+                for command, name, critical in self.bot_priority:
+                    if not critical and len(self.monitored_processes) < 3:
+                        if name not in self.monitored_processes:
+                            await self.start_process(command, name, critical)
+                            await asyncio.sleep(2)  # Stagger starts
             
         except Exception as e:
             self.logger.error(f"Error ensuring critical processes: {e}")
     
-    async def fix_signal_channel_connection(self):
-        """Fix and ensure signal channel connection"""
+    async def health_check_processes(self):
+        """Perform health check on all processes"""
         try:
-            self.logger.info("📱 Fixing signal channel connection...")
+            dead_processes = []
             
-            # Check for Telegram bot token
+            for name, process in self.monitored_processes.items():
+                if process.poll() is not None:  # Process has died
+                    self.logger.warning(f"⚠️ Process {name} has stopped")
+                    dead_processes.append(name)
+            
+            # Remove dead processes
+            for name in dead_processes:
+                del self.monitored_processes[name]
+            
+            # Restart critical processes if needed
+            if dead_processes:
+                await self.ensure_critical_processes_running()
+            
+            self.last_health_check = datetime.now()
+            
+        except Exception as e:
+            self.logger.error(f"Error in health check: {e}")
+    
+    async def monitor_webview_updates(self):
+        """Monitor for webview update failures and fix them"""
+        try:
+            # Start enhanced webview error handler
+            webview_handler_started = False
+            
+            for name, process in self.monitored_processes.items():
+                if "webview" in name.lower() or "error_handler" in name.lower():
+                    webview_handler_started = True
+                    break
+            
+            if not webview_handler_started:
+                self.logger.info("🌐 Starting enhanced webview error handler...")
+                await self.start_process(
+                    "python enhanced_webview_error_handler.py", 
+                    "Enhanced Webview Error Handler", 
+                    False
+                )
+                
+        except Exception as e:
+            self.logger.error(f"Error monitoring webview updates: {e}")
+    
+    async def fix_signal_channel_connection(self):
+        """Fix signal pushing to Telegram channel"""
+        try:
+            # Ensure Telegram bot token is available
             bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
             if not bot_token:
-                # Try to load from config files
-                config_files = ['ultimate_unified_bot_config.json', 'enhanced_optimized_bot_config.json']
-                for config_file in config_files:
-                    if Path(config_file).exists():
-                        with open(config_file, 'r') as f:
-                            config = json.load(f)
-                            if 'TELEGRAM_BOT_TOKEN' in config:
-                                os.environ['TELEGRAM_BOT_TOKEN'] = config['TELEGRAM_BOT_TOKEN']
-                                bot_token = config['TELEGRAM_BOT_TOKEN']
-                                break
+                self.logger.error("❌ No Telegram bot token found")
+                return
             
-            # Create signal pushing configuration
-            signal_config = {
-                "signal_generation_enabled": True,
-                "continuous_pushing": True,
-                "target_channel": "@SignalTactics",
-                "signal_interval_minutes": 5,
-                "max_signals_per_hour": 12,
-                "fallback_generation": True,
-                "error_recovery": True,
-                "restart_on_failure": True,
-                "health_monitoring": True,
-                "channel_connection_fixed": True,
-                "last_fix_time": datetime.now().isoformat()
-            }
+            # Test channel access
+            import aiohttp
             
-            with open('signal_pushing_config.json', 'w') as f:
-                json.dump(signal_config, f, indent=2)
+            url = f"https://api.telegram.org/bot{bot_token}/getChat"
+            params = {'chat_id': '@SignalTactics'}
             
-            self.logger.info("✅ Signal channel connection configuration updated")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        self.logger.info("✅ Telegram channel access confirmed")
+                    else:
+                        self.logger.warning("⚠️ Telegram channel access issue")
             
         except Exception as e:
             self.logger.error(f"Error fixing signal channel connection: {e}")
     
-    def stop_all_processes(self):
-        """Stop all monitored processes"""
-        self.logger.info("🛑 Stopping all monitored processes...")
+    async def continuous_monitoring_loop(self):
+        """Main continuous monitoring loop"""
+        self.logger.info("🔍 Starting continuous monitoring loop...")
         
-        for name, process in self.monitored_processes.items():
-            try:
-                if process.poll() is None:
-                    process.terminate()
-                    process.wait(timeout=10)
-                    self.logger.info(f"✅ Stopped {name}")
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                self.logger.warning(f"⚠️ Force killed {name}")
-            except Exception as e:
-                self.logger.error(f"Error stopping {name}: {e}")
-        
-        self.monitored_processes.clear()
-    
-    async def monitor_processes(self):
-        """Monitor processes and restart if needed"""
         while self.running:
             try:
-                # Check if any monitored processes have died
-                dead_processes = []
-                for name, process in self.monitored_processes.items():
-                    if process.poll() is not None:
-                        dead_processes.append(name)
-                        self.logger.warning(f"⚠️ Process {name} has died")
+                # Ensure critical processes are running
+                await self.ensure_critical_processes_running()
                 
-                # Restart dead processes
-                for name in dead_processes:
-                    del self.monitored_processes[name]
-                    await self.ensure_critical_processes_running()
+                # Perform health checks
+                await self.health_check_processes()
+                
+                # Monitor webview updates
+                await self.monitor_webview_updates()
                 
                 # Fix signal channel connection
                 await self.fix_signal_channel_connection()
@@ -256,65 +308,29 @@ class BotContinuationSystem:
                 await self.ensure_critical_processes_running()
                 
                 # Start monitoring loop
-                await self.monitor_processes()
+                await self.continuous_monitoring_loop()
             else:
-                self.logger.info("🔍 Workflow still running, monitoring for completion...")
-                
-                # Monitor for workflow completion
-                while self.running:
-                    if await self.check_ultimate_workflow_status():
-                        self.logger.info("✅ Workflow completion detected!")
-                        break
-                    
+                self.logger.info("⏳ Waiting for Ultimate Combined Workflow to complete...")
+                # Wait and check again
+                while self.running and not workflow_completed:
                     await asyncio.sleep(60)  # Check every minute
+                    workflow_completed = await self.check_ultimate_workflow_status()
                 
-                # Start continuation phase
-                await self.ensure_critical_processes_running()
-                await self.monitor_processes()
+                if workflow_completed:
+                    await self.initialize_continuation_system()
             
         except Exception as e:
-            self.logger.error(f"Error in continuation system: {e}")
-    
-    async def run_continuation_system(self):
-        """Main entry point for the continuation system"""
-        try:
-            self.logger.info("🚀 BOT CONTINUATION SYSTEM STARTING")
-            self.logger.info("=" * 80)
-            self.logger.info("🎯 Ensuring continuous operation after workflow completion")
-            self.logger.info("📡 Maintaining signal pushing and bot operation")
-            self.logger.info("=" * 80)
-            
-            # Create continuation status file
-            status = {
-                'system_status': 'active',
-                'start_time': datetime.now().isoformat(),
-                'purpose': 'ensure_continuous_operation_after_workflow_completion',
-                'monitoring_enabled': True,
-                'signal_pushing_enabled': True
-            }
-            
-            with open('bot_continuation_status.json', 'w') as f:
-                json.dump(status, f, indent=2)
-            
-            # Initialize and run the continuation system
-            await self.initialize_continuation_system()
-            
-        except Exception as e:
-            self.logger.error(f"Fatal error in continuation system: {e}")
-        finally:
-            self.logger.info("🧹 Bot Continuation System shutting down...")
-            self.stop_all_processes()
+            self.logger.error(f"Error initializing continuation system: {e}")
 
 async def main():
-    """Main async function"""
-    continuation_system = BotContinuationSystem()
-    
-    try:
-        await continuation_system.run_continuation_system()
-    except KeyboardInterrupt:
-        print("\n🛑 Manual shutdown requested")
-    except Exception as e:
-        print(f"💥 Fatal error: {e}")
+    """Main function"""
+    system = BotContinuationSystem()
+    await system.initialize_continuation_system()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n🛑 Bot Continuation System stopped")
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")

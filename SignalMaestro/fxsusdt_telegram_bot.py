@@ -1075,8 +1075,8 @@ Use `/alerts` to manage your alerts."""
 • **Rate Limit:** {self.min_signal_interval.total_seconds()/60:.0f} minutes
 
 💰 **Account Status:**
-• **Balance:** ${balance.get('available_balance', 0):.2f} if balance else 'N/A'}
-• **Current Price:** {price:.5f} if price else 'N/A'}
+• **Balance:** ${balance.get('available_balance', 0):.2f if balance else 'N/A'}
+• **Current Price:** {price:.5f if price else 'N/A'}
 
 📈 **Performance:**
 • **Commands:** {len(self.commands)}

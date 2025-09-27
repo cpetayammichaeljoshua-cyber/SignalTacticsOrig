@@ -57,8 +57,14 @@ class Config:
         self.SUPPORTED_PAIRS = [
             "BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "DOTUSDT",
             "LINKUSDT", "LTCUSDT", "BCHUSDT", "XLMUSDT", "EOSUSDT",
-            "TRXUSDT", "XRPUSDT", "SOLUSDT", "AVAXUSDT", "MATICUSDT"
+            "TRXUSDT", "XRPUSDT", "SOLUSDT", "AVAXUSDT", "MATICUSDT",
+            "FXSUSDT"  # Forex futures pair
         ]
+        
+        # FXSUSDT.P Specific Configuration
+        self.FXSUSDT_SYMBOL = "FXSUSDT"
+        self.FXSUSDT_TIMEFRAME = "30m"
+        self.FXSUSDT_STRATEGY = "ichimoku_sniper"
 
         # API Rate Limits
         self.BINANCE_REQUEST_TIMEOUT = int(os.getenv("BINANCE_REQUEST_TIMEOUT", "30"))

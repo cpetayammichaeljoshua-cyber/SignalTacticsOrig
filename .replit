@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk"]
 
 [workflows]
-runButton = "Project"
+runButton = "FXSUSDT Ichimoku Bot"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -172,6 +172,15 @@ outputType = "console"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_console_bot.py --config trading_bot_config.json"
+
+[[workflows.workflow]]
+name = "FXSUSDT Ichimoku Bot"
+author = 47967880
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_fxsusdt_bot.py"
 
 [[ports]]
 localPort = 3000

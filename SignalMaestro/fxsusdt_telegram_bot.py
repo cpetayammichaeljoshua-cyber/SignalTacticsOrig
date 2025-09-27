@@ -764,6 +764,7 @@ Leverage: Auto
                 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
                 from telegram import Update
 
+            # Create application with proper configuration
             application = Application.builder().token(self.bot_token).build()
 
             # Add individual command handlers
@@ -875,12 +876,19 @@ Leverage: Auto
 
             self.logger.info("✅ All command handlers registered successfully")
             
-            # Start polling in background
+            # Store application reference
             self.telegram_app = application
-            asyncio.create_task(application.run_polling())
+            
+            # Initialize and start the application properly
+            await application.initialize()
+            await application.start()
+            
+            # Start polling without creating new event loop
+            await application.updater.start_polling()
             
             await self.send_status_update("🚀 FXSUSDT.P Futures Bot commands are now active!")
             
+            self.logger.info("🤖 Telegram bot polling started successfully")
             return True
             
         except Exception as e:
@@ -898,21 +906,34 @@ async def main():
 
     try:
         # Start the Telegram command system
-        self.logger.info("🤖 Starting Telegram command system...")
-        await bot.start_telegram_polling()
+        bot.logger.info("🤖 Starting Telegram command system...")
+        telegram_success = await bot.start_telegram_polling()
+        
+        if not telegram_success:
+            bot.logger.warning("⚠️ Telegram polling failed to start, continuing with scanner only")
         
         # Start the continuous scanner
-        self.logger.info("🔍 Starting market scanner...")
+        bot.logger.info("🔍 Starting market scanner...")
         await bot.run_continuous_scanner()
         
     except KeyboardInterrupt:
         bot.logger.info("👋 Bot stopped by user")
-        if hasattr(bot, 'telegram_app'):
-            await bot.telegram_app.stop()
+        if hasattr(bot, 'telegram_app') and bot.telegram_app:
+            try:
+                await bot.telegram_app.updater.stop()
+                await bot.telegram_app.stop()
+                await bot.telegram_app.shutdown()
+            except Exception as e:
+                bot.logger.error(f"Error stopping Telegram app: {e}")
     except Exception as e:
         bot.logger.error(f"❌ Critical error: {e}")
-        if hasattr(bot, 'telegram_app'):
-            await bot.telegram_app.stop()
+        if hasattr(bot, 'telegram_app') and bot.telegram_app:
+            try:
+                await bot.telegram_app.updater.stop()
+                await bot.telegram_app.stop()
+                await bot.telegram_app.shutdown()
+            except Exception as e:
+                bot.logger.error(f"Error stopping Telegram app: {e}")
         raise
 
 

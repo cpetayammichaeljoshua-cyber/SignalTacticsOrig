@@ -188,6 +188,235 @@ class FXSUSDTTrader:
             self.logger.error(f"Error getting position info: {e}")
             return {}
     
+    async def get_symbol_ticker(self, symbol: str = None) -> Optional[Dict[str, Any]]:
+        """Get symbol ticker information"""
+        try:
+            symbol = symbol or self.symbol
+            url = f"{self.base_url}/fapi/v1/ticker/24hr"
+            params = {"symbol": symbol}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug(f"📊 Retrieved ticker for {symbol}")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get ticker: {response.status}")
+                        return None
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting ticker: {e}")
+            return None
+
+    async def get_funding_rate(self, symbol: str = None) -> Optional[Dict[str, Any]]:
+        """Get current funding rate for symbol"""
+        try:
+            symbol = symbol or self.symbol
+            url = f"{self.base_url}/fapi/v1/fundingRate"
+            params = {"symbol": symbol, "limit": 1}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data:
+                            self.logger.debug(f"📊 Retrieved funding rate for {symbol}")
+                            return data[0]  # Return latest funding rate
+                        return None
+                    else:
+                        self.logger.error(f"Failed to get funding rate: {response.status}")
+                        return None
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting funding rate: {e}")
+            return None
+
+    async def get_open_interest(self, symbol: str = None) -> Optional[Dict[str, Any]]:
+        """Get open interest for symbol"""
+        try:
+            symbol = symbol or self.symbol
+            url = f"{self.base_url}/fapi/v1/openInterest"
+            params = {"symbol": symbol}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug(f"📊 Retrieved open interest for {symbol}")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get open interest: {response.status}")
+                        return None
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting open interest: {e}")
+            return None
+
+    async def get_positions(self, symbol: str = None) -> List[Dict[str, Any]]:
+        """Get current positions for symbol"""
+        try:
+            symbol = symbol or self.symbol
+            endpoint = "/fapi/v2/positionRisk"
+            timestamp = int(time.time() * 1000)
+            
+            if symbol:
+                query_string = f"symbol={symbol}&timestamp={timestamp}"
+            else:
+                query_string = f"timestamp={timestamp}"
+                
+            signature = self._generate_signature(query_string)
+            url = f"{self.base_url}{endpoint}?{query_string}&signature={signature}"
+            
+            headers = {
+                'X-MBX-APIKEY': self.api_key
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # Filter for non-zero positions
+                        active_positions = [pos for pos in data if float(pos.get('positionAmt', 0)) != 0]
+                        self.logger.debug(f"📊 Retrieved {len(active_positions)} active positions")
+                        return active_positions
+                    else:
+                        self.logger.error(f"Failed to get positions: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting positions: {e}")
+            return []
+
+    async def get_account_info(self) -> Dict[str, Any]:
+        """Get detailed account information"""
+        try:
+            endpoint = "/fapi/v2/account"
+            timestamp = int(time.time() * 1000)
+            query_string = f"timestamp={timestamp}"
+            signature = self._generate_signature(query_string)
+            
+            url = f"{self.base_url}{endpoint}?{query_string}&signature={signature}"
+            
+            headers = {
+                'X-MBX-APIKEY': self.api_key
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug("📊 Retrieved account info")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get account info: {response.status}")
+                        return {}
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting account info: {e}")
+            return {}
+
+    async def get_exchange_info(self, symbol: str = None) -> Dict[str, Any]:
+        """Get exchange information for symbol"""
+        try:
+            url = f"{self.base_url}/fapi/v1/exchangeInfo"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if symbol:
+                            # Find specific symbol info
+                            for sym_info in data.get('symbols', []):
+                                if sym_info.get('symbol') == symbol:
+                                    return sym_info
+                            return {}
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get exchange info: {response.status}")
+                        return {}
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting exchange info: {e}")
+            return {}
+
+    async def get_24hr_ticker_stats(self, symbol: str = None) -> Dict[str, Any]:
+        """Get 24hr ticker statistics"""
+        try:
+            symbol = symbol or self.symbol
+            url = f"{self.base_url}/fapi/v1/ticker/24hr"
+            params = {"symbol": symbol}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug(f"📊 Retrieved 24hr stats for {symbol}")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get 24hr stats: {response.status}")
+                        return {}
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting 24hr stats: {e}")
+            return {}
+
+    async def change_leverage(self, symbol: str, leverage: int) -> bool:
+        """Change leverage for symbol"""
+        try:
+            endpoint = "/fapi/v1/leverage"
+            timestamp = int(time.time() * 1000)
+            query_string = f"symbol={symbol}&leverage={leverage}&timestamp={timestamp}"
+            signature = self._generate_signature(query_string)
+            
+            url = f"{self.base_url}{endpoint}"
+            
+            headers = {
+                'X-MBX-APIKEY': self.api_key
+            }
+            
+            data = {
+                'symbol': symbol,
+                'leverage': leverage,
+                'timestamp': timestamp,
+                'signature': signature
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        self.logger.info(f"✅ Leverage changed to {leverage}x for {symbol}")
+                        return True
+                    else:
+                        self.logger.error(f"Failed to change leverage: {response.status}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"Error changing leverage: {e}")
+            return False
+
+    async def get_leverage(self, symbol: str = None) -> Optional[int]:
+        """Get current leverage for symbol"""
+        try:
+            symbol = symbol or self.symbol
+            position_info = await self.get_position_info()
+            
+            if position_info and 'leverage' in position_info:
+                return int(float(position_info['leverage']))
+            
+            # Fallback to account info
+            account_info = await self.get_account_info()
+            for position in account_info.get('positions', []):
+                if position.get('symbol') == symbol:
+                    return int(float(position.get('leverage', 1)))
+            
+            return 1  # Default leverage
+            
+        except Exception as e:
+            self.logger.error(f"Error getting leverage: {e}")
+            return None
+
     async def test_connection(self) -> bool:
         """Test API connection and credentials"""
         try:

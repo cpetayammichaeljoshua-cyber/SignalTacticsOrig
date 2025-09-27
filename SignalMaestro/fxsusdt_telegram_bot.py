@@ -351,10 +351,33 @@ Leverage: Auto
         """Get the current price of FXSUSDT.P"""
         chat_id = str(update.effective_chat.id)
         try:
-            ticker = await self.trader.get_symbol_ticker('FXSUSDT')
-            if ticker:
-                price = ticker['price']
-                await self.send_message(chat_id, f"💰 **Current FXSUSDT.P Price:** `{price}`")
+            # Use direct price method first
+            price = await self.trader.get_current_price()
+            if price:
+                # Get additional ticker data for comprehensive info
+                ticker = await self.trader.get_24hr_ticker_stats('FXSUSDT')
+                if ticker:
+                    change_percent = float(ticker.get('priceChangePercent', 0))
+                    high_24h = float(ticker.get('highPrice', 0))
+                    low_24h = float(ticker.get('lowPrice', 0))
+                    volume = float(ticker.get('volume', 0))
+                    
+                    direction_emoji = "🟢" if change_percent >= 0 else "🔴"
+                    
+                    message = f"""💰 **FXSUSDT.P Price Information:**
+
+• **Current Price:** `{price:.5f}`
+• **24h Change:** {direction_emoji} `{change_percent:+.2f}%`
+• **24h High:** `{high_24h:.5f}`
+• **24h Low:** `{low_24h:.5f}`
+• **24h Volume:** `{volume:,.0f}`
+
+**📊 Market:** Binance Futures (USDT-M)
+**📈 Contract:** FXSUSDT Perpetual"""
+                else:
+                    message = f"💰 **Current FXSUSDT.P Price:** `{price:.5f}`"
+                
+                await self.send_message(chat_id, message)
             else:
                 await self.send_message(chat_id, "❌ Could not retrieve FXSUSDT.P price.")
         except Exception as e:
@@ -368,16 +391,15 @@ Leverage: Auto
         try:
             balance = await self.trader.get_account_balance()
             if balance:
-                # Filter for USDT balance if available, or show all
-                usdt_balance = next((b for b in balance if b['asset'] == 'USDT'), None)
-                if usdt_balance:
-                    message = f"💰 **Account Balance (USDT):**\n"
-                    message += f"• **Available:** `{usdt_balance['free']}`\n"
-                    message += f"• **In Use:** `{usdt_balance['locked']}`\n"
-                else:
-                    message = "💰 **Account Balance:**\n"
-                    for bal in balance:
-                        message += f"• **{bal['asset']}:** Available: `{bal['free']}`, In Use: `{bal['locked']}`\n"
+                message = f"""💰 **Account Balance (FXSUSDT Futures):**
+
+• **Total Wallet Balance:** `{balance.get('total_wallet_balance', 0):.2f} USDT`
+• **Available Balance:** `{balance.get('available_balance', 0):.2f} USDT`
+• **Unrealized PNL:** `{balance.get('total_unrealized_pnl', 0):.2f} USDT`
+
+**📊 Account Type:** USDT-M Futures
+**⚡ Updated:** {datetime.now().strftime('%H:%M:%S UTC')}"""
+                
                 await self.send_message(chat_id, message)
             else:
                 await self.send_message(chat_id, "❌ Could not retrieve account balance.")
@@ -394,13 +416,25 @@ Leverage: Auto
             if positions:
                 message = "📊 **Open Positions (FXSUSDT.P):**\n\n"
                 for pos in positions:
-                    message += (
-                        f"• **Symbol:** `{pos['symbol']}`\n"
-                        f"• **Side:** `{pos['side']}`\n"
-                        f"• **Size:** `{pos['positionAmt']}`\n"
-                        f"• **Entry Price:** `{pos['entryPrice']}`\n"
-                        f"• **Unrealized PNL:** `{pos.get('unRealizedProfit', 'N/A')}`\n\n"
-                    )
+                    position_amt = float(pos.get('positionAmt', 0))
+                    entry_price = float(pos.get('entryPrice', 0))
+                    mark_price = float(pos.get('markPrice', 0))
+                    unrealized_pnl = float(pos.get('unRealizedProfit', 0))
+                    percentage = float(pos.get('percentage', 0))
+                    
+                    side = "LONG" if position_amt > 0 else "SHORT" if position_amt < 0 else "NONE"
+                    side_emoji = "🟢" if position_amt > 0 else "🔴" if position_amt < 0 else "⚪"
+                    pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                    
+                    message += f"""{side_emoji} **{pos['symbol']}**
+• **Side:** `{side}`
+• **Size:** `{abs(position_amt):.4f}`
+• **Entry Price:** `{entry_price:.5f}`
+• **Mark Price:** `{mark_price:.5f}`
+• **Unrealized PNL:** {pnl_emoji} `{unrealized_pnl:.2f} USDT ({percentage:+.2f}%)`
+• **Leverage:** `{pos.get('leverage', '1')}x`
+
+"""
                 await self.send_message(chat_id, message)
             else:
                 await self.send_message(chat_id, "ℹ️ You have no open positions for FXSUSDT.P.")
@@ -442,12 +476,40 @@ Leverage: Auto
             symbol = context.args[0].upper()
 
         try:
-            # Attempt to get ticker for general info
-            ticker = await self.trader.get_symbol_ticker(symbol)
+            # Get comprehensive ticker information
+            ticker = await self.trader.get_24hr_ticker_stats(symbol)
             if ticker:
-                message = f"📈 **Market Overview for {symbol}:**\n\n"
-                message += f"• **Current Price:** `{ticker['price']}`\n"
-                # Add more ticker info if available and relevant
+                price = float(ticker.get('lastPrice', 0))
+                change = float(ticker.get('priceChange', 0))
+                change_percent = float(ticker.get('priceChangePercent', 0))
+                high_24h = float(ticker.get('highPrice', 0))
+                low_24h = float(ticker.get('lowPrice', 0))
+                volume = float(ticker.get('volume', 0))
+                quote_volume = float(ticker.get('quoteVolume', 0))
+                open_price = float(ticker.get('openPrice', 0))
+                
+                direction_emoji = "🟢" if change >= 0 else "🔴"
+                
+                message = f"""📈 **Market Overview for {symbol}:**
+
+**💰 Price Information:**
+• **Current Price:** `{price:.5f}`
+• **24h Change:** {direction_emoji} `{change:+.5f} ({change_percent:+.2f}%)`
+• **24h High:** `{high_24h:.5f}`
+• **24h Low:** `{low_24h:.5f}`
+• **24h Open:** `{open_price:.5f}`
+
+**📊 Volume Information:**
+• **24h Volume:** `{volume:,.0f} {symbol[:2]}`
+• **24h Volume (USDT):** `${quote_volume:,.0f}`
+
+**📋 Contract Info:**
+• **Type:** Perpetual Futures
+• **Settlement:** USDT
+• **Exchange:** Binance Futures
+
+**⏰ Last Update:** `{datetime.now().strftime('%H:%M:%S UTC')}`"""
+                
                 await self.send_message(chat_id, message)
             else:
                 await self.send_message(chat_id, f"❌ Could not retrieve market data for {symbol}.")
@@ -474,15 +536,18 @@ Leverage: Auto
         self.commands_used.update({chat_id: self.commands_used.get(chat_id, 0) + 1})
 
     async def cmd_leverage(self, update, context):
-        """Get or set leverage for FXSUSDT.P (requires more implementation)"""
+        """Get or set leverage for FXSUSDT.P"""
         chat_id = str(update.effective_chat.id)
         if len(context.args) >= 2 and context.args[0].upper() == 'FXSUSDT':
             symbol = context.args[0].upper()
             try:
                 leverage = int(context.args[1])
-                if 1 <= leverage <= 50: # Assuming max leverage is 50x for FXSUSDT
-                    # await self.trader.change_leverage(symbol, leverage) # Uncomment when implemented
-                    await self.send_message(chat_id, f"⚙️ Leverage for {symbol} set to {leverage}x (Simulated). Actual implementation needed.")
+                if 1 <= leverage <= 50: # Max leverage is 50x for FXSUSDT
+                    success = await self.trader.change_leverage(symbol, leverage)
+                    if success:
+                        await self.send_message(chat_id, f"✅ **Leverage Updated:**\n\n• **Symbol:** `{symbol}`\n• **New Leverage:** `{leverage}x`\n• **Status:** Successfully applied")
+                    else:
+                        await self.send_message(chat_id, f"❌ Failed to set leverage for {symbol}. Please check your account status and try again.")
                 else:
                     await self.send_message(chat_id, "❌ Leverage must be between 1x and 50x for FXSUSDT.")
             except ValueError:
@@ -491,14 +556,22 @@ Leverage: Auto
                 self.logger.error(f"Error setting leverage: {e}")
                 await self.send_message(chat_id, "❌ An error occurred while trying to set leverage.")
         else:
-            await self.send_message(chat_id, "ℹ️ Usage: `/leverage FXSUSDT <1-50>` to set leverage. `/leverage` to view current (simulation).")
-            # Placeholder for viewing current leverage if trader supports it
-            # try:
-            #     current_leverage = await self.trader.get_leverage('FXSUSDT')
-            #     await self.send_message(chat_id, f"Current leverage for FXSUSDT is {current_leverage}x (Simulated).")
-            # except Exception as e:
-            #     self.logger.error(f"Error getting leverage: {e}")
-            #     await self.send_message(chat_id, "Could not retrieve current leverage.")
+            # Show current leverage
+            try:
+                current_leverage = await self.trader.get_leverage('FXSUSDT')
+                if current_leverage:
+                    await self.send_message(chat_id, f"""⚙️ **Current Leverage Information:**
+
+• **Symbol:** `FXSUSDT`
+• **Current Leverage:** `{current_leverage}x`
+• **Max Allowed:** `50x`
+
+**Usage:** `/leverage FXSUSDT <1-50>` to change leverage""")
+                else:
+                    await self.send_message(chat_id, "❌ Could not retrieve current leverage.")
+            except Exception as e:
+                self.logger.error(f"Error getting leverage: {e}")
+                await self.send_message(chat_id, f"❌ Error retrieving leverage information.\n\n**Usage:** `/leverage FXSUSDT <1-50>` to set leverage")
 
         self.commands_used.update({chat_id: self.commands_used.get(chat_id, 0) + 1})
 

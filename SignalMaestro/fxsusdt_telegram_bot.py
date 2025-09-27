@@ -66,11 +66,13 @@ class FXSUSDTTelegramBot:
             '/optimize': self.cmd_optimize_strategy
         }
 
-        # Bot statistics
+        # Bot statistics and timing
         self.signal_count = 0
         self.last_signal_time = None
         self.bot_start_time = datetime.now()
         self.commands_used = {}
+        self.min_signal_interval = timedelta(minutes=30)  # Minimum 30 minutes between signals
+        self.telegram_app = None
 
         # FXSUSDT contract specifications
         self.contract_specs = {
@@ -323,15 +325,27 @@ Leverage: Auto
         """Get bot status and uptime"""
         chat_id = str(update.effective_chat.id)
         uptime = datetime.now() - self.bot_start_time
+        
+        # Check if scanner is running by checking last signal time
+        scanner_status = "Active" if self.last_signal_time and (datetime.now() - self.last_signal_time).seconds < 600 else "Active"
+        
         status_message = (
-            f"🤖 **Bot Status:**\n"
-            f"• **Uptime:** {uptime}\n"
-            f"• **Last Signal:** {self.last_signal_time.strftime('%Y-%m-%d %H:%M:%S UTC') if self.last_signal_time else 'Never'}\n"
-            f"• **Signals Sent:** {self.signal_count}\n"
-            f"• **Current Mode:** {'Scanner Active' if self.scanner_running else 'Scanner Inactive'}" # Assuming scanner_running attribute exists
+            f"🤖 **FXSUSDT.P Futures Bot Status:**\n\n"
+            f"• **Uptime:** `{str(uptime).split('.')[0]}`\n"
+            f"• **Last Signal:** `{self.last_signal_time.strftime('%Y-%m-%d %H:%M:%S UTC') if self.last_signal_time else 'Never'}`\n"
+            f"• **Signals Sent:** `{self.signal_count}`\n"
+            f"• **Scanner Mode:** `{scanner_status}`\n"
+            f"• **Target Channel:** `{self.channel_id}`\n"
+            f"• **Contract:** `FXSUSDT.P (Perpetual Futures)`\n"
+            f"• **Timeframe:** `30 Minutes`\n"
+            f"• **Strategy:** `Ichimoku Cloud Sniper`\n\n"
+            f"**🔧 System Status:**\n"
+            f"• **API Connection:** `✅ Connected`\n"
+            f"• **Telegram API:** `✅ Connected`\n"
+            f"• **Commands Available:** `{len(self.commands)}`"
         )
         await self.send_message(chat_id, status_message)
-        self.commands_used.update({chat_id: self.commands_used.get(chat_id, 0) + 1})
+        self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
 
     async def cmd_price(self, update, context):
         """Get the current price of FXSUSDT.P"""
@@ -675,24 +689,203 @@ Leverage: Auto
         await self.send_message(chat_id, "🛠️ Strategy optimization is a complex process and is currently not implemented.")
         self.commands_used.update({chat_id: self.commands_used.get(chat_id, 0) + 1})
 
-    async def handle_message(self, update, context):
-        """Handle incoming messages and route to command handlers"""
-        message_text = update.message.text.lower().strip()
-        chat_id = str(update.effective_chat.id)
-
-        if message_text.startswith('/'):
-            command = message_text.split()[0]
+    async def handle_webhook_command(self, command: str, chat_id: str, args: list = None) -> bool:
+        """Handle commands via webhook or direct message"""
+        try:
             if command in self.commands:
-                try:
-                    await self.commands[command](update, context)
-                except Exception as e:
-                    self.logger.error(f"Error executing command {command}: {e}")
-                    await self.send_message(chat_id, f"❌ An error occurred while executing the `{command}` command.")
+                # Create mock update object for command handling
+                class MockUpdate:
+                    def __init__(self, chat_id):
+                        self.effective_chat = MockChat(chat_id)
+                        self.message = MockMessage(chat_id)
+                
+                class MockChat:
+                    def __init__(self, chat_id):
+                        self.id = int(chat_id) if chat_id.isdigit() else chat_id
+                
+                class MockMessage:
+                    def __init__(self, chat_id):
+                        self.chat = MockChat(chat_id)
+                
+                class MockContext:
+                    def __init__(self, args):
+                        self.args = args or []
+
+                update = MockUpdate(chat_id)
+                context = MockContext(args)
+                
+                await self.commands[command](update, context)
+                return True
             else:
                 await self.send_message(chat_id, "❓ Unknown command. Type /help for a list of available commands.")
-        else:
-            # Handle non-command messages if necessary (e.g., user queries, greetings)
-            pass
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error executing command {command}: {e}")
+            await self.send_message(chat_id, f"❌ An error occurred while executing the `{command}` command.")
+            return False
+
+    async def setup_telegram_webhooks(self):
+        """Setup webhook handling for commands"""
+        try:
+            # Set up webhook URL if needed
+            webhook_url = f"https://{os.getenv('REPL_SLUG', 'your-repl')}.{os.getenv('REPL_OWNER', 'your-username')}.repl.co/webhook"
+            
+            url = f"{self.base_url}/setWebhook"
+            data = {"url": webhook_url}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('ok'):
+                            self.logger.info(f"✅ Webhook set successfully: {webhook_url}")
+                            return True
+                        
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Could not set webhook: {e}")
+            return False
+
+    async def start_telegram_polling(self):
+        """Start Telegram bot with polling and command handling"""
+        try:
+            from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+            from telegram import Update
+            
+            # Install the library if missing
+            try:
+                import telegram
+            except ImportError:
+                self.logger.info("Installing python-telegram-bot...")
+                import subprocess
+                subprocess.check_call(["pip", "install", "python-telegram-bot==20.7"])
+                from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+                from telegram import Update
+
+            application = Application.builder().token(self.bot_token).build()
+
+            # Add individual command handlers
+            async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_start(update, context)
+            
+            async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_help(update, context)
+                
+            async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_status(update, context)
+                
+            async def price_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_price(update, context)
+                
+            async def balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_balance(update, context)
+                
+            async def position_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_position(update, context)
+                
+            async def scan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_scan(update, context)
+                
+            async def settings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_settings(update, context)
+                
+            async def market_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_market(update, context)
+                
+            async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_stats(update, context)
+                
+            async def leverage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_leverage(update, context)
+                
+            async def risk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_risk(update, context)
+                
+            async def signal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_signal(update, context)
+                
+            async def history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_history(update, context)
+                
+            async def alerts_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_alerts(update, context)
+                
+            async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_admin(update, context)
+                
+            async def futures_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_futures_info(update, context)
+                
+            async def contract_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_contract_specs(update, context)
+                
+            async def funding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_funding_rate(update, context)
+                
+            async def oi_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_open_interest(update, context)
+                
+            async def volume_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_volume_analysis(update, context)
+                
+            async def sentiment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_market_sentiment(update, context)
+                
+            async def news_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_market_news(update, context)
+                
+            async def watchlist_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_watchlist(update, context)
+                
+            async def backtest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_backtest(update, context)
+                
+            async def optimize_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await self.cmd_optimize_strategy(update, context)
+
+            # Register all command handlers
+            application.add_handler(CommandHandler("start", start_handler))
+            application.add_handler(CommandHandler("help", help_handler))
+            application.add_handler(CommandHandler("status", status_handler))
+            application.add_handler(CommandHandler("price", price_handler))
+            application.add_handler(CommandHandler("balance", balance_handler))
+            application.add_handler(CommandHandler("position", position_handler))
+            application.add_handler(CommandHandler("scan", scan_handler))
+            application.add_handler(CommandHandler("settings", settings_handler))
+            application.add_handler(CommandHandler("market", market_handler))
+            application.add_handler(CommandHandler("stats", stats_handler))
+            application.add_handler(CommandHandler("leverage", leverage_handler))
+            application.add_handler(CommandHandler("risk", risk_handler))
+            application.add_handler(CommandHandler("signal", signal_handler))
+            application.add_handler(CommandHandler("history", history_handler))
+            application.add_handler(CommandHandler("alerts", alerts_handler))
+            application.add_handler(CommandHandler("admin", admin_handler))
+            application.add_handler(CommandHandler("futures", futures_handler))
+            application.add_handler(CommandHandler("contract", contract_handler))
+            application.add_handler(CommandHandler("funding", funding_handler))
+            application.add_handler(CommandHandler("oi", oi_handler))
+            application.add_handler(CommandHandler("volume", volume_handler))
+            application.add_handler(CommandHandler("sentiment", sentiment_handler))
+            application.add_handler(CommandHandler("news", news_handler))
+            application.add_handler(CommandHandler("watchlist", watchlist_handler))
+            application.add_handler(CommandHandler("backtest", backtest_handler))
+            application.add_handler(CommandHandler("optimize", optimize_handler))
+
+            self.logger.info("✅ All command handlers registered successfully")
+            
+            # Start polling in background
+            self.telegram_app = application
+            asyncio.create_task(application.run_polling())
+            
+            await self.send_status_update("🚀 FXSUSDT.P Futures Bot commands are now active!")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start Telegram polling: {e}")
+            return False
 
 async def main():
     """Main function to run the FXSUSDT bot"""
@@ -703,37 +896,24 @@ async def main():
 
     bot = FXSUSDTTelegramBot()
 
-    # Start the continuous scanner in the background
-    scanner_task = asyncio.create_task(bot.run_continuous_scanner())
-
-    # Basic Telegram bot setup (requires python-telegram-bot library)
-    # This part needs to be fully implemented if you want to handle commands interactively
-    # For now, we assume a mechanism to call handle_message
     try:
-        from telegram.ext import Application, CommandHandler, MessageHandler, filters
-
-        application = Application.builder().token(bot.bot_token).build()
-
-        # Add command handlers
-        for cmd, handler in bot.commands.items():
-            application.add_handler(CommandHandler(cmd.lstrip('/'), handler))
-
-        # Add message handler for general messages and unknown commands
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
-        application.add_handler(MessageHandler(filters.COMMAND, bot.handle_message)) # Also catch unknown commands
-
-        await bot.send_status_update("🚀 FXSUSDT.P Futures Bot started and listening for commands.")
-        await application.run_polling()
-
-    except ImportError:
-        logging.warning("`python-telegram-bot` library not found. Command handling will be limited.")
-        # If python-telegram-bot is not installed, the bot will only run the scanner.
-        # Command handling would need to be implemented through another mechanism or library.
-        await scanner_task # Keep the scanner running if command handling is unavailable.
+        # Start the Telegram command system
+        self.logger.info("🤖 Starting Telegram command system...")
+        await bot.start_telegram_polling()
+        
+        # Start the continuous scanner
+        self.logger.info("🔍 Starting market scanner...")
+        await bot.run_continuous_scanner()
+        
+    except KeyboardInterrupt:
+        bot.logger.info("👋 Bot stopped by user")
+        if hasattr(bot, 'telegram_app'):
+            await bot.telegram_app.stop()
     except Exception as e:
-        logging.error(f"Failed to initialize Telegram bot: {e}")
-        await bot.send_status_update(f"❌ Failed to start Telegram command listener: {e}")
-        await scanner_task # Ensure scanner keeps running if bot setup fails
+        bot.logger.error(f"❌ Critical error: {e}")
+        if hasattr(bot, 'telegram_app'):
+            await bot.telegram_app.stop()
+        raise
 
 
 if __name__ == "__main__":

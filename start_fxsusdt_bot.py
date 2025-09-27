@@ -50,14 +50,33 @@ async def main():
         return
     
     try:
-        # Create and run bot
+        # Create bot instance
         bot = FXSUSDTTelegramBot()
-        await bot.run_continuous_scanner()
+        
+        logger.info("🤖 Starting Telegram command system...")
+        
+        # Start the Telegram command system
+        command_task = asyncio.create_task(bot.start_telegram_polling())
+        
+        # Give command system time to initialize
+        await asyncio.sleep(2)
+        
+        logger.info("🔍 Starting market scanner...")
+        
+        # Start the continuous scanner
+        scanner_task = asyncio.create_task(bot.run_continuous_scanner())
+        
+        # Run both tasks concurrently
+        await asyncio.gather(command_task, scanner_task)
         
     except KeyboardInterrupt:
         logger.info("👋 Bot stopped by user")
+        if hasattr(bot, 'telegram_app') and bot.telegram_app:
+            await bot.telegram_app.stop()
     except Exception as e:
         logger.error(f"❌ Critical error: {e}")
+        if hasattr(bot, 'telegram_app') and bot.telegram_app:
+            await bot.telegram_app.stop()
         raise
 
 if __name__ == "__main__":

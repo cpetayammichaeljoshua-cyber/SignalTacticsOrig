@@ -72,15 +72,46 @@ class FXSUSDTTrader:
             self.logger.error(f"Error getting current price: {e}")
             return None
     
-    async def get_30m_klines(self, limit: int = 100) -> List[List]:
-        """Get 30-minute kline data for FXSUSDT"""
+    async def get_klines(self, interval: str, limit: int = 100) -> List[List]:
+        """Get kline data for any timeframe"""
         try:
             url = f"{self.base_url}/fapi/v1/klines"
             params = {
                 "symbol": self.symbol,
-                "interval": self.timeframe,
+                "interval": interval,
                 "limit": limit
             }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        # Convert to OHLCV format
+                        ohlcv_data = []
+                        for kline in data:
+                            ohlcv_data.append([
+                                int(kline[0]),      # timestamp
+                                float(kline[1]),    # open
+                                float(kline[2]),    # high
+                                float(kline[3]),    # low
+                                float(kline[4]),    # close
+                                float(kline[5])     # volume
+                            ])
+                        
+                        self.logger.debug(f"📊 Retrieved {len(ohlcv_data)} {interval} candles for {self.symbol}")
+                        return ohlcv_data
+                    else:
+                        self.logger.error(f"Failed to get {interval} klines: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting {interval} kline data: {e}")
+            return []
+    
+    async def get_30m_klines(self, limit: int = 100) -> List[List]:
+        """Get 30-minute kline data for FXSUSDT"""
+        return await self.get_klines(self.timeframe, limit)
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:

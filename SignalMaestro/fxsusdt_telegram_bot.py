@@ -71,7 +71,7 @@ class FXSUSDTTelegramBot:
         self.last_signal_time = None
         self.bot_start_time = datetime.now()
         self.commands_used = {}
-        self.min_signal_interval = timedelta(minutes=30)  # Minimum 30 minutes between signals
+        self.min_signal_interval = timedelta(minutes=10)  # Minimum 10 minutes between signals (reduced for more trades)
         self.telegram_app = None
 
         # FXSUSDT contract specifications
@@ -146,9 +146,10 @@ class FXSUSDTTelegramBot:
 • **Entry:** `{entry:.5f}`
 • **Stop Loss:** `{sl:.5f}` (-{sl_percent:.2f}%)
 • **Take Profit:** `{tp:.5f}` (+{tp_percent:.2f}%)
+• **Timeframe:** `{signal.timeframe}` ⚡
 
 **⚙️ PINE SCRIPT PARAMETERS:**
-• **Strategy:** `Ichimoku Sniper FXSUSDT 15/30m`
+• **Strategy:** `Ichimoku Sniper Multi-TF Enhanced`
 • **Conversion/Base:** `4/4 periods`
 • **LaggingSpan2/Displacement:** `46/20 periods`
 • **EMA Filter:** `200 periods`
@@ -159,6 +160,7 @@ class FXSUSDTTelegramBot:
 • **Confidence:** `{signal.confidence:.1f}%`
 • **Risk/Reward:** `1:{signal.risk_reward_ratio:.2f}`
 • **ATR Value:** `{signal.atr_value:.6f}`
+• **Scan Mode:** `Multi-Timeframe Enhanced`
 
 **🎯 CORNIX COMPATIBLE FORMAT:**
 ```
@@ -240,38 +242,59 @@ Leverage: Auto
             return False
 
     async def scan_and_signal(self) -> bool:
-        """Scan market and send signal if conditions are met"""
+        """Enhanced multi-timeframe scanning for increased trade frequency"""
         try:
-            self.logger.info("🔍 Scanning FXSUSDT.P for Ichimoku signals...")
-
-            # Get 30m market data
-            market_data = await self.trader.get_30m_klines(limit=200)
-            if not market_data:
-                self.logger.warning("❌ No market data available")
-                return False
+            self.logger.info("🔍 Scanning FXSUSDT.P for Ichimoku signals (Multi-TF)...")
 
             # Check price alerts
             await self.check_price_alerts()
 
-            # Generate signal
-            signal = await self.strategy.generate_signal(market_data)
-            if not signal:
-                self.logger.info("📊 No qualifying signal found")
+            # Generate signals from multiple timeframes
+            signals = await self.strategy.generate_multi_timeframe_signals(self.trader)
+            
+            if not signals:
+                self.logger.debug("📊 No qualifying signals found on any timeframe")
                 return False
 
+            # Send the best signal
+            best_signal = signals[0]  # Already sorted by strength
+            
+            # Rate limiting check - allow more frequent signals from different timeframes
+            if self.last_signal_time:
+                time_since_last = datetime.now() - self.last_signal_time
+                
+                # Dynamic rate limiting based on timeframe
+                if best_signal.timeframe == "30m":
+                    min_interval = timedelta(minutes=30)
+                elif best_signal.timeframe == "15m":
+                    min_interval = timedelta(minutes=15)
+                elif best_signal.timeframe == "5m":
+                    min_interval = timedelta(minutes=5)
+                else:  # 1m
+                    min_interval = timedelta(minutes=2)
+                
+                if time_since_last < min_interval:
+                    self.logger.debug(f"⏳ Rate limit active for {best_signal.timeframe}")
+                    return False
+
             # Send signal to channel
-            success = await self.send_signal_to_channel(signal)
+            success = await self.send_signal_to_channel(best_signal)
 
             if success:
                 self.signal_count += 1
-                self.logger.info(f"🎯 Successfully processed {signal.action} signal")
+                self.logger.info(f"🎯 Successfully processed {best_signal.action} signal ({best_signal.timeframe})")
+                
+                # Log additional signals found
+                if len(signals) > 1:
+                    self.logger.info(f"📊 Found {len(signals)} total signals across timeframes")
+                
                 return True
             else:
                 self.logger.error("❌ Failed to send signal")
                 return False
 
         except Exception as e:
-            self.logger.error(f"Error in scan and signal: {e}")
+            self.logger.error(f"Error in enhanced scan and signal: {e}")
             return False
 
     async def check_price_alerts(self):
@@ -352,18 +375,38 @@ Use `/alerts` to manage your alerts."""
         # Send startup notification
         await self.send_status_update("🚀 FXSUSDT.P Ichimoku Sniper Bot started\n📊 Monitoring 30-minute timeframe\n🎯 Ready for signals")
 
-        scan_interval = 300  # 5 minutes
+        # Dynamic scan intervals based on market activity
+        base_scan_interval = 120  # 2 minutes base
+        fast_scan_interval = 60   # 1 minute during active periods
+        current_interval = base_scan_interval
 
         try:
+            consecutive_no_signals = 0
+            
             while True:
                 try:
-                    await self.scan_and_signal()
+                    scan_success = await self.scan_and_signal()
+                    
+                    # Adjust scan frequency based on signal activity
+                    if scan_success:
+                        consecutive_no_signals = 0
+                        current_interval = fast_scan_interval  # Scan faster after finding signals
+                    else:
+                        consecutive_no_signals += 1
+                        if consecutive_no_signals >= 5:
+                            current_interval = base_scan_interval  # Slow down if no signals
+                        elif consecutive_no_signals >= 3:
+                            current_interval = int(base_scan_interval * 0.75)  # Moderate speed
+                        else:
+                            current_interval = fast_scan_interval  # Keep fast pace
+                    
                 except Exception as e:
                     self.logger.error(f"Error in scan cycle: {e}")
+                    consecutive_no_signals += 1
 
                 # Wait for next scan
-                self.logger.debug(f"⏱️ Waiting {scan_interval}s for next scan...")
-                await asyncio.sleep(scan_interval)
+                self.logger.debug(f"⏱️ Waiting {current_interval}s for next scan (activity-based)")
+                await asyncio.sleep(current_interval)
 
         except KeyboardInterrupt:
             self.logger.info("👋 Scanner stopped by user")

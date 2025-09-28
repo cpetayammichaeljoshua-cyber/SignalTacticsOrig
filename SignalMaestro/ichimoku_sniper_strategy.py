@@ -42,6 +42,8 @@ class IchimokuSniperStrategy:
         self.logger = logging.getLogger(__name__)
         self.symbol = "FXSUSDT.P"
         self.timeframe = "30m"
+        self.primary_timeframe = "30m"
+        self.secondary_timeframes = ["15m", "5m", "1m"]  # Additional timeframes for more signals
         
         # Exact Pine Script Ichimoku parameters
         self.conversion_periods = 4      # conversionPeriods
@@ -56,9 +58,14 @@ class IchimokuSniperStrategy:
         self.stop_loss_percent = 1.75   # percentStop
         self.take_profit_percent = 3.25 # percentTP
         
-        # Signal strength thresholds
+        # Signal strength thresholds with dynamic adjustment
         self.min_signal_strength = 75.0
         self.min_confidence = 70.0
+        
+        # Enhanced trade frequency settings
+        self.max_data_limit = 500  # Increased from 200
+        self.signal_cache = {}  # Cache for avoiding duplicate signals
+        self.last_signal_time = {}  # Track last signal per timeframe
         
         self.logger.info(f"🎯 Ichimoku Sniper Strategy initialized (Pine Script Match)")
         self.logger.info(f"   Parameters: Conv({self.conversion_periods}), Base({self.base_periods}), LaggingB({self.lagging_span_2_periods}), Disp({self.displacement})")
@@ -225,13 +232,20 @@ class IchimokuSniperStrategy:
             self.logger.error(f"Error calculating ATR: {e}")
             return 0.0
     
-    async def generate_signal(self, market_data: List[List]) -> Optional[IchimokuSignal]:
-        """Generate Ichimoku Sniper signal using exact Pine Script logic"""
+    async def generate_signal(self, market_data: List[List], timeframe: str = None) -> Optional[IchimokuSignal]:
+        """Generate Ichimoku Sniper signal using exact Pine Script logic with multi-timeframe support"""
         try:
+            timeframe = timeframe or self.timeframe
             required_data_points = max(self.lagging_span_2_periods, self.displacement, self.ema_period) + 10
+            
+            # Use cached data if insufficient for current timeframe
             if not market_data or len(market_data) < required_data_points:
-                self.logger.warning(f"Insufficient data: need {required_data_points}, got {len(market_data) if market_data else 0}")
-                return None
+                if timeframe != "1m":  # Try smaller timeframe for more data
+                    self.logger.debug(f"Insufficient {timeframe} data: need {required_data_points}, got {len(market_data) if market_data else 0}")
+                    return None
+                else:
+                    self.logger.warning(f"Insufficient data even on 1m: need {required_data_points}, got {len(market_data) if market_data else 0}")
+                    return None
             
             # Convert to DataFrame
             df = pd.DataFrame(market_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -268,7 +282,24 @@ class IchimokuSniperStrategy:
             # Calculate ATR for metadata
             atr_value = await self.calculate_atr(df)
             
-            # Create signal
+            # Check for duplicate signals within timeframe
+            signal_key = f"{signal_analysis['signal']}_{timeframe}_{int(entry_price * 10000)}"
+            current_time = datetime.now()
+            
+            # Avoid duplicate signals within 15 minutes on same timeframe
+            if signal_key in self.signal_cache:
+                last_time = self.signal_cache[signal_key]
+                if (current_time - last_time).total_seconds() < 900:  # 15 minutes
+                    self.logger.debug(f"Duplicate signal filtered: {signal_key}")
+                    return None
+            
+            self.signal_cache[signal_key] = current_time
+            
+            # Clean old cache entries (keep only last hour)
+            cutoff_time = current_time - timedelta(hours=1)
+            self.signal_cache = {k: v for k, v in self.signal_cache.items() if v > cutoff_time}
+            
+            # Create signal with timeframe info
             signal = IchimokuSignal(
                 symbol=self.symbol,
                 action=signal_analysis['signal'],
@@ -277,8 +308,8 @@ class IchimokuSniperStrategy:
                 take_profit=take_profit,
                 signal_strength=signal_analysis['strength'],
                 confidence=signal_analysis['confidence'],
-                timeframe=self.timeframe,
-                timestamp=datetime.now(),
+                timeframe=timeframe,
+                timestamp=current_time,
                 ichimoku_data=ichimoku_data,
                 atr_value=atr_value,
                 risk_reward_ratio=self.take_profit_percent / self.stop_loss_percent
@@ -293,6 +324,51 @@ class IchimokuSniperStrategy:
         except Exception as e:
             self.logger.error(f"Error generating Pine Script signal: {e}")
             return None
+    
+    async def generate_multi_timeframe_signals(self, trader) -> List[IchimokuSignal]:
+        """Generate signals from multiple timeframes for increased trade frequency"""
+        signals = []
+        timeframes = [self.primary_timeframe] + self.secondary_timeframes
+        
+        for tf in timeframes:
+            try:
+                # Get market data for each timeframe
+                if tf == "30m":
+                    market_data = await trader.get_30m_klines(limit=self.max_data_limit)
+                elif tf == "15m":
+                    market_data = await trader.get_klines(tf, limit=self.max_data_limit)
+                elif tf == "5m":
+                    market_data = await trader.get_klines(tf, limit=self.max_data_limit)
+                elif tf == "1m":
+                    market_data = await trader.get_klines(tf, limit=self.max_data_limit)
+                else:
+                    continue
+                
+                if not market_data:
+                    continue
+                
+                # Generate signal for this timeframe
+                signal = await self.generate_signal(market_data, tf)
+                if signal:
+                    # Adjust signal strength based on timeframe
+                    if tf == "30m":
+                        signal.signal_strength *= 1.0  # Primary timeframe, full strength
+                    elif tf == "15m":
+                        signal.signal_strength *= 0.9  # Slightly lower
+                    elif tf == "5m":
+                        signal.signal_strength *= 0.8  # Lower for scalping
+                    elif tf == "1m":
+                        signal.signal_strength *= 0.7  # Lowest for very short-term
+                    
+                    signals.append(signal)
+                    
+            except Exception as e:
+                self.logger.error(f"Error generating signal for {tf}: {e}")
+                continue
+        
+        # Sort by signal strength and return best signals
+        signals.sort(key=lambda x: x.signal_strength, reverse=True)
+        return signals[:3]  # Return top 3 signals maximum
     
     async def format_cornix_signal(self, signal: IchimokuSignal) -> str:
         """Format signal for Cornix compatibility with Pine Script details"""

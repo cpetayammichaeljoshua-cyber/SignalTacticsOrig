@@ -12,9 +12,19 @@ import os
 from pathlib import Path
 
 # Add SignalMaestro to path
-sys.path.append(str(Path(__file__).parent / "SignalMaestro"))
+current_dir = Path(__file__).parent
+signal_maestro_path = current_dir / "SignalMaestro"
+sys.path.insert(0, str(signal_maestro_path))
 
-from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
+try:
+    from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Available files in SignalMaestro:")
+    if signal_maestro_path.exists():
+        for file in signal_maestro_path.glob("*.py"):
+            print(f"  {file.name}")
+    sys.exit(1)
 
 def setup_logging():
     """Setup logging configuration"""

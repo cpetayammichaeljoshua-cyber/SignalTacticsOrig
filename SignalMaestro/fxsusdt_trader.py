@@ -112,33 +112,7 @@ class FXSUSDTTrader:
     async def get_30m_klines(self, limit: int = 100) -> List[List]:
         """Get 30-minute kline data for FXSUSDT"""
         return await self.get_klines(self.timeframe, limit)
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        # Convert to OHLCV format
-                        ohlcv_data = []
-                        for kline in data:
-                            ohlcv_data.append([
-                                int(kline[0]),      # timestamp
-                                float(kline[1]),    # open
-                                float(kline[2]),    # high
-                                float(kline[3]),    # low
-                                float(kline[4]),    # close
-                                float(kline[5])     # volume
-                            ])
-                        
-                        self.logger.debug(f"📊 Retrieved {len(ohlcv_data)} 30m candles for {self.symbol}")
-                        return ohlcv_data
-                    else:
-                        self.logger.error(f"Failed to get klines: {response.status}")
-                        return []
-                        
-        except Exception as e:
-            self.logger.error(f"Error getting kline data: {e}")
-            return []
+                
     
     async def get_account_balance(self) -> Dict[str, Any]:
         """Get futures account balance"""
@@ -447,6 +421,35 @@ class FXSUSDTTrader:
         except Exception as e:
             self.logger.error(f"Error getting leverage: {e}")
             return None
+
+    async def get_trade_history(self, symbol: str = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent trade history for symbol"""
+        try:
+            symbol = symbol or self.symbol
+            endpoint = "/fapi/v1/userTrades"
+            timestamp = int(time.time() * 1000)
+            query_string = f"symbol={symbol}&limit={limit}&timestamp={timestamp}"
+            signature = self._generate_signature(query_string)
+            
+            url = f"{self.base_url}{endpoint}?{query_string}&signature={signature}"
+            
+            headers = {
+                'X-MBX-APIKEY': self.api_key
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug(f"📊 Retrieved {len(data)} trades for {symbol}")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get trade history: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting trade history: {e}")
+            return []
 
     async def test_connection(self) -> bool:
         """Test API connection and credentials"""

@@ -43,11 +43,11 @@ class IchimokuSniperStrategy:
         self.symbol = "FXSUSDT.P"
         self.timeframe = "30m"
         
-        # Ichimoku parameters
-        self.tenkan_period = 9
-        self.kijun_period = 26
-        self.senkou_span_b_period = 52
-        self.displacement = 26
+        # Ichimoku parameters (from configuration)
+        self.tenkan_period = 4  # Conversion Line Length
+        self.kijun_period = 4   # Base Line Length
+        self.senkou_span_b_period = 46  # Leading Span B Length
+        self.displacement = 20  # Lagging Span
         
         # ATR parameters for dynamic SL/TP
         self.atr_period = 14
@@ -58,12 +58,13 @@ class IchimokuSniperStrategy:
         self.min_signal_strength = 70.0
         self.min_confidence = 65.0
         
-        self.logger.info("🎯 Ichimoku Sniper Strategy initialized for FXSUSDT.P")
+        self.logger.info(f"🎯 Ichimoku Sniper Strategy initialized for FXSUSDT.P")
+        self.logger.info(f"   Parameters: Conversion({self.tenkan_period}), Base({self.kijun_period}), Leading B({self.senkou_span_b_period}), Lagging({self.displacement})")
     
     async def calculate_ichimoku(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate Ichimoku Cloud components"""
         try:
-            if len(df) < self.senkou_span_b_period + self.displacement:
+            if len(df) < max(self.senkou_span_b_period, self.displacement) + 5:
                 return {}
             
             # Tenkan-sen (Conversion Line)
@@ -236,7 +237,7 @@ class IchimokuSniperStrategy:
     async def generate_signal(self, market_data: List[List]) -> Optional[IchimokuSignal]:
         """Generate Ichimoku Sniper trading signal"""
         try:
-            if not market_data or len(market_data) < self.senkou_span_b_period + self.displacement:
+            if not market_data or len(market_data) < max(self.senkou_span_b_period, self.displacement) + 10:
                 self.logger.warning("Insufficient market data for Ichimoku analysis")
                 return None
             

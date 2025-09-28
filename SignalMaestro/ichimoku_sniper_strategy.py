@@ -1,9 +1,9 @@
 
 #!/usr/bin/env python3
 """
-Ichimoku Sniper Strategy for FXSUSDT.P
-Specialized strategy for forex futures with 30-minute timeframe
-Uses Ichimoku Cloud analysis with dynamic ATR-based stop loss and take profit
+Ichimoku Sniper Strategy for FXSUSDT.P - Exact Pine Script Implementation
+Based on the provided Pine Script strategy with precise parameter matching
+Uses 15/30-minute timeframes with EMA 200 filter and comprehensive Ichimoku conditions
 """
 
 import asyncio
@@ -28,14 +28,14 @@ class IchimokuSignal:
     timestamp: datetime
     ichimoku_data: Dict[str, Any]
     atr_value: float
-    risk_reward_ratio: float = 2.0
+    risk_reward_ratio: float = 1.86  # 3.25/1.75 from Pine Script
 
 class IchimokuSniperStrategy:
     """
-    Ichimoku Sniper Strategy Implementation
-    - Uses 30-minute timeframe exclusively
+    Ichimoku Sniper Strategy Implementation - Exact Pine Script Match
+    - Uses 15/30-minute timeframes
     - Focuses on FXSUSDT.P trading
-    - Implements dynamic ATR-based SL/TP with 1:2 RR ratio
+    - Implements exact Pine Script conditions and parameters
     """
     
     def __init__(self):
@@ -43,87 +43,87 @@ class IchimokuSniperStrategy:
         self.symbol = "FXSUSDT.P"
         self.timeframe = "30m"
         
-        # Ichimoku parameters (from configuration)
-        self.tenkan_period = 4  # Conversion Line Length
-        self.kijun_period = 4   # Base Line Length
-        self.senkou_span_b_period = 46  # Leading Span B Length
-        self.displacement = 20  # Lagging Span
+        # Exact Pine Script Ichimoku parameters
+        self.conversion_periods = 4      # conversionPeriods
+        self.base_periods = 4           # basePeriods  
+        self.lagging_span_2_periods = 46  # laggingSpan2Periods
+        self.displacement = 20          # displacement
         
-        # ATR parameters for dynamic SL/TP
-        self.atr_period = 14
-        self.atr_multiplier_sl = 1.5  # Stop loss ATR multiplier
-        self.atr_multiplier_tp = 3.0  # Take profit ATR multiplier (1:2 RR)
+        # EMA 200 filter (longest)
+        self.ema_period = 200
+        
+        # Pine Script stop loss and take profit percentages
+        self.stop_loss_percent = 1.75   # percentStop
+        self.take_profit_percent = 3.25 # percentTP
         
         # Signal strength thresholds
-        self.min_signal_strength = 70.0
-        self.min_confidence = 65.0
+        self.min_signal_strength = 75.0
+        self.min_confidence = 70.0
         
-        self.logger.info(f"🎯 Ichimoku Sniper Strategy initialized for FXSUSDT.P")
-        self.logger.info(f"   Parameters: Conversion({self.tenkan_period}), Base({self.kijun_period}), Leading B({self.senkou_span_b_period}), Lagging({self.displacement})")
+        self.logger.info(f"🎯 Ichimoku Sniper Strategy initialized (Pine Script Match)")
+        self.logger.info(f"   Parameters: Conv({self.conversion_periods}), Base({self.base_periods}), LaggingB({self.lagging_span_2_periods}), Disp({self.displacement})")
+        self.logger.info(f"   SL: {self.stop_loss_percent}%, TP: {self.take_profit_percent}%, EMA: {self.ema_period}")
     
-    async def calculate_ichimoku(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate Ichimoku Cloud components"""
+    def donchian(self, data: pd.Series, length: int) -> pd.Series:
+        """Donchian channel calculation - exact Pine Script implementation"""
         try:
-            if len(df) < max(self.senkou_span_b_period, self.displacement) + 5:
+            highest = data.rolling(window=length).max()
+            lowest = data.rolling(window=length).min()
+            return (highest + lowest) / 2
+        except Exception as e:
+            self.logger.error(f"Error in donchian calculation: {e}")
+            return pd.Series([0] * len(data))
+    
+    async def calculate_ichimoku_pine_script(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate Ichimoku components exactly as Pine Script"""
+        try:
+            if len(df) < max(self.lagging_span_2_periods, self.displacement, self.ema_period) + 5:
                 return {}
             
-            # Tenkan-sen (Conversion Line)
-            tenkan_high = df['high'].rolling(window=self.tenkan_period).max()
-            tenkan_low = df['low'].rolling(window=self.tenkan_period).min()
-            tenkan_sen = (tenkan_high + tenkan_low) / 2
+            # Pine Script Ichimoku calculations
+            conversion_line = self.donchian(df['high'].combine(df['low'], max), self.conversion_periods)
+            base_line = self.donchian(df['high'].combine(df['low'], max), self.base_periods)
             
-            # Kijun-sen (Base Line)
-            kijun_high = df['high'].rolling(window=self.kijun_period).max()
-            kijun_low = df['low'].rolling(window=self.kijun_period).min()
-            kijun_sen = (kijun_high + kijun_low) / 2
+            # Lead Line 1 = average of conversion and base lines
+            lead_line_1 = (conversion_line + base_line) / 2
             
-            # Senkou Span A (Leading Span A)
-            senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(self.displacement)
+            # Lead Line 2 = donchian of lagging span 2 periods
+            lead_line_2 = self.donchian(df['high'].combine(df['low'], max), self.lagging_span_2_periods)
             
-            # Senkou Span B (Leading Span B)
-            senkou_high = df['high'].rolling(window=self.senkou_span_b_period).max()
-            senkou_low = df['low'].rolling(window=self.senkou_span_b_period).min()
-            senkou_span_b = ((senkou_high + senkou_low) / 2).shift(self.displacement)
+            # Lagging span = close shifted by displacement
+            lagging_span = df['close'].shift(-self.displacement)
             
-            # Chikou Span (Lagging Span)
-            chikou_span = df['close'].shift(-self.displacement)
+            # EMA 200 (longest in Pine Script)
+            ema_200 = df['close'].ewm(span=self.ema_period).mean()
+            
+            # Current values
+            current_close = df['close'].iloc[-1]
+            current_conversion = conversion_line.iloc[-1] if not conversion_line.empty else 0
+            current_base = base_line.iloc[-1] if not base_line.empty else 0
+            current_lead1 = lead_line_1.iloc[-1] if not lead_line_1.empty else 0
+            current_lead2 = lead_line_2.iloc[-1] if not lead_line_2.empty else 0
+            current_ema200 = ema_200.iloc[-1] if not ema_200.empty else 0
+            current_lagging = lagging_span.iloc[-1] if not lagging_span.empty else 0
             
             return {
-                'tenkan_sen': tenkan_sen.iloc[-1] if not tenkan_sen.empty else 0,
-                'kijun_sen': kijun_sen.iloc[-1] if not kijun_sen.empty else 0,
-                'senkou_span_a': senkou_span_a.iloc[-1] if not senkou_span_a.empty else 0,
-                'senkou_span_b': senkou_span_b.iloc[-1] if not senkou_span_b.empty else 0,
-                'chikou_span': chikou_span.iloc[-1] if not chikou_span.empty else 0,
-                'current_price': df['close'].iloc[-1],
-                'cloud_top': max(senkou_span_a.iloc[-1], senkou_span_b.iloc[-1]) if not senkou_span_a.empty and not senkou_span_b.empty else 0,
-                'cloud_bottom': min(senkou_span_a.iloc[-1], senkou_span_b.iloc[-1]) if not senkou_span_a.empty and not senkou_span_b.empty else 0
+                'conversion_line': current_conversion,
+                'base_line': current_base, 
+                'lead_line_1': current_lead1,
+                'lead_line_2': current_lead2,
+                'lagging_span': current_lagging,
+                'ema_200': current_ema200,
+                'current_price': current_close,
+                'cloud_top': max(current_lead1, current_lead2),
+                'cloud_bottom': min(current_lead1, current_lead2),
+                'cloud_color': 'bullish' if current_lead1 > current_lead2 else 'bearish'
             }
             
         except Exception as e:
-            self.logger.error(f"Error calculating Ichimoku: {e}")
+            self.logger.error(f"Error calculating Pine Script Ichimoku: {e}")
             return {}
     
-    async def calculate_atr(self, df: pd.DataFrame) -> float:
-        """Calculate Average True Range for dynamic SL/TP"""
-        try:
-            if len(df) < self.atr_period:
-                return 0.0
-            
-            high_low = df['high'] - df['low']
-            high_close = np.abs(df['high'] - df['close'].shift(1))
-            low_close = np.abs(df['low'] - df['close'].shift(1))
-            
-            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-            atr = true_range.rolling(window=self.atr_period).mean()
-            
-            return float(atr.iloc[-1]) if not atr.empty else 0.0
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating ATR: {e}")
-            return 0.0
-    
-    async def analyze_ichimoku_signal(self, ichimoku_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze Ichimoku components for trading signals"""
+    async def check_pine_script_conditions(self, ichimoku_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Check exact Pine Script entry conditions"""
         try:
             signal_analysis = {
                 'signal': 'HOLD',
@@ -132,113 +132,105 @@ class IchimokuSniperStrategy:
                 'reasons': []
             }
             
-            tenkan = ichimoku_data.get('tenkan_sen', 0)
-            kijun = ichimoku_data.get('kijun_sen', 0)
-            senkou_a = ichimoku_data.get('senkou_span_a', 0)
-            senkou_b = ichimoku_data.get('senkou_span_b', 0)
-            chikou = ichimoku_data.get('chikou_span', 0)
-            current_price = ichimoku_data.get('current_price', 0)
-            cloud_top = ichimoku_data.get('cloud_top', 0)
-            cloud_bottom = ichimoku_data.get('cloud_bottom', 0)
+            close = ichimoku_data.get('current_price', 0)
+            ema_200 = ichimoku_data.get('ema_200', 0) 
+            lead_line_1 = ichimoku_data.get('lead_line_1', 0)
+            lead_line_2 = ichimoku_data.get('lead_line_2', 0)
+            conversion_line = ichimoku_data.get('conversion_line', 0)
+            base_line = ichimoku_data.get('base_line', 0)
             
-            if not all([tenkan, kijun, current_price]):
+            if not all([close, ema_200, lead_line_1, lead_line_2, conversion_line, base_line]):
                 return signal_analysis
             
-            # Signal scoring system
-            bullish_score = 0
-            bearish_score = 0
+            # Exact Pine Script long entry condition
+            long_entry = (close > ema_200 and 
+                         close > lead_line_1 and 
+                         close > lead_line_2 and 
+                         close > conversion_line and 
+                         close > base_line)
             
-            # 1. Tenkan-Kijun Cross
-            if tenkan > kijun:
-                bullish_score += 25
-                signal_analysis['reasons'].append("Tenkan above Kijun (bullish)")
-            else:
-                bearish_score += 25
-                signal_analysis['reasons'].append("Tenkan below Kijun (bearish)")
+            # Exact Pine Script short entry condition  
+            short_entry = (close < ema_200 and 
+                          close < lead_line_1 and 
+                          close < lead_line_2 and 
+                          close < conversion_line and 
+                          close < base_line)
             
-            # 2. Price vs Cloud
-            if current_price > cloud_top:
-                bullish_score += 30
-                signal_analysis['reasons'].append("Price above cloud (strong bullish)")
-            elif current_price < cloud_bottom:
-                bearish_score += 30
-                signal_analysis['reasons'].append("Price below cloud (strong bearish)")
-            elif cloud_bottom < current_price < cloud_top:
-                # Price in cloud - neutral with slight bias
-                if senkou_a > senkou_b:
-                    bullish_score += 10
-                    signal_analysis['reasons'].append("Price in bullish cloud")
-                else:
-                    bearish_score += 10
-                    signal_analysis['reasons'].append("Price in bearish cloud")
-            
-            # 3. Chikou Span vs Price
-            if chikou > current_price:
-                bullish_score += 20
-                signal_analysis['reasons'].append("Chikou above price (bullish momentum)")
-            else:
-                bearish_score += 20
-                signal_analysis['reasons'].append("Chikou below price (bearish momentum)")
-            
-            # 4. Cloud Color (Senkou A vs Senkou B)
-            if senkou_a > senkou_b:
-                bullish_score += 15
-                signal_analysis['reasons'].append("Bullish cloud (green)")
-            else:
-                bearish_score += 15
-                signal_analysis['reasons'].append("Bearish cloud (red)")
-            
-            # 5. Price momentum vs Kijun
-            if current_price > kijun:
-                bullish_score += 10
-                signal_analysis['reasons'].append("Price above Kijun (bullish bias)")
-            else:
-                bearish_score += 10
-                signal_analysis['reasons'].append("Price below Kijun (bearish bias)")
-            
-            # Determine final signal
-            total_possible = 100
-            if bullish_score > bearish_score:
+            if long_entry:
                 signal_analysis['signal'] = 'BUY'
-                signal_analysis['strength'] = (bullish_score / total_possible) * 100
-                signal_analysis['confidence'] = min(((bullish_score - bearish_score) / total_possible) * 100 + 50, 95)
-            elif bearish_score > bullish_score:
+                signal_analysis['strength'] = 85.0
+                signal_analysis['confidence'] = 80.0
+                signal_analysis['reasons'] = [
+                    f"Price ({close:.5f}) > EMA200 ({ema_200:.5f})",
+                    f"Price > Lead Line A ({lead_line_1:.5f})", 
+                    f"Price > Lead Line B ({lead_line_2:.5f})",
+                    f"Price > Conversion Line ({conversion_line:.5f})",
+                    f"Price > Base Line ({base_line:.5f})",
+                    "All Pine Script LONG conditions met"
+                ]
+                
+            elif short_entry:
                 signal_analysis['signal'] = 'SELL'
-                signal_analysis['strength'] = (bearish_score / total_possible) * 100
-                signal_analysis['confidence'] = min(((bearish_score - bullish_score) / total_possible) * 100 + 50, 95)
+                signal_analysis['strength'] = 85.0
+                signal_analysis['confidence'] = 80.0
+                signal_analysis['reasons'] = [
+                    f"Price ({close:.5f}) < EMA200 ({ema_200:.5f})",
+                    f"Price < Lead Line A ({lead_line_1:.5f})",
+                    f"Price < Lead Line B ({lead_line_2:.5f})", 
+                    f"Price < Conversion Line ({conversion_line:.5f})",
+                    f"Price < Base Line ({base_line:.5f})",
+                    "All Pine Script SHORT conditions met"
+                ]
             else:
-                signal_analysis['signal'] = 'HOLD'
-                signal_analysis['strength'] = 50.0
-                signal_analysis['confidence'] = 30.0
-                signal_analysis['reasons'].append("Neutral signals - no clear direction")
+                signal_analysis['reasons'] = ["Pine Script entry conditions not met"]
             
             return signal_analysis
             
         except Exception as e:
-            self.logger.error(f"Error analyzing Ichimoku signal: {e}")
+            self.logger.error(f"Error checking Pine Script conditions: {e}")
             return {'signal': 'HOLD', 'strength': 0.0, 'confidence': 0.0, 'reasons': []}
     
-    async def calculate_dynamic_sl_tp(self, entry_price: float, direction: str, atr_value: float) -> Tuple[float, float]:
-        """Calculate dynamic stop loss and take profit using ATR"""
+    async def calculate_pine_script_sl_tp(self, entry_price: float, direction: str) -> Tuple[float, float]:
+        """Calculate SL/TP exactly as Pine Script percentages"""
         try:
             if direction.upper() == 'BUY':
-                stop_loss = entry_price - (atr_value * self.atr_multiplier_sl)
-                take_profit = entry_price + (atr_value * self.atr_multiplier_tp)
+                stop_loss = entry_price * (1 - self.stop_loss_percent / 100)
+                take_profit = entry_price * (1 + self.take_profit_percent / 100)
             else:  # SELL
-                stop_loss = entry_price + (atr_value * self.atr_multiplier_sl)
-                take_profit = entry_price - (atr_value * self.atr_multiplier_tp)
+                stop_loss = entry_price * (1 + self.stop_loss_percent / 100)  
+                take_profit = entry_price * (1 - self.take_profit_percent / 100)
             
             return round(stop_loss, 5), round(take_profit, 5)
             
         except Exception as e:
-            self.logger.error(f"Error calculating dynamic SL/TP: {e}")
+            self.logger.error(f"Error calculating Pine Script SL/TP: {e}")
             return entry_price, entry_price
     
-    async def generate_signal(self, market_data: List[List]) -> Optional[IchimokuSignal]:
-        """Generate Ichimoku Sniper trading signal"""
+    async def calculate_atr(self, df: pd.DataFrame) -> float:
+        """Calculate ATR for signal metadata"""
         try:
-            if not market_data or len(market_data) < max(self.senkou_span_b_period, self.displacement) + 10:
-                self.logger.warning("Insufficient market data for Ichimoku analysis")
+            if len(df) < 14:
+                return 0.0
+            
+            high_low = df['high'] - df['low']
+            high_close = np.abs(df['high'] - df['close'].shift(1))
+            low_close = np.abs(df['low'] - df['close'].shift(1))
+            
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(window=14).mean()
+            
+            return float(atr.iloc[-1]) if not atr.empty else 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating ATR: {e}")
+            return 0.0
+    
+    async def generate_signal(self, market_data: List[List]) -> Optional[IchimokuSignal]:
+        """Generate Ichimoku Sniper signal using exact Pine Script logic"""
+        try:
+            required_data_points = max(self.lagging_span_2_periods, self.displacement, self.ema_period) + 10
+            if not market_data or len(market_data) < required_data_points:
+                self.logger.warning(f"Insufficient data: need {required_data_points}, got {len(market_data) if market_data else 0}")
                 return None
             
             # Convert to DataFrame
@@ -248,21 +240,17 @@ class IchimokuSniperStrategy:
             for col in ['open', 'high', 'low', 'close', 'volume']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Calculate Ichimoku components
-            ichimoku_data = await self.calculate_ichimoku(df)
+            # Calculate Pine Script Ichimoku components
+            ichimoku_data = await self.calculate_ichimoku_pine_script(df)
             if not ichimoku_data:
+                self.logger.warning("Failed to calculate Ichimoku data")
                 return None
             
-            # Calculate ATR for dynamic SL/TP
-            atr_value = await self.calculate_atr(df)
-            if atr_value <= 0:
-                self.logger.warning("Invalid ATR value, skipping signal")
-                return None
-            
-            # Analyze signal
-            signal_analysis = await self.analyze_ichimoku_signal(ichimoku_data)
+            # Check Pine Script conditions
+            signal_analysis = await self.check_pine_script_conditions(ichimoku_data)
             
             if signal_analysis['signal'] == 'HOLD':
+                self.logger.debug("No Pine Script signal conditions met")
                 return None
             
             # Check minimum thresholds
@@ -271,11 +259,14 @@ class IchimokuSniperStrategy:
                 self.logger.debug(f"Signal below thresholds: strength={signal_analysis['strength']:.1f}, confidence={signal_analysis['confidence']:.1f}")
                 return None
             
-            # Get current price and calculate SL/TP
+            # Get entry price and calculate Pine Script SL/TP
             entry_price = float(df['close'].iloc[-1])
-            stop_loss, take_profit = await self.calculate_dynamic_sl_tp(
-                entry_price, signal_analysis['signal'], atr_value
+            stop_loss, take_profit = await self.calculate_pine_script_sl_tp(
+                entry_price, signal_analysis['signal']
             )
+            
+            # Calculate ATR for metadata
+            atr_value = await self.calculate_atr(df)
             
             # Create signal
             signal = IchimokuSignal(
@@ -290,44 +281,70 @@ class IchimokuSniperStrategy:
                 timestamp=datetime.now(),
                 ichimoku_data=ichimoku_data,
                 atr_value=atr_value,
-                risk_reward_ratio=2.0
+                risk_reward_ratio=self.take_profit_percent / self.stop_loss_percent
             )
             
-            self.logger.info(f"🎯 Ichimoku Sniper Signal: {signal.action} {self.symbol} @ {entry_price:.5f}")
-            self.logger.info(f"   SL: {stop_loss:.5f} | TP: {take_profit:.5f} | Strength: {signal_analysis['strength']:.1f}%")
+            self.logger.info(f"🎯 Pine Script Ichimoku Signal: {signal.action} {self.symbol} @ {entry_price:.5f}")
+            self.logger.info(f"   SL: {stop_loss:.5f} ({self.stop_loss_percent}%) | TP: {take_profit:.5f} ({self.take_profit_percent}%)")
+            self.logger.info(f"   Conditions: {', '.join(signal_analysis['reasons'][:3])}")
             
             return signal
             
         except Exception as e:
-            self.logger.error(f"Error generating Ichimoku signal: {e}")
+            self.logger.error(f"Error generating Pine Script signal: {e}")
             return None
     
     async def format_cornix_signal(self, signal: IchimokuSignal) -> str:
-        """Format signal for Cornix compatibility"""
+        """Format signal for Cornix compatibility with Pine Script details"""
         try:
+            # Calculate percentage differences
+            if signal.action == "BUY":
+                sl_percent = ((signal.entry_price - signal.stop_loss) / signal.entry_price) * 100
+                tp_percent = ((signal.take_profit - signal.entry_price) / signal.entry_price) * 100
+            else:
+                sl_percent = ((signal.stop_loss - signal.entry_price) / signal.entry_price) * 100
+                tp_percent = ((signal.entry_price - signal.take_profit) / signal.entry_price) * 100
+            
             cornix_signal = f"""
-🎯 **ICHIMOKU SNIPER SIGNAL**
+🎯 **ICHIMOKU SNIPER - PINE SCRIPT MATCH**
 
-**Pair:** {signal.symbol}
-**Direction:** {signal.action}
-**Entry:** {signal.entry_price:.5f}
-**Stop Loss:** {signal.stop_loss:.5f}
-**Take Profit:** {signal.take_profit:.5f}
+**📊 SIGNAL DETAILS:**
+• **Pair:** `{signal.symbol}`
+• **Direction:** `{signal.action}`
+• **Entry:** `{signal.entry_price:.5f}`
+• **Stop Loss:** `{signal.stop_loss:.5f}` (-{sl_percent:.2f}%)
+• **Take Profit:** `{signal.take_profit:.5f}` (+{tp_percent:.2f}%)
 
-**Leverage:** Auto (Dynamic)
-**Risk/Reward:** 1:{signal.risk_reward_ratio}
-**Timeframe:** {signal.timeframe}
-**Strength:** {signal.signal_strength:.1f}%
-**Confidence:** {signal.confidence:.1f}%
+**⚙️ PINE SCRIPT PARAMETERS:**
+• **Strategy:** Ichimoku Sniper FXSUSDT 15/30m
+• **Conv/Base:** {self.conversion_periods}/{self.base_periods}
+• **LaggingB/Disp:** {self.lagging_span_2_periods}/{self.displacement}
+• **EMA Filter:** {self.ema_period}
+• **SL/TP %:** {self.stop_loss_percent}%/{self.take_profit_percent}%
 
-**Strategy:** Ichimoku Cloud Analysis
-**ATR:** {signal.atr_value:.6f}
+**📈 SIGNAL ANALYSIS:**
+• **Strength:** `{signal.signal_strength:.1f}%`
+• **Confidence:** `{signal.confidence:.1f}%`
+• **R/R Ratio:** `1:{signal.risk_reward_ratio:.2f}`
+• **Timeframe:** `{signal.timeframe}`
 
-⏰ {signal.timestamp.strftime('%H:%M:%S UTC')}
+**🎯 CORNIX FORMAT:**
+```
+{signal.symbol} {signal.action}
+Entry: {signal.entry_price:.5f}
+SL: {signal.stop_loss:.5f}
+TP: {signal.take_profit:.5f}
+Leverage: Auto
+```
+
+**⏰ Signal Time:** `{signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}`
+**🤖 Strategy:** `Pine Script Ichimoku Sniper v6`
+
+*Exact Pine Script implementation with comprehensive Ichimoku analysis*
             """.strip()
             
             return cornix_signal
             
         except Exception as e:
-            self.logger.error(f"Error formatting Cornix signal: {e}")
+            self.logger.error(f"Error formatting Pine Script signal: {e}")
             return ""

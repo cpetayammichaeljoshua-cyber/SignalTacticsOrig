@@ -120,8 +120,12 @@ class FXSUSDTTelegramBot:
             return False
 
     def format_cornix_signal(self, signal: IchimokuSignal) -> str:
-        """Format signal for Cornix compatibility with Pine Script accuracy"""
-
+        """Format signal for Cornix compatibility with dynamic comprehensive formatting"""
+        from leverage_margin_calculator import LeverageMarginCalculator
+        
+        # Initialize leverage calculator
+        leverage_calc = LeverageMarginCalculator()
+        
         # Determine direction emoji
         direction_emoji = "🟢" if signal.action == "BUY" else "🔴"
 
@@ -137,20 +141,44 @@ class FXSUSDTTelegramBot:
             sl_percent = ((sl - entry) / entry) * 100
             tp_percent = ((entry - tp) / entry) * 100
 
-        # Calculate dynamic leverage based on signal strength and timeframe
-        if signal.timeframe == "30m":
-            auto_leverage = min(20, max(5, int(signal.signal_strength / 5)))
-        elif signal.timeframe == "15m":
-            auto_leverage = min(15, max(3, int(signal.signal_strength / 6)))
-        elif signal.timeframe == "5m":
-            auto_leverage = min(12, max(3, int(signal.signal_strength / 7)))
-        else:  # 1m
-            auto_leverage = min(10, max(2, int(signal.signal_strength / 8)))
+        # Prepare signal data for leverage calculation
+        signal_data = {
+            'strength': signal.signal_strength,
+            'confidence': signal.confidence,
+            'volatility_score': max(1.0, signal.atr_value * 1000),  # Convert ATR to volatility score
+            'timeframe': signal.timeframe,
+            'trade_size_usdt': 100.0,  # Default trade size
+            'action': signal.action
+        }
+        
+        # Calculate optimal leverage and margin
+        leverage_info = leverage_calc.calculate_optimal_leverage(signal_data)
+        
+        auto_leverage = leverage_info['auto_leverage']
+        recommended_leverage = leverage_info['recommended_leverage']
+        margin_type = leverage_info['margin_type']
+        cross_margin = leverage_info['cross_margin_enabled']
 
-        recommended_leverage = max(2, int(auto_leverage * 0.8))  # More conservative recommendation
+        # Calculate position size based on standard risk management
+        risk_percentage = 2.0  # 2% risk per trade
+        account_size = 1000.0  # Default account size for calculation
+        risk_amount = account_size * (risk_percentage / 100)
+        
+        # Calculate position size in USDT
+        if signal.action == "BUY":
+            price_diff = abs(entry - sl)
+        else:
+            price_diff = abs(sl - entry)
+        
+        position_size_usdt = (risk_amount / price_diff) * entry if price_diff > 0 else 100.0
+        position_size_usdt = min(position_size_usdt, account_size * 0.2)  # Max 20% of account
+        
+        # Calculate quantity for the pair (avoiding invalid quantities)
+        quantity = round(position_size_usdt / entry, 1)  # Round to 1 decimal
+        quantity = max(0.1, quantity)  # Minimum quantity
 
         cornix_signal = f"""
-{direction_emoji} **ICHIMOKU SNIPER - PINE SCRIPT v6**
+{direction_emoji} **ICHIMOKU SNIPER - ENHANCED CORNIX**
 
 **📊 SIGNAL DETAILS:**
 • **Pair:** `FXSUSDT.P`
@@ -158,43 +186,50 @@ class FXSUSDTTelegramBot:
 • **Entry:** `{entry:.5f}`
 • **Stop Loss:** `{sl:.5f}` (-{sl_percent:.2f}%)
 • **Take Profit:** `{tp:.5f}` (+{tp_percent:.2f}%)
+• **Quantity:** `{quantity} USDT`
 • **Timeframe:** `{signal.timeframe}` ⚡
 
-**⚡ LEVERAGE & MARGIN:**
+**⚡ DYNAMIC LEVERAGE & MARGIN:**
 • **Recommended:** `{recommended_leverage}x`
 • **Auto Leverage:** `{auto_leverage}x`
-• **Margin Type:** `CROSS`
-• **Cross Margin:** `✅ Enabled`
-• **Auto Add Margin:** `✅ Active`
+• **Margin Type:** `{margin_type}`
+• **Cross Margin:** `{'✅ Enabled' if cross_margin else '❌ Disabled'}`
+• **Position Size:** `${position_size_usdt:.0f} USDT`
+• **Risk:** `{risk_percentage}% ({risk_amount:.0f} USDT)`
 
-**⚙️ PINE SCRIPT PARAMETERS:**
+**⚙️ ENHANCED PARAMETERS:**
 • **Strategy:** `Ichimoku Sniper Multi-TF Enhanced`
-• **Conversion/Base:** `4/4 periods`
-• **LaggingSpan2/Displacement:** `46/20 periods`
-• **EMA Filter:** `200 periods`
-• **SL/TP Percent:** `1.75%/3.25%`
-
-**📈 SIGNAL ANALYSIS:**
-• **Strength:** `{signal.signal_strength:.1f}%`
+• **Signal Strength:** `{signal.signal_strength:.1f}%`
 • **Confidence:** `{signal.confidence:.1f}%`
 • **Risk/Reward:** `1:{signal.risk_reward_ratio:.2f}`
-• **ATR Value:** `{signal.atr_value:.6f}`
-• **Scan Mode:** `Multi-Timeframe Enhanced`
+• **Volatility Score:** `{signal_data['volatility_score']:.1f}`
 
 **🎯 CORNIX COMPATIBLE FORMAT:**
 ```
-FXSUSDT.P {signal.action}
-Entry: {entry:.5f}
-SL: {sl:.5f}
-TP: {tp:.5f}
+#FXSUSDT.P {signal.action}
+
+Entry Targets:
+{entry:.5f}
+
+Take-Profit Targets:
+{tp:.5f}
+
+Stop Targets:
+{sl:.5f}
+
 Leverage: {auto_leverage}x
-Margin: CROSS
 ```
 
-**⏰ Signal Time:** `{signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}`
-**🤖 Bot:** `Pine Script Ichimoku Sniper v6`
+**📈 COMPREHENSIVE ANALYSIS:**
+• **Market Structure:** Confirmed {signal.action.lower()}ish momentum
+• **ATR Value:** `{signal.atr_value:.6f}`
+• **Timeframe Confluence:** Multi-TF alignment detected
+• **Risk Management:** Dynamic position sizing active
 
-*Cross Margin & Auto Leverage - Comprehensive Risk Management*
+**⏰ Signal Generated:** `{signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}`
+**🤖 Enhanced Bot:** `Pine Script Ichimoku Sniper v6 Pro`
+
+*🔄 Dynamic Risk Management | ⚡ Cross Margin Optimized | 📊 Multi-Timeframe Analysis*
         """.strip()
 
         return cornix_signal

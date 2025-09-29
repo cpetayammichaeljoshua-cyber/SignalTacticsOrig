@@ -75,9 +75,12 @@ async def main():
     finally:
         logging.info("🧹 Cleaning up console bot...")
         try:
-            await bot.stop()
-        except:
-            pass
+            if 'bot' in locals():
+                bot.shutdown_requested = True
+                bot.running = False
+                await bot.shutdown_parallel_processing()
+        except Exception as cleanup_error:
+            logging.warning(f"Cleanup warning: {cleanup_error}")
 
 if __name__ == "__main__":
     try:

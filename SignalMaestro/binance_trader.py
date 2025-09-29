@@ -2,20 +2,25 @@
 import aiohttp
 import logging
 from typing import Optional, List, Dict
+import websockets
+import json
 
 
 """
 Binance trading integration using ccxt library
 Handles trade execution, portfolio management, and market data
 ENHANCED with comprehensive error handling and resilience
+ENHANCED with real-time WebSocket market data streaming
 """
 
 import asyncio
 import logging
 import ccxt.async_support as ccxt
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 from decimal import Decimal, ROUND_DOWN
 import time
+from datetime import datetime, timedelta
+import threading
 
 from config import Config
 from technical_analysis import TechnicalAnalysis
@@ -74,6 +79,30 @@ class BinanceTrader:
         # Current leverage settings per symbol
         self.current_leverage = {}  # symbol -> leverage
         self.last_leverage_check = {}  # symbol -> timestamp
+        
+        # Real-time market data streaming
+        self.websocket_streams = {}  # symbol -> websocket connection
+        self.current_prices = {}  # symbol -> current price
+        self.price_callbacks = {}  # symbol -> list of callback functions
+        self.ws_running = False
+        self.ws_base_url = "wss://fstream.binance.com/ws/"
+        
+        # Position tracking and TP/SL management
+        self.active_positions = {}  # symbol -> position data
+        self.stop_loss_orders = {}  # symbol -> stop loss order info
+        self.take_profit_orders = {}  # symbol -> list of TP orders
+        self.position_monitors = {}  # symbol -> monitoring task
+        
+        # Import and initialize TP/SL system
+        try:
+            from dynamic_stop_loss_system import ThreeSLOneTpManager, ThreeSLOneTpConfig
+            self.tp_sl_managers = {}  # symbol -> ThreeSLOneTpManager
+            self.tp_sl_config = ThreeSLOneTpConfig()
+            self.tp_sl_enabled = True
+            self.logger.info("✅ 3SL/1TP system enabled")
+        except ImportError as e:
+            self.tp_sl_enabled = False
+            self.logger.warning(f"⚠️ TP/SL system not available: {e}")
         
         if ENHANCED_ERROR_HANDLING:
             # Initialize circuit breaker for Binance API
@@ -1001,116 +1030,327 @@ class BinanceTrader:
         except Exception as e:
             self.logger.error(f"Error getting market summary: {e}")
             return {}
-#!/usr/bin/env python3
-"""
-Binance Trading Integration
-"""
-
-import asyncio
-import logging
-import aiohttp
-import json
-from typing import Dict, Any, Optional, List
-
-class BinanceTrader:
-    """Binance trading interface"""
     
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.api_url = "https://api.binance.com"
-        self.api_key = None
-        self.api_secret = None
-        
-    async def test_connection(self) -> bool:
-        """Test Binance API connection"""
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.api_url}/api/v3/ping") as response:
-                    return response.status == 200
-        except:
-            return False
+    # =============================================================================
+    # REAL-TIME WEBSOCKET MARKET DATA STREAMING
+    # =============================================================================
     
-    async def get_current_price(self, symbol: str) -> Optional[float]:
-        """Get current price for symbol"""
+    async def start_price_stream(self, symbols: List[str], callback: Optional[Callable] = None):
+        """Start real-time price streaming for multiple symbols"""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.api_url}/api/v3/ticker/price?symbol={symbol}") as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return float(data['price'])
-        except Exception as e:
-            self.logger.error(f"Error getting price for {symbol}: {e}")
-        return None
-    
-    async def get_multi_timeframe_data(self, symbol: str, timeframes: List[str], limit: int = 100) -> Dict[str, List]:
-        """Get OHLCV data for multiple timeframes"""
-        try:
-            data = {}
+            self.ws_running = True
             
-            for tf in timeframes:
-                # Convert timeframe format
-                binance_tf = self._convert_timeframe(tf)
+            # Convert symbols to lowercase format for WebSocket
+            ws_symbols = []
+            for symbol in symbols:
+                if symbol.endswith('USDT'):
+                    ws_symbol = symbol.lower() + '@ticker'
+                    ws_symbols.append(ws_symbol)
+                    
+                    # Initialize price tracking
+                    self.current_prices[symbol] = 0.0
+                    if callback:
+                        if symbol not in self.price_callbacks:
+                            self.price_callbacks[symbol] = []
+                        self.price_callbacks[symbol].append(callback)
+            
+            # Create combined stream URL
+            stream_names = '/'.join(ws_symbols)
+            ws_url = f"{self.ws_base_url}{stream_names}"
+            
+            self.logger.info(f"🌐 Starting WebSocket price stream for {len(symbols)} symbols")
+            
+            # Start WebSocket connection in background task
+            asyncio.create_task(self._websocket_handler(ws_url))
+            
+        except Exception as e:
+            self.logger.error(f"Error starting price stream: {e}")
+    
+    async def _websocket_handler(self, ws_url: str):
+        """Handle WebSocket connection and message processing"""
+        try:
+            while self.ws_running:
+                try:
+                    async with websockets.connect(ws_url) as websocket:
+                        self.logger.info("✅ WebSocket connection established")
+                        
+                        async for message in websocket:
+                            if not self.ws_running:
+                                break
+                                
+                            try:
+                                data = json.loads(message)
+                                await self._process_price_update(data)
+                            except json.JSONDecodeError:
+                                continue
+                                
+                except websockets.exceptions.ConnectionClosed:
+                    self.logger.warning("🔄 WebSocket connection closed, reconnecting...")
+                    await asyncio.sleep(5)
+                except Exception as e:
+                    self.logger.error(f"WebSocket error: {e}")
+                    await asyncio.sleep(10)
+                    
+        except Exception as e:
+            self.logger.error(f"Critical WebSocket error: {e}")
+    
+    async def _process_price_update(self, data: Dict[str, Any]):
+        """Process incoming price update from WebSocket"""
+        try:
+            if 's' in data and 'c' in data:  # symbol and close price
+                symbol = data['s']
+                price = float(data['c'])
                 
-                async with aiohttp.ClientSession() as session:
-                    url = f"{self.api_url}/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
-                    async with session.get(url) as response:
-                        if response.status == 200:
-                            klines = await response.json()
-                            # Convert to OHLCV format
-                            ohlcv = [[
-                                kline[0],  # timestamp
-                                float(kline[1]),  # open
-                                float(kline[2]),  # high
-                                float(kline[3]),  # low
-                                float(kline[4]),  # close
-                                float(kline[5])   # volume
-                            ] for kline in klines]
-                            data[tf] = ohlcv
-            
-            return data
-            
+                # Update current price
+                self.current_prices[symbol] = price
+                
+                # Call registered callbacks
+                if symbol in self.price_callbacks:
+                    for callback in self.price_callbacks[symbol]:
+                        try:
+                            if asyncio.iscoroutinefunction(callback):
+                                await callback(symbol, price)
+                            else:
+                                callback(symbol, price)
+                        except Exception as e:
+                            self.logger.error(f"Error in price callback for {symbol}: {e}")
+                
+                # Update position monitoring
+                if symbol in self.active_positions:
+                    await self._monitor_position_tp_sl(symbol, price)
+                    
         except Exception as e:
-            self.logger.error(f"Error getting multi-timeframe data: {e}")
-            return {}
+            self.logger.error(f"Error processing price update: {e}")
     
-    def _convert_timeframe(self, tf: str) -> str:
-        """Convert timeframe to Binance format"""
-        mapping = {
-            '1m': '1m',
-            '3m': '3m',
-            '5m': '5m',
-            '15m': '15m',
-            '1h': '1h',
-            '4h': '4h',
-            '1d': '1d'
-        }
-        return mapping.get(tf, '5m')
+    async def stop_price_stream(self):
+        """Stop WebSocket price streaming"""
+        self.ws_running = False
+        self.logger.info("🛑 WebSocket price streaming stopped")
     
-    async def get_ohlcv_data(self, symbol: str, timeframe: str = '5m', limit: int = 100) -> List[List]:
-        """Get OHLCV data for a single timeframe"""
+    def get_current_price_cached(self, symbol: str) -> float:
+        """Get current price from WebSocket cache"""
+        return self.current_prices.get(symbol, 0.0)
+    
+    # =============================================================================
+    # POSITION TRACKING AND TP/SL LIFECYCLE MANAGEMENT
+    # =============================================================================
+    
+    async def execute_real_trade(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute real trade with integrated TP/SL management"""
         try:
-            binance_tf = self._convert_timeframe(timeframe)
-            async with aiohttp.ClientSession() as session:
-                url = f"{self.api_url}/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        klines = await response.json()
-                        # Convert to OHLCV format
-                        ohlcv = [[
-                            kline[0],  # timestamp
-                            float(kline[1]),  # open
-                            float(kline[2]),  # high
-                            float(kline[3]),  # low
-                            float(kline[4]),  # close
-                            float(kline[5])   # volume
-                        ] for kline in klines]
-                        return ohlcv
-            return []
+            symbol = signal['symbol']
+            direction = signal['direction'].upper()
+            entry_price = signal['entry_price']
+            
+            # Calculate position size based on risk management
+            position_size = await self._calculate_position_size_for_signal(signal)
+            
+            if position_size <= 0:
+                return {'success': False, 'error': 'Invalid position size'}
+            
+            # Execute market order
+            order_result = None
+            if direction == 'LONG':
+                order_result = await self._execute_buy_order(symbol, position_size, 'market')
+            elif direction == 'SHORT':
+                order_result = await self._execute_sell_order(symbol, position_size, 'market')
+            
+            if not order_result:
+                return {'success': False, 'error': 'Failed to execute order'}
+            
+            # Initialize TP/SL management if enabled
+            if self.tp_sl_enabled:
+                await self._setup_tp_sl_management(symbol, direction, entry_price, position_size, signal)
+            
+            # Track position
+            position_data = {
+                'symbol': symbol,
+                'direction': direction,
+                'entry_price': entry_price,
+                'position_size': position_size,
+                'order_id': order_result['id'],
+                'timestamp': datetime.now(),
+                'tp_levels': [signal.get('tp1'), signal.get('tp2'), signal.get('tp3')],
+                'stop_loss': signal.get('stop_loss'),
+                'status': 'active'
+            }
+            
+            self.active_positions[symbol] = position_data
+            
+            self.logger.info(f"✅ Real trade executed: {direction} {position_size} {symbol} @ {entry_price}")
+            
+            return {
+                'success': True,
+                'order_id': order_result['id'],
+                'symbol': symbol,
+                'direction': direction,
+                'entry_price': entry_price,
+                'position_size': position_size,
+                'tp_sl_enabled': self.tp_sl_enabled
+            }
+            
         except Exception as e:
-            self.logger.error(f"Error getting OHLCV data for {symbol} {timeframe}: {e}")
-            return []
+            self.logger.error(f"Error executing real trade for {symbol}: {e}")
+            return {'success': False, 'error': str(e)}
     
-    async def close(self):
-        """Close any connections"""
-        # Placeholder for closing connections if needed
-        pass
+    async def _setup_tp_sl_management(self, symbol: str, direction: str, entry_price: float, 
+                                     position_size: float, signal: Dict[str, Any]):
+        """Setup 3-level TP/SL management system"""
+        try:
+            from dynamic_stop_loss_system import ThreeSLOneTpManager
+            
+            # Initialize TP/SL manager for this position
+            tp_sl_manager = ThreeSLOneTpManager(
+                symbol=symbol,
+                direction=direction,
+                entry_price=entry_price,
+                position_size=position_size,
+                config=self.tp_sl_config
+            )
+            
+            self.tp_sl_managers[symbol] = tp_sl_manager
+            
+            self.logger.info(f"🎯 TP/SL management setup for {symbol}")
+            
+        except Exception as e:
+            self.logger.error(f"Error setting up TP/SL management for {symbol}: {e}")
+    
+    async def _monitor_position_tp_sl(self, symbol: str, current_price: float):
+        """Monitor position for TP/SL hits and execute lifecycle management"""
+        try:
+            if symbol not in self.tp_sl_managers:
+                return
+            
+            tp_sl_manager = self.tp_sl_managers[symbol]
+            
+            # Update TP/SL manager with current price
+            actions = await asyncio.to_thread(tp_sl_manager.update_price, current_price)
+            
+            # Execute any required actions
+            for action in actions:
+                await self._execute_tp_sl_action(symbol, action)
+                
+        except Exception as e:
+            self.logger.error(f"Error monitoring TP/SL for {symbol}: {e}")
+    
+    async def _execute_tp_sl_action(self, symbol: str, action: Dict[str, Any]):
+        """Execute TP/SL action (close position, move SL, etc.)"""
+        try:
+            action_type = action.get('type')
+            
+            if action_type == 'close_position':
+                # Close position completely
+                await self._close_position(symbol, action.get('percentage', 100))
+                
+            elif action_type == 'partial_close':
+                # Close partial position at TP level
+                await self._close_position(symbol, action.get('percentage', 33))
+                
+            elif action_type == 'move_stop_loss':
+                # Move stop loss to new level
+                new_sl_price = action.get('new_stop_loss')
+                await self._update_stop_loss(symbol, new_sl_price)
+                
+            elif action_type == 'stop_loss_hit':
+                # Stop loss was hit - close entire position
+                await self._close_position(symbol, 100)
+                
+            self.logger.info(f"🎯 TP/SL action executed for {symbol}: {action_type}")
+            
+        except Exception as e:
+            self.logger.error(f"Error executing TP/SL action for {symbol}: {e}")
+    
+    async def _close_position(self, symbol: str, percentage: float):
+        """Close position (full or partial)"""
+        try:
+            if symbol not in self.active_positions:
+                return
+            
+            position = self.active_positions[symbol]
+            direction = position['direction']
+            position_size = position['position_size']
+            
+            # Calculate amount to close
+            close_amount = position_size * (percentage / 100)
+            
+            # Execute closing order
+            if direction == 'LONG':
+                await self._execute_sell_order(symbol, close_amount, 'market')
+            else:  # SHORT
+                await self._execute_buy_order(symbol, close_amount, 'market')
+            
+            # Update position tracking
+            if percentage >= 100:
+                # Position fully closed
+                position['status'] = 'closed'
+                if symbol in self.tp_sl_managers:
+                    del self.tp_sl_managers[symbol]
+            else:
+                # Partial close - update remaining size
+                position['position_size'] -= close_amount
+            
+            self.logger.info(f"✅ Closed {percentage}% of {symbol} position")
+            
+        except Exception as e:
+            self.logger.error(f"Error closing position for {symbol}: {e}")
+    
+    async def _update_stop_loss(self, symbol: str, new_sl_price: float):
+        """Update stop loss order to new price"""
+        try:
+            # Cancel existing stop loss if any
+            if symbol in self.stop_loss_orders:
+                old_order_id = self.stop_loss_orders[symbol].get('order_id')
+                if old_order_id:
+                    await self.cancel_order(old_order_id, symbol)
+            
+            # Create new stop loss order
+            position = self.active_positions[symbol]
+            direction = position['direction']
+            position_size = position['position_size']
+            
+            side = 'sell' if direction == 'LONG' else 'buy'
+            
+            stop_order = await self.exchange.create_order(
+                symbol=symbol,
+                type='stop_market',
+                side=side,
+                amount=position_size,
+                params={'stopPrice': new_sl_price}
+            )
+            
+            # Update tracking
+            self.stop_loss_orders[symbol] = {
+                'order_id': stop_order['id'],
+                'price': new_sl_price,
+                'timestamp': datetime.now()
+            }
+            
+            self.logger.info(f"🛡️ Stop loss updated for {symbol}: {new_sl_price}")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating stop loss for {symbol}: {e}")
+    
+    async def _calculate_position_size_for_signal(self, signal: Dict[str, Any]) -> float:
+        """Calculate position size for signal based on risk management"""
+        try:
+            # Use existing position calculation logic
+            user_settings = {
+                'risk_percentage': getattr(self.config, 'DEFAULT_RISK_PERCENTAGE', 2.0),
+                'max_position_size': getattr(self.config, 'MAX_POSITION_SIZE', 1000),
+                'min_position_size': getattr(self.config, 'MIN_POSITION_SIZE', 10)
+            }
+            
+            return await self._calculate_position_size(signal, user_settings)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position size: {e}")
+            return 0.0
+    
+    # Convenience method to make get_ohlcv_data available
+    async def get_ohlcv_data(self, symbol: str, timeframe: str, limit: int = 100) -> List[List]:
+        """Get OHLCV data - convenience wrapper for get_market_data"""
+        return await self.get_market_data(symbol, timeframe, limit)
+    
+    async def test_connection(self) -> bool:
+        """Test connection - convenience wrapper for ping"""
+        return await self.ping()

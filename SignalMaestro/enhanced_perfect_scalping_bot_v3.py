@@ -126,6 +126,9 @@ class EnhancedPerfectScalpingBotV3:
             ml_summary = self.ml_analyzer.get_learning_summary()
             self.logger.info(f"🧠 ML Status: {ml_summary['learning_status']} | Win Rate: {ml_summary['win_rate']:.1%}")
 
+            # Start real-time market data streaming
+            await self.start_real_time_monitoring()
+
             # Main trading loop
             while self.running:
                 try:
@@ -173,6 +176,34 @@ class EnhancedPerfectScalpingBotV3:
         except Exception as e:
             self.logger.error(f"Error initializing components: {e}")
             raise
+
+    async def start_real_time_monitoring(self):
+        """Start real-time market data monitoring and position tracking"""
+        try:
+            # Initialize Binance trader for real trading
+            await self.binance_trader.initialize()
+            
+            # Start WebSocket price streaming for all monitored symbols
+            self.logger.info("🌐 Starting real-time market data streaming...")
+            await self.binance_trader.start_price_stream(
+                symbols=self.symbols,
+                callback=self._on_price_update
+            )
+            
+            self.logger.info("✅ Real-time monitoring started for enhanced trading")
+            
+        except Exception as e:
+            self.logger.error(f"Error starting real-time monitoring: {e}")
+            
+    async def _on_price_update(self, symbol: str, price: float):
+        """Callback for real-time price updates"""
+        try:
+            # This will be called for every price update
+            # Position monitoring is handled automatically in the BinanceTrader
+            pass
+            
+        except Exception as e:
+            self.logger.error(f"Error in price update callback for {symbol}: {e}")
 
     async def initialize_telegram_bot(self):
         """Initialize Telegram bot with commands"""
@@ -374,7 +405,23 @@ class EnhancedPerfectScalpingBotV3:
             # Generate chart for the signal
             chart_data = await self.generate_chart(signal.symbol, signal)
             
-            # Send to Cornix for execution
+            # EXECUTE REAL TRADE instead of just sending signals
+            trade_signal_data = {
+                'symbol': signal.symbol,
+                'direction': signal.direction,
+                'entry_price': signal.entry_price,
+                'stop_loss': signal.stop_loss,
+                'tp1': signal.tp1,
+                'tp2': signal.tp2,
+                'tp3': signal.tp3,
+                'leverage': signal.leverage,
+                'action': 'LONG' if signal.direction == 'LONG' else 'SHORT'
+            }
+            
+            # Execute real trade with TP/SL management
+            trade_result = await self.binance_trader.execute_real_trade(trade_signal_data)
+            
+            # Also send to Cornix as backup (optional)
             cornix_result = await self.cornix.send_advanced_signal({
                 'symbol': signal.symbol,
                 'direction': signal.direction,
@@ -384,7 +431,8 @@ class EnhancedPerfectScalpingBotV3:
                 'leverage': signal.leverage,
                 'message': signal_message,
                 'strategy': 'Advanced Time-Fibonacci Theory',
-                'ml_enhanced': signal.ml_prediction is not None
+                'ml_enhanced': signal.ml_prediction is not None,
+                'real_trade_executed': trade_result.get('success', False)
             })
 
             # Send to Telegram channel with chart
@@ -412,10 +460,15 @@ class EnhancedPerfectScalpingBotV3:
                 except Exception as e:
                     self.logger.error(f"Error sending to Telegram: {e}")
 
-            if cornix_result.get('success'):
+            # Handle real trade execution results
+            if trade_result.get('success'):
                 self.successful_signals += 1
-                self.logger.info("✅ Advanced signal sent successfully to Cornix")
-
+                self.logger.info(f"✅ REAL TRADE EXECUTED: {signal.direction} {signal.symbol}")
+                self.logger.info(f"   Order ID: {trade_result.get('order_id')}")
+                self.logger.info(f"   Position Size: {trade_result.get('position_size')}")
+                self.logger.info(f"   Entry Price: ${trade_result.get('entry_price'):.4f}")
+                self.logger.info(f"   TP/SL Enabled: {trade_result.get('tp_sl_enabled', False)}")
+                
                 # Record trade for ML learning
                 await self._record_trade_for_ml(signal)
 
@@ -423,8 +476,54 @@ class EnhancedPerfectScalpingBotV3:
                 self.signals_sent_times.append(datetime.now())
                 self.last_signal_time[signal.symbol] = datetime.now()
 
+                # Update Telegram message to include real trade confirmation
+                enhanced_message = signal_message + f"\n\n🔥 **REAL TRADE EXECUTED** 🔥\n📋 Order ID: `{trade_result.get('order_id')}`\n💰 Position: `{trade_result.get('position_size'):.6f}`"
+                
+                # Send enhanced message to Telegram
+                if self.bot and self.channel_id:
+                    try:
+                        if chart_data:
+                            chart_bytes = base64.b64decode(chart_data)
+                            chart_buffer = BytesIO(chart_bytes)
+                            chart_buffer.name = f"{signal.symbol}_trade_executed.png"
+                            
+                            await self.bot.send_photo(
+                                chat_id=self.channel_id,
+                                photo=chart_buffer,
+                                caption=enhanced_message,
+                                parse_mode='Markdown'
+                            )
+                        else:
+                            await self.bot.send_message(
+                                chat_id=self.channel_id,
+                                text=enhanced_message,
+                                parse_mode='Markdown'
+                            )
+                        self.logger.info("📤 Real trade confirmation sent to Telegram")
+                    except Exception as e:
+                        self.logger.error(f"Error sending trade confirmation to Telegram: {e}")
+
             else:
-                self.logger.error(f"❌ Failed to send signal: {cornix_result.get('error')}")
+                self.logger.error(f"❌ FAILED TO EXECUTE REAL TRADE: {trade_result.get('error')}")
+                
+                # Still send signal to Telegram but mark as failed
+                failed_message = signal_message + f"\n\n⚠️ **TRADE EXECUTION FAILED** ⚠️\n🚫 Error: `{trade_result.get('error', 'Unknown error')}`"
+                
+                if self.bot and self.channel_id:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=self.channel_id,
+                            text=failed_message,
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Error sending failure notification: {e}")
+
+            # Log Cornix result for reference
+            if cornix_result.get('success'):
+                self.logger.info("✅ Signal also sent to Cornix as backup")
+            else:
+                self.logger.warning(f"⚠️ Cornix backup failed: {cornix_result.get('error')}")
 
         except Exception as e:
             self.logger.error(f"Error processing signal: {e}")

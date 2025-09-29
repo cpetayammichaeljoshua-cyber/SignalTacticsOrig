@@ -156,6 +156,13 @@ try:
 except ImportError:
     STOP_LOSS_INTEGRATOR_AVAILABLE = False
 
+# Import Dynamic Signal Integration
+try:
+    from SignalMaestro.dynamic_signal_integrator import DynamicSignalIntegrator, cmd_start, cmd_status, cmd_help, cmd_signals, cmd_ai_status, ESSENTIAL_COMMANDS
+    DYNAMIC_SIGNAL_INTEGRATION_AVAILABLE = True
+except ImportError:
+    DYNAMIC_SIGNAL_INTEGRATION_AVAILABLE = False
+
 # Import Dynamic Leverage Management System
 try:
     from SignalMaestro.dynamic_leverage_manager import DynamicLeverageManager, VolatilityProfile, LeverageAdjustment

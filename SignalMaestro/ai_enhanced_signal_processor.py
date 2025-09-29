@@ -20,10 +20,18 @@ parent_dir = current_dir.parent
 sys.path.insert(0, str(parent_dir))
 
 try:
+    import sys
+    sys.path.insert(0, str(parent_dir))
     from openai import analyze_trading_signal, analyze_sentiment, get_openai_status
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
+    # Fallback functions when OpenAI is not available
+    async def analyze_trading_signal(text):
+        return {'signal_strength': 75, 'confidence': 0.7, 'risk_level': 'medium', 'market_sentiment': 'neutral'}
+    
+    def get_openai_status():
+        return {'configured': False, 'enabled': False}
 
 from config import Config
 

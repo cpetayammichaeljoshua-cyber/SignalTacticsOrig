@@ -27,7 +27,7 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
     # Fallback functions when OpenAI is not available
-    async def analyze_trading_signal(text):
+    async def analyze_trading_signal(signal_text):
         return {'signal_strength': 75, 'confidence': 0.7, 'risk_level': 'medium', 'market_sentiment': 'neutral'}
     
     def get_openai_status():

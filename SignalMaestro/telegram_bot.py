@@ -17,7 +17,7 @@ from telegram.ext import (
 from config import Config
 from signal_parser import SignalParser
 from risk_manager import RiskManager
-from utils import format_currency, format_percentage
+# from utils import format_currency, format_percentage  # Commented out due to import issues
 from telegram_strategy_comparison import TelegramStrategyComparison
 
 class TradingSignalBot:
@@ -42,6 +42,8 @@ class TradingSignalBot:
     async def initialize(self):
         """Initialize the Telegram bot application"""
         try:
+            if not self.config.TELEGRAM_BOT_TOKEN:
+                raise ValueError("TELEGRAM_BOT_TOKEN is not configured")
             self.application = Application.builder().token(self.config.TELEGRAM_BOT_TOKEN).build()
             
             # Add command handlers
@@ -109,9 +111,11 @@ class TradingSignalBot:
         username = update.effective_user.username or "Unknown"
         
         if not self.config.is_authorized_user(user_id):
-            await update.message.reply_text(
-                "❌ You are not authorized to use this bot. Contact the administrator."
-            )
+            if update.message:
+                if update.message:
+                await update.message.reply_text(
+                    "❌ You are not authorized to use this bot. Contact the administrator."
+                )
             return
         
         # Save user to database
@@ -165,7 +169,9 @@ You can send trading signals in these formats:
 Ready to start trading! Send me a signal or use the commands above.
         """
         
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        if update.message:
+            if update.message:
+                await update.message.reply_text(welcome_message, parse_mode='Markdown')
         self.logger.info(f"User {username} ({user_id}) started the bot")
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -210,14 +216,20 @@ Ready to start trading! Send me a signal or use the commands above.
 Send me a trading signal or use the commands above!
         """
         
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        if update.message:
+            if update.message:
+                await update.message.reply_text(help_text, parse_mode='Markdown')
         self.logger.info(f"User {update.effective_user.id} requested help")
 
     async def balance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /balance command"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
-            await update.message.reply_text("⏳ Fetching your account balance...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("⏳ Fetching your account balance...")
             
             # Get balance from Binance trader
             balance_data = await self.binance_trader.get_account_balance()
@@ -228,18 +240,26 @@ Send me a trading signal or use the commands above!
                     if float(data.get('free', 0)) > 0:
                         balance_text += f"• {asset}: {data['free']}\n"
                 
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(balance_text, parse_mode='Markdown')
             else:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ Unable to fetch balance. Please check your API configuration.")
                 
         except Exception as e:
             self.logger.error(f"Error in balance command: {e}")
-            await update.message.reply_text("❌ Error fetching balance. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error fetching balance. Please try again later.")
 
     async def positions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /positions command"""
         try:
-            await update.message.reply_text("⏳ Fetching your open positions...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("⏳ Fetching your open positions...")
             
             # Get positions from Binance trader
             positions = await self.binance_trader.get_open_positions()
@@ -256,23 +276,33 @@ Send me a trading signal or use the commands above!
                     positions_text += f"  Size: {size}\n"
                     positions_text += f"  PnL: {pnl} USDT\n\n"
                 
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(positions_text, parse_mode='Markdown')
             else:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("📭 No open positions found.")
                 
         except Exception as e:
             self.logger.error(f"Error in positions command: {e}")
-            await update.message.reply_text("❌ Error fetching positions. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error fetching positions. Please try again later.")
 
     async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /signal command"""
         try:
             if not context.args:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("Please provide a trading pair. Example: `/signal BTCUSDT`", parse_mode='Markdown')
                 return
             
             symbol = context.args[0].upper()
-            await update.message.reply_text(f"⏳ Analyzing {symbol}...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text(f"⏳ Analyzing {symbol}...")
             
             # Get market data for the symbol
             market_data = await self.binance_trader.get_market_data(symbol)
@@ -286,17 +316,25 @@ Send me a trading signal or use the commands above!
                 signal_text += f"📊 24h Change: {change_24h}%\n\n"
                 signal_text += "📊 Use `/compare_run` to backtest strategies for this symbol."
                 
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(signal_text, parse_mode='Markdown')
             else:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(f"❌ Unable to get data for {symbol}. Please check the symbol.")
                 
         except Exception as e:
             self.logger.error(f"Error in signal command: {e}")
-            await update.message.reply_text("❌ Error processing signal request. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error processing signal request. Please try again later.")
 
     async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /settings command"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             # Get user settings from database
@@ -308,11 +346,15 @@ Send me a trading signal or use the commands above!
             settings_text += f"📤 Cornix forwarding: {'Enabled' if user_data.get('cornix_enabled', False) else 'Disabled'}\n\n"
             settings_text += "Contact your administrator to modify these settings."
             
-            await update.message.reply_text(settings_text, parse_mode='Markdown')
+            if update.message:
+                if update.message:
+                await update.message.reply_text(settings_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in settings command: {e}")
-            await update.message.reply_text("❌ Error fetching settings. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error fetching settings. Please try again later.")
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -328,17 +370,25 @@ Send me a trading signal or use the commands above!
             status_text += f"🌐 Webhook Server: ✅\n\n"
             status_text += "All systems operational! Ready to trade."
             
-            await update.message.reply_text(status_text, parse_mode='Markdown')
+            if update.message:
+                if update.message:
+                await update.message.reply_text(status_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in status command: {e}")
-            await update.message.reply_text("❌ Error checking system status.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error checking system status.")
 
     async def history_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /history command"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
-            await update.message.reply_text("⏳ Fetching your trading history...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("⏳ Fetching your trading history...")
             
             # Get recent trades from database
             trades = await self.db.get_user_trades(user_id, limit=5)
@@ -359,24 +409,36 @@ Send me a trading signal or use the commands above!
                     history_text += f"  P&L: ${pnl}\n"
                     history_text += f"  Status: {status}\n\n"
                 
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(history_text, parse_mode='Markdown')
             else:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("📭 No trading history found.")
                 
         except Exception as e:
             self.logger.error(f"Error in history command: {e}")
-            await update.message.reply_text("❌ Error fetching trading history.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error fetching trading history.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming text messages (potential trading signals)"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             username = update.effective_user.username or "Unknown"
+            if not update.message or not update.message.text:
+                return
             message_text = update.message.text
             
             self.logger.info(f"Received message from {username} ({user_id}): {message_text}")
             
             # Send initial processing message
+            if not update.message:
+                return
             processing_msg = await update.message.reply_text("🔄 Processing your signal...")
             
             # Parse the signal
@@ -425,15 +487,21 @@ Send me a trading signal or use the commands above!
                 
         except Exception as e:
             self.logger.error(f"Error handling message: {e}")
-            await update.message.reply_text("❌ Error processing your message. Please try again.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error processing your message. Please try again.")
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle callback queries from inline keyboards"""
         try:
             query = update.callback_query
+            if not query:
+                return
             await query.answer()
             
             data = query.data
+            if not data:
+                return
             
             if data.startswith('confirm_trade_'):
                 trade_id = data.replace('confirm_trade_', '')
@@ -461,17 +529,25 @@ Send me a trading signal or use the commands above!
     async def strategies_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /strategies command - list available strategies"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
-            await update.message.reply_text("⏳ Loading available strategies...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("⏳ Loading available strategies...")
             
             strategies_text, total_count = await self.strategy_comparison.get_available_strategies()
             
             if total_count == 0:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(strategies_text, parse_mode='Markdown')
             else:
                 footer = f"\n\n📱 Use `/compare_run` to start a comparison"
@@ -479,21 +555,32 @@ Send me a trading signal or use the commands above!
                 
                 if len(final_text) > 4096:
                     # Send in chunks if too long
-                    await update.message.reply_text(strategies_text[:4090] + "...", parse_mode='Markdown')
-                    await update.message.reply_text(footer, parse_mode='Markdown')
+                    if update.message:
+                        if update.message:
+                await update.message.reply_text(strategies_text[:4090] + "...", parse_mode='Markdown')
+                        if update.message:
+                await update.message.reply_text(footer, parse_mode='Markdown')
                 else:
-                    await update.message.reply_text(final_text, parse_mode='Markdown')
+                    if update.message:
+                        if update.message:
+                await update.message.reply_text(final_text, parse_mode='Markdown')
                     
         except Exception as e:
             self.logger.error(f"Error in strategies command: {e}")
-            await update.message.reply_text("❌ Error loading strategies. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error loading strategies. Please try again later.")
     
     async def compare_run_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_run command - start new strategy comparison"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
@@ -522,7 +609,8 @@ Send me a trading signal or use the commands above!
                         initial_capital = float(context.args[3])
                         
                 except (ValueError, IndexError) as e:
-                    await update.message.reply_text(
+                    if update.message:
+                await update.message.reply_text(
                         "❌ Invalid arguments. Usage:\n"
                         "`/compare_run [symbols] [days] [strategies] [capital]`\n\n"
                         "Examples:\n"
@@ -533,7 +621,9 @@ Send me a trading signal or use the commands above!
                     )
                     return
             
-            await update.message.reply_text("🚀 Starting strategy comparison...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("🚀 Starting strategy comparison...")
             
             # Start comparison
             result_text, comparison_id = await self.strategy_comparison.start_comparison(
@@ -544,51 +634,71 @@ Send me a trading signal or use the commands above!
                 initial_capital=initial_capital
             )
             
-            await update.message.reply_text(result_text, parse_mode='Markdown')
+            if update.message:
+                if update.message:
+                await update.message.reply_text(result_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in compare_run command: {e}")
-            await update.message.reply_text("❌ Error starting comparison. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error starting comparison. Please try again later.")
     
     async def compare_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_status command - check comparison progress"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             if not context.args:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(
-                    "❌ Please provide comparison ID.\nUsage: `/compare_status <id>`",
-                    parse_mode='Markdown'
-                )
+                        "❌ Please provide comparison ID.\nUsage: `/compare_status <id>`",
+                        parse_mode='Markdown'
+                    )
                 return
             
             comparison_id = context.args[0]
             status_text = await self.strategy_comparison.get_comparison_status(comparison_id)
             
-            await update.message.reply_text(status_text, parse_mode='Markdown')
+            if update.message:
+                if update.message:
+                await update.message.reply_text(status_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in compare_status command: {e}")
-            await update.message.reply_text("❌ Error checking status. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error checking status. Please try again later.")
     
     async def compare_result_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_result command - show comparison results"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             if not context.args:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(
-                    "❌ Please provide comparison ID.\nUsage: `/compare_result <id> [page]`",
-                    parse_mode='Markdown'
-                )
+                        "❌ Please provide comparison ID.\nUsage: `/compare_result <id> [page]`",
+                        parse_mode='Markdown'
+                    )
                 return
             
             comparison_id = context.args[0]
@@ -600,7 +710,9 @@ Send me a trading signal or use the commands above!
                 except ValueError:
                     page = 1
             
-            await update.message.reply_text("⏳ Loading comparison results...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("⏳ Loading comparison results...")
             
             # Get results
             result_text, chart_path, has_more = await self.strategy_comparison.get_comparison_result(
@@ -618,52 +730,73 @@ Send me a trading signal or use the commands above!
                         )
                 except Exception as e:
                     self.logger.warning(f"Error sending chart: {e}")
-                    await update.message.reply_text(result_text, parse_mode='Markdown')
+                    if update.message:
+                        if update.message:
+                await update.message.reply_text(result_text, parse_mode='Markdown')
             else:
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(result_text, parse_mode='Markdown')
             
             # Add pagination buttons if needed
             if has_more:
                 next_page = page + 1
+                if update.message:
+                    if update.message:
                 await update.message.reply_text(
-                    f"📄 More results available. Use:\n`/compare_result {comparison_id} {next_page}`",
-                    parse_mode='Markdown'
-                )
+                        f"📄 More results available. Use:\n`/compare_result {comparison_id} {next_page}`",
+                        parse_mode='Markdown'
+                    )
             
         except Exception as e:
             self.logger.error(f"Error in compare_result command: {e}")
-            await update.message.reply_text("❌ Error loading results. Please try again later.")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("❌ Error loading results. Please try again later.")
     
     async def compare_recent_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_recent command - show recent comparisons"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
-            await update.message.reply_text("⏳ Loading your recent comparisons...")
+            if update.message:
+                if update.message:
+                await update.message.reply_text("⏳ Loading your recent comparisons...")
             
             recent_text = await self.strategy_comparison.get_recent_comparisons(user_id)
-            await update.message.reply_text(recent_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(recent_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in compare_recent command: {e}")
-            await update.message.reply_text("❌ Error loading recent comparisons. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading recent comparisons. Please try again later.")
     
     async def compare_rankings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_rankings command - show strategy rankings by metric"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             if not context.args:
                 available_metrics = self.strategy_comparison.get_available_metrics()
                 metrics_list = '\n'.join([f"• `{metric}`" for metric in available_metrics])
+                if update.message:
                 await update.message.reply_text(
                     f"❌ Please provide comparison ID and metric.\n\n"
                     f"Usage: `/compare_rankings <id> <metric>`\n\n"
@@ -675,25 +808,33 @@ Send me a trading signal or use the commands above!
             comparison_id = context.args[0]
             metric = context.args[1] if len(context.args) > 1 else 'total_pnl_percentage'
             
-            await update.message.reply_text("⏳ Loading strategy rankings...")
+            if update.message:
+                await update.message.reply_text("⏳ Loading strategy rankings...")
             
             rankings_text = await self.strategy_comparison.get_comparison_rankings(comparison_id, metric)
-            await update.message.reply_text(rankings_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(rankings_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in compare_rankings command: {e}")
-            await update.message.reply_text("❌ Error loading rankings. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading rankings. Please try again later.")
     
     async def compare_tips_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_tips command - show recommendations"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             if not context.args:
+                if update.message:
                 await update.message.reply_text(
                     "❌ Please provide comparison ID.\nUsage: `/compare_tips <id>`",
                     parse_mode='Markdown'
@@ -701,30 +842,39 @@ Send me a trading signal or use the commands above!
                 return
             
             comparison_id = context.args[0]
-            await update.message.reply_text("⏳ Loading recommendations...")
+            if update.message:
+                await update.message.reply_text("⏳ Loading recommendations...")
             
             recommendations_text = await self.strategy_comparison.get_comparison_recommendations(comparison_id)
-            await update.message.reply_text(recommendations_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(recommendations_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in compare_tips command: {e}")
-            await update.message.reply_text("❌ Error loading recommendations. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading recommendations. Please try again later.")
     
     async def compare_help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /compare_help command - show strategy comparison help"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             help_text = await self.strategy_comparison.get_help_text()
-            await update.message.reply_text(help_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(help_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in compare_help command: {e}")
-            await update.message.reply_text("❌ Error loading help. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading help. Please try again later.")
     
     # ==================== COMPREHENSIVE METRICS COMMANDS ====================
     
@@ -742,39 +892,53 @@ Send me a trading signal or use the commands above!
     async def metrics_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /metrics command - comprehensive trading metrics"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
-            await update.message.reply_text("📊 Loading comprehensive trading metrics...")
+            if update.message:
+                await update.message.reply_text("📊 Loading comprehensive trading metrics...")
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available. Please try again later.")
                 return
             
             telegram_metrics = await metrics_manager.get_metrics_for_telegram()
-            await update.message.reply_text(telegram_metrics, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(telegram_metrics, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in metrics command: {e}")
-            await update.message.reply_text("❌ Error loading metrics. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading metrics. Please try again later.")
     
     async def performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /performance command - detailed performance analysis"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
-            await update.message.reply_text("📈 Analyzing trading performance...")
+            if update.message:
+                await update.message.reply_text("📈 Analyzing trading performance...")
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available. Please try again later.")
                 return
             
@@ -807,23 +971,30 @@ Send me a trading signal or use the commands above!
 
 🕐 Updated: {metrics.last_updated.strftime('%H:%M:%S')}"""
             
-            await update.message.reply_text(performance_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(performance_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in performance command: {e}")
-            await update.message.reply_text("❌ Error loading performance data. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading performance data. Please try again later.")
     
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stats command - quick statistics overview"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
@@ -838,23 +1009,30 @@ Send me a trading signal or use the commands above!
 ⚡ Rate: {summary['trades_per_hour']:.1f}/hr | Today: {summary['trades_today']}
 📉 Max DD: ${summary['max_drawdown']:+,.2f} ({summary['max_drawdown_pct']:.1f}%)"""
             
-            await update.message.reply_text(stats_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(stats_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in stats command: {e}")
-            await update.message.reply_text("❌ Error loading stats.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading stats.")
     
     async def winrate_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /winrate command - detailed win rate analysis"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
@@ -896,23 +1074,30 @@ Send me a trading signal or use the commands above!
 • Performance: {trend_emoji} {daily['pnl_change_percentage']:+.1f}% vs yesterday
 • Trades: {daily['today_trades']} today vs {daily['yesterday_trades']} yesterday"""
             
-            await update.message.reply_text(winrate_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(winrate_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in winrate command: {e}")
-            await update.message.reply_text("❌ Error loading win rate data.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading win rate data.")
     
     async def pnl_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /pnl command - profit and loss analysis"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
@@ -960,23 +1145,30 @@ Send me a trading signal or use the commands above!
 • Yesterday: {format_pnl(daily_comp['yesterday_pnl'])}
 • Change: {change_emoji} {daily_comp['pnl_change_percentage']:+.1f}%"""
             
-            await update.message.reply_text(pnl_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(pnl_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in pnl command: {e}")
-            await update.message.reply_text("❌ Error loading PnL data.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading PnL data.")
     
     async def streaks_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /streaks command - winning and losing streaks"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
@@ -1011,29 +1203,37 @@ Send me a trading signal or use the commands above!
 • Win Rate: {metrics.win_rate_percentage:.1f}%
 • {'Hot Streak! 🔥' if current_count >= 3 and metrics.current_streak_type == 'win' else 'Cold Streak ❄️' if current_count >= 3 and metrics.current_streak_type == 'loss' else 'Neutral 📊'}"""
             
-            await update.message.reply_text(streaks_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(streaks_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in streaks command: {e}")
-            await update.message.reply_text("❌ Error loading streak data.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading streak data.")
     
     async def pairs_performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /pairs command - performance by trading pair"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
             metrics = await metrics_manager.calculate_comprehensive_metrics()
             
             if not metrics.performance_by_trading_pair:
+                if update.message:
                 await update.message.reply_text("📭 No trading pair data available yet.")
                 return
             
@@ -1059,29 +1259,37 @@ Send me a trading signal or use the commands above!
             if len(sorted_pairs) > 10:
                 pairs_text += f"... and {len(sorted_pairs) - 10} more pairs"
             
-            await update.message.reply_text(pairs_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(pairs_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in pairs command: {e}")
-            await update.message.reply_text("❌ Error loading pairs data.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading pairs data.")
     
     async def hourly_performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /hourly command - success rate by time of day"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
             metrics = await metrics_manager.calculate_comprehensive_metrics()
             
             if not metrics.success_rate_by_time:
+                if update.message:
                 await update.message.reply_text("📭 No hourly performance data available yet.")
                 return
             
@@ -1112,23 +1320,30 @@ Send me a trading signal or use the commands above!
                 current_rate = metrics.success_rate_by_time[current_period]
                 hourly_text += f"\n🕐 **Current Hour ({current_period}):** {current_rate:.1f}%"
             
-            await update.message.reply_text(hourly_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(hourly_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in hourly command: {e}")
-            await update.message.reply_text("❌ Error loading hourly data.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading hourly data.")
     
     async def risk_metrics_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /risk command - risk analysis metrics"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
@@ -1167,29 +1382,37 @@ Send me a trading signal or use the commands above!
 🎯 **Risk Status:**
 {'🟢 Low Risk' if metrics.maximum_drawdown_percentage < 5 and metrics.sharpe_ratio > 1 else '🟡 Medium Risk' if metrics.maximum_drawdown_percentage < 15 and metrics.sharpe_ratio > 0 else '🔴 High Risk'}"""
             
-            await update.message.reply_text(risk_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(risk_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in risk command: {e}")
-            await update.message.reply_text("❌ Error loading risk metrics.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading risk metrics.")
     
     async def daily_comparison_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /daily command - daily performance comparison"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    if update.message:
                 await update.message.reply_text("❌ You are not authorized to use this bot.")
                 return
             
             metrics_manager = await self._ensure_metrics_manager()
             if not metrics_manager:
+                if update.message:
                 await update.message.reply_text("❌ Metrics system not available.")
                 return
             
             metrics = await metrics_manager.calculate_comprehensive_metrics()
             
             if not metrics.daily_comparison:
+                if update.message:
                 await update.message.reply_text("📭 No daily comparison data available yet.")
                 return
             
@@ -1231,10 +1454,12 @@ Send me a trading signal or use the commands above!
             
             daily_text += f"\n\n🕐 Updated: {metrics.last_updated.strftime('%H:%M:%S')}"
             
-            await update.message.reply_text(daily_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(daily_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in daily command: {e}")
-            await update.message.reply_text("❌ Error loading daily comparison.")
+            if update.message:
+                await update.message.reply_text("❌ Error loading daily comparison.")
     
     # ==================== END METRICS COMMANDS ====================

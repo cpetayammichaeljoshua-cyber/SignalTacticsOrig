@@ -220,27 +220,23 @@ class ComprehensiveBacktester:
             return False
     
     def _simulate_trade_outcome(self, trade: Dict[str, Any], vol_category: str, efficiency: float) -> Dict[str, Any]:
-        """Simulate realistic trade outcome based on market conditions with proper risk controls"""
+        """Simulate realistic trade outcome based on market conditions"""
         
         try:
-            # More conservative win probability based on realistic market conditions
+            # Win probability based on leverage efficiency and conditions
             if efficiency > 90:
-                win_prob = 0.65  # Very good conditions (reduced from 0.78)
+                win_prob = 0.78  # Very good conditions
             elif efficiency > 70:
-                win_prob = 0.58  # Good conditions (reduced from 0.70)
+                win_prob = 0.70  # Good conditions
             elif efficiency > 50:
-                win_prob = 0.52  # Average conditions (reduced from 0.62)
+                win_prob = 0.62  # Average conditions
             elif efficiency > 30:
-                win_prob = 0.45  # Poor conditions (reduced from 0.55)
+                win_prob = 0.55  # Poor conditions
             else:
-                win_prob = 0.38  # Very poor conditions (reduced from 0.48)
+                win_prob = 0.48  # Very poor conditions
             
-            # Add market regime impact
+            # Random outcome
             import random
-            market_regime_factor = random.uniform(0.85, 1.15)  # Market conditions variance
-            win_prob *= market_regime_factor
-            win_prob = max(0.2, min(0.8, win_prob))  # Cap between 20-80%
-            
             is_winner = random.random() < win_prob
             
             # Duration (15 minutes to 4 hours)
@@ -253,31 +249,27 @@ class ComprehensiveBacktester:
             tp_price = trade['take_profit_price']
             
             if is_winner:
-                if random.random() < 0.60:  # 60% hit full TP (reduced from 75%)
-                    # Add realistic slippage for TP
-                    slippage_factor = random.uniform(0.9995, 0.9999)  # 0.01-0.05% slippage
-                    exit_price = tp_price * slippage_factor if trade['direction'] == 'LONG' else tp_price / slippage_factor
+                if random.random() < 0.75:  # 75% hit full TP
+                    exit_price = tp_price
                     exit_reason = "Take Profit"
-                else:  # 40% partial profit
+                else:  # 25% partial profit
                     if trade['direction'] == 'LONG':
-                        profit_pct = random.uniform(0.8, 2.5)  # More conservative profits
+                        profit_pct = random.uniform(1.8, 4.2)
                         exit_price = entry_price * (1 + profit_pct / 100)
                     else:
-                        profit_pct = random.uniform(0.8, 2.5)
+                        profit_pct = random.uniform(1.8, 4.2)
                         exit_price = entry_price * (1 - profit_pct / 100)
                     exit_reason = "Partial Profit"
             else:
-                if random.random() < 0.85:  # 85% hit stop loss (more realistic)
-                    # Add realistic slippage for SL
-                    slippage_factor = random.uniform(1.0001, 1.0005)  # Worse slippage on stops
-                    exit_price = sl_price * slippage_factor if trade['direction'] == 'SHORT' else sl_price / slippage_factor
+                if random.random() < 0.80:  # 80% hit stop loss
+                    exit_price = sl_price
                     exit_reason = "Stop Loss"
-                else:  # 15% small loss
+                else:  # 20% small loss
                     if trade['direction'] == 'LONG':
-                        loss_pct = random.uniform(0.2, 0.8)  # Smaller losses
+                        loss_pct = random.uniform(0.3, 1.2)
                         exit_price = entry_price * (1 - loss_pct / 100)
                     else:
-                        loss_pct = random.uniform(0.2, 0.8)
+                        loss_pct = random.uniform(0.3, 1.2)
                         exit_price = entry_price * (1 + loss_pct / 100)
                     exit_reason = "Quick Exit"
             

@@ -437,7 +437,7 @@ class PerfectSignalBot:
         return formatted_signal.strip()
 
     def format_advanced_signal(self, signal_data: Dict[str, Any]) -> str:
-        """Format advanced profitable signal with comprehensive leverage integration"""
+        """Format advanced profitable signal with detailed information"""
 
         # Extract signal details
         symbol = signal_data.get('symbol', 'N/A')
@@ -450,23 +450,9 @@ class PerfectSignalBot:
         strategy = signal_data.get('primary_strategy', 'Advanced Analysis')
         reason = signal_data.get('reason', 'Multi-indicator confluence')
         risk_reward = signal_data.get('risk_reward_ratio', 0)
-
-        # Calculate comprehensive leverage and margin
-        leverage_signal_data = {
-            'strength': strength,
-            'confidence': confidence,
-            'volatility_score': signal_data.get('volatility_score', 2.0),
-            'timeframe': signal_data.get('timeframe', '1h'),
-            'trade_size_usdt': signal_data.get('trade_size_usdt', 100.0),
-            'action': action
-        }
-        
-        leverage_info = self.leverage_calculator.calculate_optimal_leverage(leverage_signal_data)
-        
-        auto_leverage = leverage_info['auto_leverage']
-        recommended_leverage = leverage_info['recommended_leverage']
-        margin_type = leverage_info['margin_type']
-        cross_margin_enabled = leverage_info['cross_margin_enabled']
+        leverage = signal_data.get('leverage', 'N/A')
+        margin_type = signal_data.get('margin_type', 'N/A')
+        cross_margin_enabled = signal_data.get('cross_margin_enabled', False)
 
         # Direction styling
         if action in ['BUY', 'LONG']:
@@ -480,28 +466,17 @@ class PerfectSignalBot:
             direction_emoji = "📉"
             color_bar = "🔴🔴🔴🔴🔴"
 
-        # Calculate precise percentages
+        # Profit potential
         if take_profit and price:
             profit_percent = abs((take_profit - price) / price * 100)
         else:
             profit_percent = 0
 
+        # Risk percent
         if stop_loss and price:
             risk_percent = abs((price - stop_loss) / price * 100)
         else:
             risk_percent = 0
-
-        # Position sizing calculations
-        risk_percentage = 2.0
-        account_size = 1000.0
-        risk_amount = account_size * (risk_percentage / 100)
-        
-        price_diff = abs(price - stop_loss) if stop_loss else price * 0.02
-        position_size_usdt = (risk_amount / price_diff) * price if price_diff > 0 else 100.0
-        position_size_usdt = min(position_size_usdt, account_size * 0.2)
-        
-        quantity = round(position_size_usdt / price, 1) if price > 0 else 0.1
-        quantity = max(0.1, quantity)
 
         # Build advanced message
         timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S UTC')
@@ -511,47 +486,20 @@ class PerfectSignalBot:
 {emoji} **{action_text}** {direction_emoji}
 
 🏷️ **Pair:** `{symbol}`
-💰 **Entry:** `${price:.5f}`
-🛑 **Stop Loss:** `${stop_loss:.5f}` (-{risk_percent:.2f}%)
-🎯 **Take Profit:** `${take_profit:.5f}` (+{profit_percent:.2f}%)
-📊 **Quantity:** `{quantity} USDT`
+💰 **Entry:** `${price:.4f}`
+🛑 **Stop Loss:** `${stop_loss:.4f}` (-{risk_percent:.1f}%)
+🎯 **Take Profit:** `${take_profit:.4f}` (+{profit_percent:.1f}%)
 
-**📈 COMPREHENSIVE ANALYSIS:**
+📊 **ANALYSIS:**
 💪 **Signal Strength:** `{strength:.1f}%`
 🎯 **Confidence:** `{confidence:.1f}%`
 ⚖️ **Risk/Reward:** `1:{risk_reward:.2f}`
 🧠 **Strategy:** `{strategy.title()}`
-📊 **Reason:** `{reason}`
+📈 **Reason:** `{reason}`
 
-**⚡ DYNAMIC LEVERAGE & MARGIN:**
-🔧 **Recommended:** `{recommended_leverage}x`
-🤖 **Auto Leverage:** `{auto_leverage}x`
-🔗 **Margin Type:** `{margin_type}`
-✅ **Cross Margin:** `{'Enabled' if cross_margin_enabled else 'Disabled'}`
-💰 **Position Size:** `${position_size_usdt:.0f} USDT`
-🛡️ **Risk Amount:** `${risk_amount:.0f} USDT ({risk_percentage}%)`
-
-**🎯 CORNIX COMPATIBLE:**
-```
-#{symbol} {action}
-
-Entry Targets:
-{price:.5f}
-
-Take-Profit Targets:
-{take_profit:.5f}
-
-Stop Targets:
-{stop_loss:.5f}
-
-Leverage: {auto_leverage}x
-```
-
-**💡 LEVERAGE RATIONALE:**
-{leverage_info.get('leverage_rationale', 'Optimized for current market conditions')}
-
-**💰 PROFIT POTENTIAL:** `+{profit_percent:.2f}%`
-**🛡️ MAX RISK:** `-{risk_percent:.2f}%`
+💰 **PROFIT POTENTIAL:** `+{profit_percent:.1f}%`
+🛡️ **Max Risk:** `-{risk_percent:.1f}%`
+⚙️ **Leverage:** `{leverage}` ({margin_type}) {f'| Cross Margin: {"✅" if cross_margin_enabled else "❌"}'}
 
 ⏰ **Generated:** `{timestamp}`
 🔢 **Signal #:** `{self.signal_counter}`
@@ -559,7 +507,7 @@ Leverage: {auto_leverage}x
 {color_bar}
 *🤖 AI-Powered Signal by Perfect Bot*
 *📢 @SignalTactics - Premium Signals*
-*💎 Dynamic Risk Management Active*
+*💎 Most Profitable Strategy Active*
         """
 
         return formatted_signal.strip()

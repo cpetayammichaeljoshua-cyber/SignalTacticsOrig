@@ -137,6 +137,18 @@ class FXSUSDTTelegramBot:
             sl_percent = ((sl - entry) / entry) * 100
             tp_percent = ((entry - tp) / entry) * 100
 
+        # Calculate dynamic leverage based on signal strength and timeframe
+        if signal.timeframe == "30m":
+            auto_leverage = min(20, max(5, int(signal.signal_strength / 5)))
+        elif signal.timeframe == "15m":
+            auto_leverage = min(15, max(3, int(signal.signal_strength / 6)))
+        elif signal.timeframe == "5m":
+            auto_leverage = min(12, max(3, int(signal.signal_strength / 7)))
+        else:  # 1m
+            auto_leverage = min(10, max(2, int(signal.signal_strength / 8)))
+
+        recommended_leverage = max(2, int(auto_leverage * 0.8))  # More conservative recommendation
+
         cornix_signal = f"""
 {direction_emoji} **ICHIMOKU SNIPER - PINE SCRIPT v6**
 
@@ -147,6 +159,13 @@ class FXSUSDTTelegramBot:
 • **Stop Loss:** `{sl:.5f}` (-{sl_percent:.2f}%)
 • **Take Profit:** `{tp:.5f}` (+{tp_percent:.2f}%)
 • **Timeframe:** `{signal.timeframe}` ⚡
+
+**⚡ LEVERAGE & MARGIN:**
+• **Recommended:** `{recommended_leverage}x`
+• **Auto Leverage:** `{auto_leverage}x`
+• **Margin Type:** `CROSS`
+• **Cross Margin:** `✅ Enabled`
+• **Auto Add Margin:** `✅ Active`
 
 **⚙️ PINE SCRIPT PARAMETERS:**
 • **Strategy:** `Ichimoku Sniper Multi-TF Enhanced`
@@ -168,13 +187,14 @@ FXSUSDT.P {signal.action}
 Entry: {entry:.5f}
 SL: {sl:.5f}
 TP: {tp:.5f}
-Leverage: Auto
+Leverage: {auto_leverage}x
+Margin: CROSS
 ```
 
 **⏰ Signal Time:** `{signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}`
 **🤖 Bot:** `Pine Script Ichimoku Sniper v6`
 
-*Exact Pine Script implementation with comprehensive conditions*
+*Cross Margin & Auto Leverage - Comprehensive Risk Management*
         """.strip()
 
         return cornix_signal

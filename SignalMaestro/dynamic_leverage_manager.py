@@ -563,6 +563,10 @@ class DynamicLeverageManager:
                 return {
                     'recommended_leverage': self.leverage_config['default_leverage'],
                     'max_leverage': self.leverage_config['max_leverage'],
+                    'auto_leverage': self.leverage_config['default_leverage'],
+                    'margin_type': 'CROSS',
+                    'cross_margin_enabled': True,
+                    'leverage_mode': 'AUTO',
                     'risk_analysis': 'Insufficient data for volatility analysis',
                     'confidence': 'low'
                 }
@@ -586,6 +590,13 @@ class DynamicLeverageManager:
             adjusted_leverage = max(self.leverage_config['min_leverage'], 
                                   min(adjusted_leverage, max_leverage))
             
+            # Auto leverage calculation (dynamic based on market conditions)
+            auto_leverage = self._calculate_auto_leverage(volatility_profile, trade_size_usdt, trade_direction)
+            
+            # Cross margin settings
+            cross_margin_enabled = True
+            margin_type = 'CROSS'  # Always use cross margin for better risk distribution
+            
             # Risk analysis
             risk_factors = []
             if volatility_profile.volatility_score > 3.0:
@@ -604,6 +615,10 @@ class DynamicLeverageManager:
             return {
                 'recommended_leverage': adjusted_leverage,
                 'max_leverage': max_leverage,
+                'auto_leverage': auto_leverage,
+                'margin_type': margin_type,
+                'cross_margin_enabled': cross_margin_enabled,
+                'leverage_mode': 'AUTO',
                 'volatility_score': volatility_profile.volatility_score,
                 'risk_level': volatility_profile.risk_level,
                 'risk_factors': risk_factors,
@@ -611,7 +626,14 @@ class DynamicLeverageManager:
                 'confidence': confidence,
                 'atr_percentage': volatility_profile.atr_percentage,
                 'size_adjustment': size_adjustment,
-                'direction_adjustment': direction_adjustment
+                'direction_adjustment': direction_adjustment,
+                'margin_settings': {
+                    'type': margin_type,
+                    'cross_enabled': cross_margin_enabled,
+                    'isolated_enabled': False,
+                    'auto_add_margin': True,
+                    'maintenance_margin_ratio': self._calculate_maintenance_margin_ratio(adjusted_leverage)
+                }
             }
             
         except Exception as e:
@@ -819,6 +841,59 @@ class DynamicLeverageManager:
         except Exception as e:
             self.logger.error(f"❌ Error updating leverage config: {e}")
     
+    def _calculate_auto_leverage(self, volatility_profile, trade_size_usdt: float, trade_direction: str) -> int:
+        """Calculate automatic leverage based on dynamic market conditions"""
+        try:
+            # Base auto leverage from volatility
+            volatility_score = volatility_profile.volatility_score
+            
+            if volatility_score < 0.5:
+                auto_leverage = 15  # Very stable market
+            elif volatility_score < 1.0:
+                auto_leverage = 12  # Stable market
+            elif volatility_score < 2.0:
+                auto_leverage = 8   # Moderate volatility
+            elif volatility_score < 3.5:
+                auto_leverage = 5   # High volatility
+            else:
+                auto_leverage = 3   # Extreme volatility
+            
+            # Adjust for trade size
+            if trade_size_usdt > 500:
+                auto_leverage = max(2, int(auto_leverage * 0.7))
+            elif trade_size_usdt > 1000:
+                auto_leverage = max(2, int(auto_leverage * 0.5))
+            
+            # Adjust for direction (shorts typically get lower leverage in volatile conditions)
+            if trade_direction == 'SHORT' and volatility_score > 2.0:
+                auto_leverage = max(2, int(auto_leverage * 0.8))
+            
+            # Ensure within bounds
+            return max(self.leverage_config['min_leverage'], 
+                      min(auto_leverage, self.leverage_config['max_leverage']))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating auto leverage: {e}")
+            return self.leverage_config['default_leverage']
+    
+    def _calculate_maintenance_margin_ratio(self, leverage: int) -> float:
+        """Calculate maintenance margin ratio based on leverage"""
+        try:
+            # Higher leverage = higher maintenance margin ratio
+            if leverage >= 20:
+                return 0.10  # 10%
+            elif leverage >= 15:
+                return 0.075  # 7.5%
+            elif leverage >= 10:
+                return 0.05   # 5%
+            elif leverage >= 5:
+                return 0.025  # 2.5%
+            else:
+                return 0.01   # 1%
+                
+        except Exception:
+            return 0.05  # Default 5%
+
     def get_current_config(self) -> Dict[str, Any]:
         """Get current leverage configuration"""
         return {

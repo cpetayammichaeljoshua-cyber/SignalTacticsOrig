@@ -34,6 +34,8 @@ from signal_parser import SignalParser
 from risk_manager import RiskManager
 from config import Config
 from binance_trader import BinanceTrader
+# Import the new leverage calculator utility
+from leverage_calculator import LeverageCalculator
 
 class SessionManager:
     """Manage indefinite sessions using session secret"""
@@ -74,6 +76,7 @@ class PerfectSignalBot:
         self.logger = self._setup_logging()
         self.signal_parser = SignalParser()
         self.risk_manager = RiskManager()
+        self.leverage_calculator = LeverageCalculator() # Initialize leverage calculator
 
         # Session management
         self.session_manager = SessionManager(self.config.SESSION_SECRET)
@@ -387,6 +390,8 @@ class PerfectSignalBot:
         stop_loss = signal_data.get('stop_loss', 0)
         take_profit = signal_data.get('take_profit', 0)
         confidence = signal_data.get('confidence', 85)
+        leverage = signal_data.get('leverage', 'N/A')
+        margin_type = signal_data.get('margin_type', 'N/A')
 
         # Direction styling
         if action in ['BUY', 'LONG']:
@@ -420,13 +425,13 @@ class PerfectSignalBot:
 ⚖️ **Risk/Reward:** `1:{risk_reward:.2f}` {f"({risk_reward:.1f}:1)" if risk_reward > 0 else ""}
 
 📊 **Confidence:** `{confidence:.1f}%`
+⚙️ **Leverage:** `{leverage}` ({margin_type})
 ⏰ **Generated:** `{timestamp}`
 🔢 **Signal #:** `{self.signal_counter}`
 
 ---
 *🤖 Automated Signal by Perfect Bot*
-*📢 Channel: @SignalTactics*
-*⚡ Real-time Analysis*
+*📢 @SignalTactics - Real-time Analysis*
         """
 
         return formatted_signal.strip()
@@ -445,6 +450,9 @@ class PerfectSignalBot:
         strategy = signal_data.get('primary_strategy', 'Advanced Analysis')
         reason = signal_data.get('reason', 'Multi-indicator confluence')
         risk_reward = signal_data.get('risk_reward_ratio', 0)
+        leverage = signal_data.get('leverage', 'N/A')
+        margin_type = signal_data.get('margin_type', 'N/A')
+        cross_margin_enabled = signal_data.get('cross_margin_enabled', False)
 
         # Direction styling
         if action in ['BUY', 'LONG']:
@@ -491,6 +499,7 @@ class PerfectSignalBot:
 
 💰 **PROFIT POTENTIAL:** `+{profit_percent:.1f}%`
 🛡️ **Max Risk:** `-{risk_percent:.1f}%`
+⚙️ **Leverage:** `{leverage}` ({margin_type}) {f'| Cross Margin: {"✅" if cross_margin_enabled else "❌"}'}
 
 ⏰ **Generated:** `{timestamp}`
 🔢 **Signal #:** `{self.signal_counter}`
@@ -587,9 +596,11 @@ class PerfectSignalBot:
 
             strength = signal_data.get('strength', 85)
             strategy = signal_data.get('primary_strategy', 'Advanced')
+            leverage = signal_data.get('leverage', 'N/A')
+            margin_type = signal_data.get('margin_type', 'N/A')
 
             ax1.set_title(f'{symbol} - 💎 PREMIUM SIGNAL | {strategy.title()} Strategy\n'
-                         f'Strength: {strength:.1f}% | R:R = {signal_data.get("risk_reward_ratio", 0):.2f} | Signal #{self.signal_counter}',
+                         f'Strength: {strength:.1f}% | R:R = {signal_data.get("risk_reward_ratio", 0):.2f} | Leverage: {leverage} ({margin_type}) | Signal #{self.signal_counter}',
                          color='#00ff88', fontsize=16, weight='bold')
             ax1.legend(loc='upper left', facecolor='#1a1a1a', edgecolor='#00ff88', labelcolor='white')
             ax1.tick_params(colors='white')
@@ -686,7 +697,7 @@ class PerfectSignalBot:
 
             # Analyze expanded list of cryptocurrencies for most profitable opportunities
             top_symbols = [
-                'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT', 
+                'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT',
                 'DOGEUSDT', 'MATICUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT', 'UNIUSDT',
                 'LTCUSDT', 'BCHUSDT', 'ATOMUSDT', 'FILUSDT', 'TRXUSDT', 'ETCUSDT',
                 'XLMUSDT', 'VETUSDT', 'ICPUSDT', 'THETAUSDT', 'FTMUSDT', 'HBARUSDT',
@@ -720,14 +731,14 @@ class PerfectSignalBot:
             if best_signals:
                 # Sort by profit potential and strength
                 best_signals.sort(key=lambda x: (x.get('profit_potential', 0) * x.get('strength', 0)), reverse=True)
-                
+
                 # Return top 3 signals for multiple trading opportunities
                 top_signals = best_signals[:3]
-                
+
                 for i, signal in enumerate(top_signals):
                     self.logger.info(f"🎯 Signal #{i+1} found: {signal.get('symbol')} {signal.get('action')} "
                                     f"(Strength: {signal.get('strength', 0):.1f}%, Profit: {signal.get('profit_potential', 0):.1f}%)")
-                
+
                 return top_signals  # Return list of signals instead of single signal
 
             return None
@@ -820,6 +831,18 @@ class PerfectSignalBot:
                 if profit_potential > 2.0 and risk_reward > 1.5:
                     strength = min(85 + (volume_ratio - 1) * 5, 98)
 
+                    # Use leverage calculator utility
+                    volatility_profile = self.binance_trader.get_volatility_profile(symbol)
+                    trade_size_usdt = entry_price * 1.0 # Placeholder for actual trade size calculation
+                    leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                        'strength': strength,
+                        'confidence': min(strength * 0.9, 95),
+                        'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                        'timeframe': '4h',
+                        'trade_size_usdt': trade_size_usdt,
+                        'action': 'BUY'
+                    })
+
                     return {
                         'symbol': symbol,
                         'action': 'BUY',
@@ -827,13 +850,16 @@ class PerfectSignalBot:
                         'stop_loss': stop_loss,
                         'take_profit': take_profit,
                         'strength': strength,
-                        'confidence': min(strength * 0.9, 95),
+                        'confidence': leverage_data['confidence'],
                         'profit_potential': profit_potential,
                         'risk_reward_ratio': risk_reward,
                         'primary_strategy': 'trend_momentum_breakout',
                         'reason': f'Strong bullish momentum with {volume_ratio:.1f}x volume and perfect trend alignment',
                         'timeframe': '4h',
-                        'strategies_used': ['Trend Analysis', 'MACD Momentum', 'Volume Confirmation', 'RSI Filter']
+                        'strategies_used': ['Trend Analysis', 'MACD Momentum', 'Volume Confirmation', 'RSI Filter'],
+                        'leverage': leverage_data['recommended_leverage'],
+                        'margin_type': leverage_data['margin_type'],
+                        'cross_margin_enabled': leverage_data['cross_margin_enabled']
                     }
 
             # Bearish momentum conditions
@@ -856,6 +882,18 @@ class PerfectSignalBot:
                 if profit_potential > 2.0 and risk_reward > 1.5:
                     strength = min(85 + (volume_ratio - 1) * 5, 98)
 
+                    # Use leverage calculator utility
+                    volatility_profile = self.binance_trader.get_volatility_profile(symbol)
+                    trade_size_usdt = entry_price * 1.0 # Placeholder for actual trade size calculation
+                    leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                        'strength': strength,
+                        'confidence': min(strength * 0.9, 95),
+                        'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                        'timeframe': '4h',
+                        'trade_size_usdt': trade_size_usdt,
+                        'action': 'SELL'
+                    })
+
                     return {
                         'symbol': symbol,
                         'action': 'SELL',
@@ -863,13 +901,16 @@ class PerfectSignalBot:
                         'stop_loss': stop_loss,
                         'take_profit': take_profit,
                         'strength': strength,
-                        'confidence': min(strength * 0.9, 95),
+                        'confidence': leverage_data['confidence'],
                         'profit_potential': profit_potential,
                         'risk_reward_ratio': risk_reward,
                         'primary_strategy': 'trend_momentum_breakout',
                         'reason': f'Strong bearish momentum with {volume_ratio:.1f}x volume and perfect trend reversal',
                         'timeframe': '4h',
-                        'strategies_used': ['Trend Analysis', 'MACD Momentum', 'Volume Confirmation', 'RSI Filter']
+                        'strategies_used': ['Trend Analysis', 'MACD Momentum', 'Volume Confirmation', 'RSI Filter'],
+                        'leverage': leverage_data['recommended_leverage'],
+                        'margin_type': leverage_data['margin_type'],
+                        'cross_margin_enabled': leverage_data['cross_margin_enabled']
                     }
 
             return None
@@ -932,6 +973,18 @@ class PerfectSignalBot:
                 strength = min(80 + bullish_signals * 5, 98)
 
                 if profit_potential > 2.5:
+                    # Use leverage calculator utility
+                    volatility_profile = self.binance_trader.get_volatility_profile(symbol)
+                    trade_size_usdt = entry_price * 1.0 # Placeholder for actual trade size calculation
+                    leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                        'strength': strength,
+                        'confidence': min(strength * 0.85, 92),
+                        'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                        'timeframe': 'Multi-TF',
+                        'trade_size_usdt': trade_size_usdt,
+                        'action': 'BUY'
+                    })
+
                     return {
                         'symbol': symbol,
                         'action': 'BUY',
@@ -939,13 +992,16 @@ class PerfectSignalBot:
                         'stop_loss': stop_loss,
                         'take_profit': take_profit,
                         'strength': strength,
-                        'confidence': min(strength * 0.85, 92),
+                        'confidence': leverage_data['confidence'],
                         'profit_potential': profit_potential,
                         'risk_reward_ratio': 3.0,
                         'primary_strategy': 'multi_timeframe_confluence',
                         'reason': f'Perfect multi-timeframe confluence with {bullish_signals} bullish signals',
                         'timeframe': 'Multi-TF',
-                        'strategies_used': ['1H Trend', '4H Trend', 'RSI Confluence', 'Support/Resistance']
+                        'strategies_used': ['1H Trend', '4H Trend', 'RSI Confluence', 'Support/Resistance'],
+                        'leverage': leverage_data['recommended_leverage'],
+                        'margin_type': leverage_data['margin_type'],
+                        'cross_margin_enabled': leverage_data['cross_margin_enabled']
                     }
 
             # Strong confluence for SELL
@@ -961,6 +1017,18 @@ class PerfectSignalBot:
                 strength = min(80 + bearish_signals * 5, 98)
 
                 if profit_potential > 2.5:
+                    # Use leverage calculator utility
+                    volatility_profile = self.binance_trader.get_volatility_profile(symbol)
+                    trade_size_usdt = entry_price * 1.0 # Placeholder for actual trade size calculation
+                    leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                        'strength': strength,
+                        'confidence': min(strength * 0.85, 92),
+                        'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                        'timeframe': 'Multi-TF',
+                        'trade_size_usdt': trade_size_usdt,
+                        'action': 'SELL'
+                    })
+
                     return {
                         'symbol': symbol,
                         'action': 'SELL',
@@ -968,13 +1036,16 @@ class PerfectSignalBot:
                         'stop_loss': stop_loss,
                         'take_profit': take_profit,
                         'strength': strength,
-                        'confidence': min(strength * 0.85, 92),
+                        'confidence': leverage_data['confidence'],
                         'profit_potential': profit_potential,
                         'risk_reward_ratio': 3.0,
                         'primary_strategy': 'multi_timeframe_confluence',
                         'reason': f'Perfect multi-timeframe confluence with {bearish_signals} bearish signals',
                         'timeframe': 'Multi-TF',
-                        'strategies_used': ['1H Trend', '4H Trend', 'RSI Confluence', 'Support/Resistance']
+                        'strategies_used': ['1H Trend', '4H Trend', 'RSI Confluence', 'Support/Resistance'],
+                        'leverage': leverage_data['recommended_leverage'],
+                        'margin_type': leverage_data['margin_type'],
+                        'cross_margin_enabled': leverage_data['cross_margin_enabled']
                     }
 
             return None
@@ -1012,6 +1083,18 @@ class PerfectSignalBot:
                     strength = min(75 + (volume_ratio - 2) * 10, 98)
 
                     if profit_potential > 2.0:
+                        # Use leverage calculator utility
+                        volatility_profile = self.binance_trader.get_volatility_profile(symbol)
+                        trade_size_usdt = entry_price * 1.0 # Placeholder for actual trade size calculation
+                        leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                            'strength': strength,
+                            'confidence': min(strength * 0.88, 94),
+                            'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                            'timeframe': '4h',
+                            'trade_size_usdt': trade_size_usdt,
+                            'action': 'BUY'
+                        })
+
                         return {
                             'symbol': symbol,
                             'action': 'BUY',
@@ -1019,13 +1102,16 @@ class PerfectSignalBot:
                             'stop_loss': stop_loss,
                             'take_profit': take_profit,
                             'strength': strength,
-                            'confidence': min(strength * 0.88, 94),
+                            'confidence': leverage_data['confidence'],
                             'profit_potential': profit_potential,
                             'risk_reward_ratio': 2.5,
                             'primary_strategy': 'volume_price_action',
                             'reason': f'Exceptional volume breakout with {volume_ratio:.1f}x normal volume',
                             'timeframe': '4h',
-                            'strategies_used': ['Volume Analysis', 'Price Action', 'Breakout Detection']
+                            'strategies_used': ['Volume Analysis', 'Price Action', 'Breakout Detection'],
+                            'leverage': leverage_data['recommended_leverage'],
+                            'margin_type': leverage_data['margin_type'],
+                            'cross_margin_enabled': leverage_data['cross_margin_enabled']
                         }
 
                 # Bearish volume breakdown
@@ -1040,6 +1126,18 @@ class PerfectSignalBot:
                     strength = min(75 + (volume_ratio - 2) * 10, 98)
 
                     if profit_potential > 2.0:
+                        # Use leverage calculator utility
+                        volatility_profile = self.binance_trader.get_volatility_profile(symbol)
+                        trade_size_usdt = entry_price * 1.0 # Placeholder for actual trade size calculation
+                        leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                            'strength': strength,
+                            'confidence': min(strength * 0.88, 94),
+                            'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                            'timeframe': '4h',
+                            'trade_size_usdt': trade_size_usdt,
+                            'action': 'SELL'
+                        })
+
                         return {
                             'symbol': symbol,
                             'action': 'SELL',
@@ -1047,13 +1145,16 @@ class PerfectSignalBot:
                             'stop_loss': stop_loss,
                             'take_profit': take_profit,
                             'strength': strength,
-                            'confidence': min(strength * 0.88, 94),
+                            'confidence': leverage_data['confidence'],
                             'profit_potential': profit_potential,
                             'risk_reward_ratio': 2.5,
                             'primary_strategy': 'volume_price_action',
                             'reason': f'Exceptional volume breakdown with {volume_ratio:.1f}x normal volume',
                             'timeframe': '4h',
-                            'strategies_used': ['Volume Analysis', 'Price Action', 'Breakdown Detection']
+                            'strategies_used': ['Volume Analysis', 'Price Action', 'Breakdown Detection'],
+                            'leverage': leverage_data['recommended_leverage'],
+                            'margin_type': leverage_data['margin_type'],
+                            'cross_margin_enabled': leverage_data['cross_margin_enabled']
                         }
 
             return None
@@ -1085,7 +1186,7 @@ class PerfectSignalBot:
 
                 # Format professional signal with enhanced data
                 formatted_signal = self.format_advanced_signal(signal)
-                
+
                 # Add signal ranking info
                 signal_header = f"🔥 **MULTI-SIGNAL ALERT #{i+1}//{len(signals)}** 🔥\n\n"
                 formatted_signal = signal_header + formatted_signal
@@ -1138,7 +1239,6 @@ class PerfectSignalBot:
 📢 **Delivery Status:** {'✅ Channel Success' if delivery_methods else '⚠️ Channel Failed - Sent to Bot Only'}
 🤖 **Delivered to:** {', '.join(delivery_methods) if delivery_methods else 'TradeTactics Bot Only'}
                     """
-
                     bot_success = await self.send_message(self.admin_chat_id, bot_notification)
                     if bot_success:
                         if "TradeTactics Bot" not in delivery_methods:
@@ -1155,7 +1255,7 @@ class PerfectSignalBot:
                     all_delivery_methods.extend(delivery_methods)
                     self.logger.info(f"✅ SIGNAL #{self.signal_counter} DELIVERED: {signal.get('symbol')} {signal.get('action')} "
                                    f"(Profit: {signal.get('profit_potential', 0):.1f}%, Strength: {signal.get('strength', 0):.1f}%)")
-                
+
                 # Small delay between signals
                 if i < len(signals) - 1:
                     await asyncio.sleep(3)
@@ -1213,6 +1313,28 @@ class PerfectSignalBot:
 
             self.signal_counter += 1
 
+            # --- Leverage and Margin Calculation ---
+            # Placeholder for volatility profile and trade size, these need to be determined dynamically
+            # For now, using dummy values. In a real scenario, these would come from market data and risk manager.
+            volatility_profile = await self.binance_trader.get_volatility_profile(parsed_signal.get('symbol'))
+            trade_size_usdt = 1000 # Example: Assume a trade size of $1000 USDT for calculation
+            trade_direction = parsed_signal.get('action', 'BUY')
+
+            # Use leverage calculator utility to determine leverage and margin settings
+            leverage_data = self.leverage_calculator.calculate_optimal_leverage({
+                'strength': parsed_signal.get('strength', 85),
+                'confidence': parsed_signal.get('confidence', 80),
+                'volatility_score': volatility_profile.volatility_score if volatility_profile else 2.0,
+                'timeframe': parsed_signal.get('timeframe', '1h'),
+                'trade_size_usdt': trade_size_usdt,
+                'action': trade_direction
+            })
+
+            parsed_signal['leverage'] = leverage_data['recommended_leverage']
+            parsed_signal['margin_type'] = leverage_data['margin_type']
+            parsed_signal['cross_margin_enabled'] = leverage_data['cross_margin_enabled']
+            # --- End Leverage and Margin Calculation ---
+
             # Format professional signal
             formatted_signal = self.format_professional_signal(parsed_signal)
 
@@ -1253,9 +1375,10 @@ class PerfectSignalBot:
 
 📊 **Trade:** {parsed_signal.get('symbol')} {parsed_signal.get('action')}
 📢 **Channel:** SignalTactics ({channel_used})
-🔗 **Link:** {self.channel_invite_link}
+🔗 **Invite Link:** {self.channel_invite_link}
 📈 **Chart:** {'✅ Included' if chart_base64 else '❌ Failed'}
 💰 **Entry:** ${parsed_signal.get('price', 'N/A')}
+⚙️ **Leverage:** {parsed_signal.get('leverage', 'N/A')} ({parsed_signal.get('margin_type', 'N/A')})
 🎯 **Success Rate:** 100%
                     """
                     await self.send_message(self.admin_chat_id, confirm_msg)
@@ -1367,7 +1490,10 @@ Send any trading signal message and it will be automatically parsed, formatted, 
                 'price': 45000.0,
                 'stop_loss': 44000.0,
                 'take_profit': 47000.0,
-                'confidence': 89.5
+                'confidence': 89.5,
+                'leverage': 10,
+                'margin_type': 'CROSS',
+                'cross_margin_enabled': True
             }
 
             self.signal_counter += 1

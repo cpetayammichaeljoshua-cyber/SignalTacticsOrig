@@ -162,7 +162,7 @@ class EnhancedPerfectScalpingBotV3:
                     if asyncio.iscoroutinefunction(self.database.initialize):
                         await self.database.initialize()
                     else:
-                        self.database.initialize()
+                        await asyncio.to_thread(self.database.initialize)
                 self.logger.info("✅ Database initialized")
             except Exception as e:
                 self.logger.warning(f"⚠️ Database initialization skipped: {e}")
@@ -208,6 +208,10 @@ class EnhancedPerfectScalpingBotV3:
     async def initialize_telegram_bot(self):
         """Initialize Telegram bot with commands"""
         try:
+            if not self.bot_token:
+                self.logger.warning("⚠️ No Telegram bot token provided, skipping bot initialization")
+                return
+                
             self.bot = Bot(token=self.bot_token)
             self.telegram_app = Application.builder().token(self.bot_token).build()
             
@@ -225,7 +229,8 @@ class EnhancedPerfectScalpingBotV3:
             await self.telegram_app.start()
             
             # Start polling in background
-            asyncio.create_task(self.telegram_app.updater.start_polling())
+            if self.telegram_app and hasattr(self.telegram_app, 'updater') and self.telegram_app.updater:
+                asyncio.create_task(self.telegram_app.updater.start_polling())
             
             self.logger.info("✅ Telegram bot initialized with commands")
             
@@ -242,7 +247,8 @@ class EnhancedPerfectScalpingBotV3:
                 return None
                 
             # Convert to DataFrame
-            df = pd.DataFrame(ohlcv_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df = pd.DataFrame(ohlcv_data)
+            df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df = df.astype({'open': float, 'high': float, 'low': float, 'close': float, 'volume': float})
             
@@ -594,7 +600,7 @@ TP3: `${signal.tp3:.4f}` (34%)
 {ml_section}
 
 ⚖️ **Risk/Reward:** `1:{risk_reward_ratio:.2f}`
-🕒 **Optimal Entry:** `{signal.optimal_entry_time.strftime('%H:%M:%S UTC')}`
+🕒 **Optimal Entry:** `{signal.optimal_entry_time.strftime('%H:%M:%S UTC') if signal.optimal_entry_time else 'Now'}`
 
 📈 **STRATEGY:** Advanced Time-Fibonacci Theory
 🎲 **Edge:** Golden Ratio + Time Confluence
@@ -673,7 +679,8 @@ TP3: `${signal.tp3:.4f}` (34%)
 
 🎯 **Ready for profitable scalping!**
         """
-        await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(welcome_msg, parse_mode='Markdown')
 
     async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -692,7 +699,8 @@ TP3: `${signal.tp3:.4f}` (34%)
 
 🟢 **All Systems Operational**
         """
-        await update.message.reply_text(status_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(status_msg, parse_mode='Markdown')
 
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stats command"""
@@ -717,7 +725,8 @@ TP3: `${signal.tp3:.4f}` (34%)
 🌀 Fibonacci Accuracy: {getattr(self.ml_analyzer, 'fibonacci_accuracy', 85.2):.1f}%
 📱 Telegram Trades: {getattr(self.ml_analyzer, 'telegram_trades_analyzed', 0)}
         """
-        await update.message.reply_text(stats_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
     async def handle_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /test command - Send test signal to channel"""
@@ -768,13 +777,16 @@ TP3: `$49,500.00` (34%)
             # Send test message to channel
             if self.bot and self.channel_id:
                 await self.bot.send_message(chat_id=self.channel_id, text=test_signal_msg, parse_mode='Markdown')
-                await update.message.reply_text("✅ Test signal sent to channel successfully!", parse_mode='Markdown')
+                if update.message:
+                    await update.message.reply_text("✅ Test signal sent to channel successfully!", parse_mode='Markdown')
             else:
-                await update.message.reply_text("❌ Bot or channel not configured", parse_mode='Markdown')
+                if update.message:
+                    await update.message.reply_text("❌ Bot or channel not configured", parse_mode='Markdown')
                 
         except Exception as e:
             self.logger.error(f"Error sending test signal: {e}")
-            await update.message.reply_text(f"❌ Error sending test signal: {str(e)}", parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(f"❌ Error sending test signal: {str(e)}", parse_mode='Markdown')
 
     async def handle_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /balance command"""
@@ -791,7 +803,8 @@ ETH: 0.0000
 
 📊 **Portfolio Value:** ~$10,000 USDT
         """
-        await update.message.reply_text(balance_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(balance_msg, parse_mode='Markdown')
 
     async def handle_signals(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /signals command"""
@@ -812,7 +825,8 @@ ETH: 0.0000
 
 **Next Scan:** {self.scan_interval//60} minutes
         """
-        await update.message.reply_text(signals_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(signals_msg, parse_mode='Markdown')
 
     async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
@@ -840,7 +854,8 @@ Advanced Time-Fibonacci Theory combining optimal trading sessions with golden ra
 
 💎 *Professional Scalping at its finest*
         """
-        await update.message.reply_text(help_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(help_msg, parse_mode='Markdown')
 
     def _get_current_session(self) -> str:
         """Get current trading session"""
@@ -872,7 +887,7 @@ Advanced Time-Fibonacci Theory combining optimal trading sessions with golden ra
             self.logger.info(f"   ML Enhanced: {ml_usage:.1f}%")
 
             # Stop Telegram bot
-            if self.telegram_app:
+            if self.telegram_app and hasattr(self.telegram_app, 'updater') and self.telegram_app.updater:
                 await self.telegram_app.updater.stop()
                 await self.telegram_app.stop()
                 await self.telegram_app.shutdown()

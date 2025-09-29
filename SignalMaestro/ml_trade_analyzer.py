@@ -67,6 +67,14 @@ class MLTradeAnalyzer:
         
         self.logger.info("🧠 ML Trade Analyzer initialized")
     
+    def load_models(self):
+        """Public method to load trained models from disk"""
+        try:
+            self._load_models()
+            self.logger.info("✅ ML models loaded successfully")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load ML models: {e}")
+    
     def _initialize_database(self):
         """Initialize SQLite database for trade storage"""
         try:

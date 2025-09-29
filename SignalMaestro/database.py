@@ -621,3 +621,28 @@ class Database:
         except Exception as e:
             self.logger.error(f"Error inserting trade: {e}")
             return None
+            
+    def save_signal_data(self, data: Dict[str, Any]) -> Optional[int]:
+        """Save signal data to database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO signals (signal_data, parsed_signal, status)
+                VALUES (?, ?, ?)
+            ''', (
+                json.dumps(data),
+                json.dumps(data.get('parsed_signal', {})),
+                data.get('status', 'processed')
+            ))
+            
+            signal_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+            return signal_id
+            
+        except Exception as e:
+            self.logger.error(f"Error saving signal data: {e}")
+            return None

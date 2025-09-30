@@ -10,24 +10,45 @@ import logging
 import sys
 import os
 from pathlib import Path
+import subprocess
+
+# Install required packages
+required_packages = ['schedule', 'numpy', 'python-telegram-bot', 'aiohttp']
+for package in required_packages:
+    try:
+        __import__(package.replace('-', '_'))
+    except ImportError:
+        print(f"Installing {package}...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 # Add SignalMaestro to path
 current_dir = Path(__file__).parent
 signal_maestro_path = current_dir / "SignalMaestro"
 sys.path.insert(0, str(signal_maestro_path))
+sys.path.insert(0, str(current_dir))
 
 try:
-    from hourly_automation_scheduler import HourlyAutomationScheduler
-    from automated_backtest_optimizer import AutomatedBacktestOptimizer
+    from SignalMaestro.hourly_automation_scheduler import HourlyAutomationScheduler
+    from SignalMaestro.automated_backtest_optimizer import AutomatedBacktestOptimizer
 except ImportError as e:
     print(f"Import error: {e}")
-    print("Make sure you're running from the correct directory")
-    sys.exit(1)
+    try:
+        # Try alternative import paths
+        from hourly_automation_scheduler import HourlyAutomationScheduler
+        from automated_backtest_optimizer import AutomatedBacktestOptimizer
+    except ImportError as e2:
+        print(f"Alternative import error: {e2}")
+        print("Make sure you're running from the correct directory")
+        print("Available files:")
+        for f in os.listdir(signal_maestro_path):
+            if f.endswith('.py'):
+                print(f"  - {f}")
+        sys.exit(1)
 
 def setup_logging():
     """Setup comprehensive logging"""
     log_dir = Path("SignalMaestro/logs")
-    log_dir.mkdir(exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
     
     logging.basicConfig(
         level=logging.INFO,

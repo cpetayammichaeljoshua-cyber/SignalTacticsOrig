@@ -201,6 +201,19 @@ mode = "sequential"
 task = "shell.exec"
 args = "python start_hourly_automation.py"
 
+[[workflows.workflow]]
+name = "Fix All Dependencies"
+author = 48103457
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python fix_all_dependencies.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_hourly_automation.py"
+
 [[ports]]
 localPort = 3000
 externalPort = 80

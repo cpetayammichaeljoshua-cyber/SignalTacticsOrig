@@ -12,12 +12,35 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-import numpy as np
-from dataclasses import dataclass, asdict
 import sqlite3
+import sys
+import os
 
-from fxsusdt_trader import FXSUSDTTrader
-from ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
+# Install numpy if not available
+try:
+    import numpy as np
+except ImportError:
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "numpy"])
+    import numpy as np
+
+from dataclasses import dataclass, asdict
+
+try:
+    from fxsusdt_trader import FXSUSDTTrader
+    from ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
+except ImportError as e:
+    print(f"Import error: {e}")
+    # Add current directory to path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    try:
+        from fxsusdt_trader import FXSUSDTTrader
+        from ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
+    except ImportError:
+        print("Failed to import required modules. Please check file paths.")
+        sys.exit(1)
 
 @dataclass
 class OptimizationResult:

@@ -1847,6 +1847,16 @@ Use `/alerts` to manage your alerts."""
         chat_id = str(update.effective_chat.id)
 
         try:
+            # Import numpy with fallback
+            try:
+                import numpy as np
+            except ImportError:
+                await self.send_message(chat_id, "📦 Installing required packages...")
+                import subprocess
+                import sys
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "numpy"])
+                import numpy as np
+
             await self.send_message(chat_id, "🔧 Running strategy optimization...")
 
             # Get recent performance data
@@ -2018,23 +2028,29 @@ Use `/alerts` to manage your alerts."""
     async def start_telegram_polling(self):
         """Start Telegram bot with polling and command handling"""
         try:
-            from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-            from telegram import Update
-
             # Install the library if missing
             try:
                 import telegram
+                from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+                from telegram import Update
             except ImportError:
                 self.logger.info("Installing python-telegram-bot...")
                 import subprocess
-                # Use pip3 for compatibility in some environments
-                subprocess.check_call(["pip3", "install", "python-telegram-bot==20.7"])
-                # Reload modules after installation
-                import importlib
-                importlib.reload(telegram.ext)
-                importlib.reload(telegram)
-                from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-                from telegram import Update
+                import sys
+                try:
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-telegram-bot==20.7"])
+                except Exception as install_error:
+                    self.logger.error(f"Failed to install telegram bot: {install_error}")
+                    return False
+                
+                # Import after installation
+                try:
+                    import telegram
+                    from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+                    from telegram import Update
+                except ImportError as final_error:
+                    self.logger.error(f"Failed to import telegram after installation: {final_error}")
+                    return False
 
             # Create application with proper configuration
             application = Application.builder().token(self.bot_token).build()

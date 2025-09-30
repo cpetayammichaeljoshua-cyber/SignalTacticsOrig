@@ -7,15 +7,37 @@ Runs automated backtest and optimization every hour
 
 import asyncio
 import logging
-import schedule
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 import threading
 import json
+import sys
+import os
 
-from automated_backtest_optimizer import AutomatedBacktestOptimizer
-from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+# Install schedule if not available
+try:
+    import schedule
+except ImportError:
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "schedule"])
+    import schedule
+
+try:
+    from automated_backtest_optimizer import AutomatedBacktestOptimizer
+    from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+except ImportError as e:
+    print(f"Import error: {e}")
+    # Add current directory to path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    try:
+        from automated_backtest_optimizer import AutomatedBacktestOptimizer
+        from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+    except ImportError:
+        print("Failed to import required modules. Please check file paths.")
+        sys.exit(1)
 
 class HourlyAutomationScheduler:
     """Scheduler for hourly automated optimization"""

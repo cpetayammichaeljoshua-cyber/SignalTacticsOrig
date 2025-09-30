@@ -90,6 +90,18 @@ class HourlyAutomationScheduler:
             start_time = datetime.now()
             self.logger.info(f"🚀 Starting automated optimization cycle at {start_time.strftime('%H:%M:%S')}")
             
+            # Pre-cycle error checking and fixing
+            try:
+                from comprehensive_error_fixer import ComprehensiveErrorFixer
+                error_fixer = ComprehensiveErrorFixer()
+                
+                # Apply quick fixes before optimization
+                optimizations = await error_fixer.optimize_bot_performance()
+                if optimizations:
+                    self.logger.info(f"Applied {len(optimizations)} pre-optimization fixes")
+            except Exception as e:
+                self.logger.warning(f"Error in pre-cycle optimization: {e}")
+            
             # Update status
             status = self.load_status()
             status['status'] = 'running'

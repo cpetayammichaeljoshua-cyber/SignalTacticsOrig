@@ -34,6 +34,10 @@ def check_and_install_dependencies():
         'matplotlib': 'matplotlib',
         'seaborn': 'seaborn',
         'requests': 'requests',
+        'httpx': 'httpx',
+        'websockets': 'websockets',
+        'python-binance': 'python-binance',
+        'ta': 'ta',
         'asyncio': None,  # Built-in
         'sqlite3': None,  # Built-in
         'json': None,     # Built-in

@@ -48,9 +48,9 @@ class IchimokuSniperStrategy:
         self.timeframes = ["1m", "5m", "15m", "30m"]
         self.primary_timeframe = "30m"
 
-        # Signal filtering
-        self.min_signal_strength = 70.0
-        self.min_confidence = 60.0
+        # Signal filtering - Relaxed for better optimization
+        self.min_signal_strength = 60.0  # Reduced from 70.0
+        self.min_confidence = 50.0       # Reduced from 60.0
 
         self.logger.info("✅ Ichimoku Sniper Strategy initialized with Pine Script parameters")
 

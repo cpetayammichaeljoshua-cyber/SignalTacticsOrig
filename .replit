@@ -214,6 +214,19 @@ args = "python fix_all_dependencies.py"
 task = "shell.exec"
 args = "python start_hourly_automation.py"
 
+[[workflows.workflow]]
+name = "Comprehensive Error Fixer"
+author = 48103457
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python fix_all_dependencies.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/comprehensive_error_fixer.py"
+
 [[ports]]
 localPort = 3000
 externalPort = 80

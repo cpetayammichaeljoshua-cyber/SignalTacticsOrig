@@ -1,11 +1,4 @@
 {
-  "signal_generation_enabled": true,
-  "continuous_pushing": true,
-  "target_channel": "@SignalTactics",
-  "signal_interval_minutes": 5,
-  "max_signals_per_hour": 12,
-  "fallback_generation": true,
-  "error_recovery": true,
-  "restart_on_failure": true,
-  "health_monitoring": true
+  "confidence_threshold": 75.0,
+  "block_low_confidence": true
 }

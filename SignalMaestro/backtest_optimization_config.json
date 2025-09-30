@@ -1,0 +1,12 @@
+{
+  "enable_simulated_trades": true,
+  "min_trades_threshold": 5,
+  "relaxed_signal_generation": true,
+  "fallback_parameters": true,
+  "error_recovery_enabled": true,
+  "confidence_adjustment": {
+    "enabled": true,
+    "min_confidence": 75.0,
+    "boost_factor": 1.2
+  }
+}

@@ -1,6 +1,7 @@
 {
-  "min_signal_strength": 50.0,
-  "min_confidence": 40.0,
-  "signal_generation_mode": "relaxed",
-  "backtest_simulation_enhanced": true
+  "confidence_threshold": 75.0,
+  "min_signal_strength": 75.0,
+  "strict_filtering": true,
+  "ai_confidence_required": true,
+  "block_low_confidence_trades": true
 }

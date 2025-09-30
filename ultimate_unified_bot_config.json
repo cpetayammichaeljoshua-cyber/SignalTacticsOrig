@@ -1,28 +1,5 @@
 {
-  "trading_config": {
-    "risk_percentage": 10.0,
-    "max_concurrent_trades": 3,
-    "max_leverage": 60,
-    "leverage_multiplier": 0.8,
-    "sl1_percent": 1.8,
-    "sl2_percent": 4.0,
-    "sl3_percent": 7.5,
-    "advanced_price_action_threshold": 0.75,
-    "liquidity_zone_sensitivity": 0.8,
-    "schelling_point_weight": 1.3,
-    "order_flow_confirmation": true,
-    "strategic_position_multiplier": 1.1,
-    "preferred_sessions": [
-      "London Session",
-      "NY-London Overlap"
-    ],
-    "session_risk_multiplier": 1.2
-  },
-  "deployment_mode": "optimized",
-  "advanced_features_enabled": true,
-  "risk_management_enhanced": true,
-  "dynamic_leverage_enabled": true,
-  "multi_level_stop_loss": true,
-  "last_optimization": "2025-09-22T12:23:34.249939",
-  "workflow_version": "ultimate_combined_v1.0"
+  "confidence_threshold": 75.0,
+  "strict_filtering": true,
+  "error_handling": "comprehensive"
 }

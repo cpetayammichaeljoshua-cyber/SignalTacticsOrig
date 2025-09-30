@@ -451,6 +451,10 @@ class FXSUSDTTrader:
             self.logger.error(f"Error getting trade history: {e}")
             return []
 
+    async def get_market_data(self, symbol: str, timeframe: str, limit: int = 500) -> List[List]:
+        """Get market data (alias for get_klines for compatibility)"""
+        return await self.get_klines(timeframe, limit)
+
     async def test_connection(self) -> bool:
         """Test API connection and credentials"""
         try:

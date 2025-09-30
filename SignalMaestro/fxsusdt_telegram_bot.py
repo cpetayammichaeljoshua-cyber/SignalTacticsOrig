@@ -33,6 +33,19 @@ class FXSUSDTTelegramBot:
         # Components
         self.strategy = IchimokuSniperStrategy()
         self.trader = FXSUSDTTrader() # Assuming this is your Binance API wrapper
+        
+        # Initialize AI processor as None (fallback mode)
+        self.ai_processor = None
+        
+        # Try to initialize AI processor if available
+        try:
+            from ai_enhanced_signal_processor import AIEnhancedSignalProcessor
+            self.ai_processor = AIEnhancedSignalProcessor()
+            self.logger.info("✅ AI processor initialized successfully")
+        except ImportError:
+            self.logger.info("ℹ️ AI processor not available, using standard processing")
+        except Exception as e:
+            self.logger.warning(f"⚠️ AI processor initialization failed: {e}")
 
         # Telegram API
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
@@ -94,6 +107,19 @@ class FXSUSDTTelegramBot:
         }
 
         self.logger.info("🤖 FXSUSDT Futures Telegram Bot initialized with advanced commands")
+
+    def get_time_until_next_signal(self) -> int:
+        """Get time remaining until next signal can be sent"""
+        if not self.signal_timestamps:
+            return 0
+        
+        now = datetime.now()
+        last_signal_time = max(self.signal_timestamps)
+        time_since_last = now - last_signal_time
+        cooldown_seconds = self.min_signal_interval_minutes * 60
+        
+        remaining = cooldown_seconds - time_since_last.total_seconds()
+        return max(0, int(remaining))
 
     def can_send_signal(self) -> bool:
         """Check if we can send a signal based on rate limiting - Only 1 trade at a time"""
@@ -327,7 +353,8 @@ Margin: CROSS
 
                 # Rate limiting check
                 if not self.can_send_signal():
-                    self.logger.info(f"⏳ Rate limit active, {self.get_time_until_next_signal()}s remaining (1 trade per 30min)")
+                    remaining_time = self.get_time_until_next_signal() if hasattr(self, 'get_time_until_next_signal') else 30
+                    self.logger.info(f"⏳ Rate limit active, {remaining_time}s remaining (1 trade per 30min)")
                     continue
 
                 # Enhanced AI analysis if available

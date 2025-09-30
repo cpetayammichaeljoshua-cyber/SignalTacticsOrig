@@ -1113,6 +1113,7 @@ Use `/alerts` to manage your alerts."""
 • `/admin restart` - Restart scanner
 • `/admin stop` - Stop bot temporarily
 • `/admin logs` - Show recent logs
+• `/admin automation` - Hourly automation status
 
 📊 **Statistics:**
 • **Signals Sent:** {self.signal_count}
@@ -1226,6 +1227,59 @@ Use `/alerts` to manage your alerts."""
                     logs_msg += f"\n• User {user_id}: {count} commands"
 
                 await self.send_message(chat_id, logs_msg)
+
+            elif context.args[0].lower() == 'automation':
+                # Show hourly automation status
+                try:
+                    from pathlib import Path
+                    import json
+                    
+                    status_file = Path("SignalMaestro/hourly_automation_status.json")
+                    if status_file.exists():
+                        with open(status_file, 'r') as f:
+                            status = json.load(f)
+                        
+                        current_time = datetime.now()
+                        
+                        if status.get('last_run'):
+                            last_run = datetime.fromisoformat(status['last_run'])
+                            time_since_last = current_time - last_run
+                            last_run_str = f"{last_run.strftime('%H:%M UTC')} ({time_since_last.total_seconds()/3600:.1f}h ago)"
+                        else:
+                            last_run_str = "Never"
+                        
+                        if status.get('next_run'):
+                            next_run = datetime.fromisoformat(status['next_run'])
+                            time_to_next = next_run - current_time
+                            next_run_str = f"{next_run.strftime('%H:%M UTC')} (in {time_to_next.total_seconds()/3600:.1f}h)"
+                        else:
+                            next_run_str = "Not scheduled"
+                        
+                        automation_status = f"""⏰ **HOURLY AUTOMATION STATUS**
+
+🔄 **Current Status:** {status.get('status', 'Unknown').upper()}
+📊 **Last Run:** {last_run_str}
+📈 **Next Run:** {next_run_str}
+🎯 **Cycles Completed:** {status.get('cycles_completed', 0)}
+⚡ **Optimizations Applied:** {status.get('total_optimizations_applied', 0)}
+
+🤖 **Features Active:**
+• ✅ Automated Backtesting
+• ✅ Parameter Optimization
+• ✅ Performance Tracking
+• ✅ Intelligent Updates"""
+                        
+                        if status.get('last_error'):
+                            error_time = datetime.fromisoformat(status['error_time'])
+                            time_since_error = current_time - error_time
+                            automation_status += f"\n\n⚠️ **Last Error:** {status['last_error'][:100]}...\n📅 **Error Time:** {error_time.strftime('%H:%M UTC')} ({time_since_error.total_seconds()/3600:.1f}h ago)"
+                        
+                        await self.send_message(chat_id, automation_status)
+                    else:
+                        await self.send_message(chat_id, "❌ **Automation Not Running**\n\nHourly automation system is not active.\nUse the 'Hourly Auto-Optimization' workflow to start it.")
+                        
+                except Exception as e:
+                    await self.send_message(chat_id, f"❌ Error checking automation status: {e}")
 
             elif context.args[0].lower() == 'broadcast':
                 if len(context.args) < 2:

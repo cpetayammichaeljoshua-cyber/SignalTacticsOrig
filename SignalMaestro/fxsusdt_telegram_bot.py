@@ -301,29 +301,70 @@ Margin: CROSS
                 self.logger.debug("📊 No qualifying signals found on any timeframe")
                 return False
 
-            # Update signal sending logic for single trade execution
-            if signals and self.can_send_signal():
-                # Send only the strongest signal (1 trade at a time)
-                best_signal = max(signals, key=lambda x: x.signal_strength)
-                success = await self.send_signal_to_channel(best_signal)
-
-                if success:
-                    self.signal_timestamps.append(datetime.now())
-                    self.logger.info(f"🎯 Successfully processed {best_signal.action} signal ({best_signal.timeframe})")
-                    self.logger.info(f"⏳ Next signal available in {self.min_signal_interval_minutes} minutes")
-                else:
-                    self.logger.error("❌ Failed to send signal")
-            elif signals:
-                # Signals found but rate limited
-                pass  # Already logged in can_send_signal()
-            else:
-                self.logger.debug("📊 No signals found in current scan")
+            # Process signals with confidence filtering
+            await self.process_signals(signals)
 
             return True # Indicate that a scan occurred, even if no signal was sent
 
         except Exception as e:
             self.logger.error(f"Error in enhanced scan and signal: {e}")
             return False
+
+    async def process_signals(self, signals):
+        """Process and filter signals for trading with 75% confidence threshold"""
+        if not signals:
+            return
+
+        for signal in signals:
+            try:
+                # STRICT CONFIDENCE FILTER - Block trades < 75%
+                confidence_threshold = 75.0
+
+                if signal.confidence < confidence_threshold:
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below 75% threshold")
+                    self.logger.info(f"   Symbol: {signal.symbol}, Action: {signal.action}, Price: {signal.entry_price:.5f}")
+                    continue
+
+                # Rate limiting check
+                if not self.can_send_signal():
+                    self.logger.info(f"⏳ Rate limit active, {self.get_time_until_next_signal()}s remaining (1 trade per 30min)")
+                    continue
+
+                # Enhanced AI analysis if available
+                if self.ai_processor:
+                    enhanced_signal = await self.ai_processor.process_and_enhance_signal({
+                        'symbol': signal.symbol,
+                        'action': signal.action,
+                        'entry_price': signal.entry_price,
+                        'stop_loss': signal.stop_loss,
+                        'take_profit': signal.take_profit,
+                        'signal_strength': signal.signal_strength,
+                        'confidence': signal.confidence,
+                        'timeframe': signal.timeframe
+                    })
+
+                    # Double-check AI confidence
+                    ai_confidence = enhanced_signal.get('ai_confidence', 0) * 100 if enhanced_signal else 0
+
+                    if enhanced_signal and ai_confidence >= confidence_threshold:
+                        self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
+                        await self.send_enhanced_signal(enhanced_signal)
+                    else:
+                        self.logger.warning(f"🤖 AI BLOCKED signal - AI confidence {ai_confidence:.1f}% below 75% threshold")
+                else:
+                    # Send signal without AI enhancement (already passed confidence check)
+                    self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}% meets 75% threshold")
+                    await self.send_signal_to_channel(signal)
+
+            except Exception as e:
+                self.logger.error(f"❌ Error processing signal: {e}")
+                # Apply error fix if available
+                try:
+                    from dynamic_error_fixer import auto_fix_error
+                    auto_fix_error(str(e))
+                except:
+                    pass
+                continue
 
     async def check_price_alerts(self):
         """Check and trigger price alerts"""
@@ -639,7 +680,7 @@ Use `/alerts` to manage your alerts."""
 • **24h Open:** `{open_price:.5f}`
 
 **📊 Volume Information:**
-• **24h Volume:** `{volume:,.0f} {symbol[:2]}`
+• **24h Volume:** `{volume:,.0f}` {symbol[:2]}
 • **24h Volume (USDT):** `${quote_volume:,.0f}`
 
 **📋 Contract Info:**
@@ -1233,28 +1274,28 @@ Use `/alerts` to manage your alerts."""
                 try:
                     from pathlib import Path
                     import json
-                    
+
                     status_file = Path("SignalMaestro/hourly_automation_status.json")
                     if status_file.exists():
                         with open(status_file, 'r') as f:
                             status = json.load(f)
-                        
+
                         current_time = datetime.now()
-                        
+
                         if status.get('last_run'):
                             last_run = datetime.fromisoformat(status['last_run'])
                             time_since_last = current_time - last_run
                             last_run_str = f"{last_run.strftime('%H:%M UTC')} ({time_since_last.total_seconds()/3600:.1f}h ago)"
                         else:
                             last_run_str = "Never"
-                        
+
                         if status.get('next_run'):
                             next_run = datetime.fromisoformat(status['next_run'])
                             time_to_next = next_run - current_time
                             next_run_str = f"{next_run.strftime('%H:%M UTC')} (in {time_to_next.total_seconds()/3600:.1f}h)"
                         else:
                             next_run_str = "Not scheduled"
-                        
+
                         automation_status = f"""⏰ **HOURLY AUTOMATION STATUS**
 
 🔄 **Current Status:** {status.get('status', 'Unknown').upper()}
@@ -1268,16 +1309,16 @@ Use `/alerts` to manage your alerts."""
 • ✅ Parameter Optimization
 • ✅ Performance Tracking
 • ✅ Intelligent Updates"""
-                        
+
                         if status.get('last_error'):
                             error_time = datetime.fromisoformat(status['error_time'])
                             time_since_error = current_time - error_time
                             automation_status += f"\n\n⚠️ **Last Error:** {status['last_error'][:100]}...\n📅 **Error Time:** {error_time.strftime('%H:%M UTC')} ({time_since_error.total_seconds()/3600:.1f}h ago)"
-                        
+
                         await self.send_message(chat_id, automation_status)
                     else:
                         await self.send_message(chat_id, "❌ **Automation Not Running**\n\nHourly automation system is not active.\nUse the 'Hourly Auto-Optimization' workflow to start it.")
-                        
+
                 except Exception as e:
                     await self.send_message(chat_id, f"❌ Error checking automation status: {e}")
 
@@ -1440,7 +1481,7 @@ Use `/alerts` to manage your alerts."""
         """Fetch recent news relevant to FXSUSDT.P or crypto markets"""
         chat_id = str(update.effective_chat.id)
 
-        # Generate relevant market news based on current conditions
+        # Generate contextual news based on market data
         try:
             current_price = await self.trader.get_current_price()
             ticker = await self.trader.get_24hr_ticker_stats('FXSUSDT')
@@ -1658,7 +1699,7 @@ Use `/alerts` to manage your alerts."""
             # Create comprehensive results message
             profit_status = "🟢 PROFITABLE STRATEGY" if results['total_pnl'] > 0 else "🔴 UNPROFITABLE STRATEGY"
             performance_status = "🎯 EXCELLENT PERFORMANCE" if results['win_rate'] > 60 and results['profit_factor'] > 1.5 else "⚠️ NEEDS OPTIMIZATION" if results['profit_factor'] > 1.0 else "❌ POOR PERFORMANCE"
-            
+
             results_message = f"""🧪 **ICHIMOKU SNIPER BACKTEST RESULTS**
 
 📊 **Test Configuration:**
@@ -1802,24 +1843,24 @@ Use `/alerts` to manage your alerts."""
         # If close > Kijun and Tenkan > Kijun for BUY signal
         # If close < Kijun and Tenkan < Kijun for SELL signal
         # This is NOT the actual Ichimoku Sniper logic, just for parameter testing simulation.
-        
+
         # A more realistic approach would involve re-calculating the strategy's indicators on the fly
         # or having a method that accepts parameters and historical data.
-        
+
         # Simplified simulation with basic data structure
         if len(data) > 50:  # Ensure we have enough data
             # Generate 10-20 simulated trades for testing
             num_signals = random.randint(10, 20)
-            
+
             for i in range(num_signals):
                 # Simulate random profitable/unprofitable trades
                 profitable = random.random() > 0.4  # 60% win rate simulation
-                
+
                 if profitable:
                     return_pct = random.uniform(1.5, 3.0)  # 1.5-3% profit
                 else:
                     return_pct = random.uniform(-2.0, -0.8)  # 0.8-2% loss
-                
+
                 test_signals.append({
                     'profitable': profitable,
                     'return_pct': return_pct,
@@ -1827,7 +1868,7 @@ Use `/alerts` to manage your alerts."""
                     'sl': 2.13000 * (0.98 if profitable else 1.02),
                     'tp': 2.13000 * (1.03 if profitable else 0.97)
                 })
-        
+
         # Restore original parameters
         self.strategy.conversion_periods = original_conversion
         self.strategy.base_periods = original_base
@@ -2042,7 +2083,7 @@ Use `/alerts` to manage your alerts."""
                 except Exception as install_error:
                     self.logger.error(f"Failed to install telegram bot: {install_error}")
                     return False
-                
+
                 # Import after installation
                 try:
                     import telegram

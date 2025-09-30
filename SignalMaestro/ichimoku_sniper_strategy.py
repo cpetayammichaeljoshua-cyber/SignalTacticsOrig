@@ -191,9 +191,27 @@ class IchimokuSniperStrategy:
             reward = take_profit - current_close
             risk_reward_ratio = reward / risk if risk > 0 else 0
 
-            # Confidence based on distance from key levels
+            # Enhanced confidence calculation for better filtering
             distance_from_ema = abs(current_close - ema_200) / current_close * 100
-            confidence = min(95, 60 + (distance_from_ema * 10))
+
+            # Base confidence calculation
+            base_confidence = 60
+
+            # EMA distance factor (closer = higher confidence)
+            ema_factor = min(20, distance_from_ema * 5)
+
+            # Signal strength factor
+            strength_factor = (signal_strength - 60) / 4  # Scale from 60-100% to 0-10
+
+            # Cloud thickness factor (thicker cloud = higher confidence)
+            cloud_thickness = abs(lead_line1 - lead_line2) / current_close * 100
+            cloud_factor = min(10, cloud_thickness * 20)
+
+            # ATR factor (moderate volatility = higher confidence)
+            atr_pct = (atr_value / current_close) * 100
+            atr_factor = 5 if 0.5 < atr_pct < 2.0 else 0
+
+            confidence = min(95, base_confidence + ema_factor + strength_factor + cloud_factor + atr_factor)
 
             signal = IchimokuSignal(
                 symbol="FXSUSDT",
@@ -230,9 +248,27 @@ class IchimokuSniperStrategy:
             reward = current_close - take_profit
             risk_reward_ratio = reward / risk if risk > 0 else 0
 
-            # Confidence based on distance from key levels
+            # Enhanced confidence calculation for better filtering
             distance_from_ema = abs(current_close - ema_200) / current_close * 100
-            confidence = min(95, 60 + (distance_from_ema * 10))
+
+            # Base confidence calculation
+            base_confidence = 60
+
+            # EMA distance factor (closer = higher confidence)
+            ema_factor = min(20, distance_from_ema * 5)
+
+            # Signal strength factor
+            strength_factor = (signal_strength - 60) / 4  # Scale from 60-100% to 0-10
+
+            # Cloud thickness factor (thicker cloud = higher confidence)
+            cloud_thickness = abs(lead_line1 - lead_line2) / current_close * 100
+            cloud_factor = min(10, cloud_thickness * 20)
+
+            # ATR factor (moderate volatility = higher confidence)
+            atr_pct = (atr_value / current_close) * 100
+            atr_factor = 5 if 0.5 < atr_pct < 2.0 else 0
+
+            confidence = min(95, base_confidence + ema_factor + strength_factor + cloud_factor + atr_factor)
 
             signal = IchimokuSignal(
                 symbol="FXSUSDT",

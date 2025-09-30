@@ -1,0 +1,6 @@
+{
+  "min_signal_strength": 50.0,
+  "min_confidence": 40.0,
+  "signal_generation_mode": "relaxed",
+  "backtest_simulation_enhanced": true
+}

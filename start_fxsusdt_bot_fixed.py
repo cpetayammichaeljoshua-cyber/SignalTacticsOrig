@@ -53,6 +53,8 @@ apply_startup_fixes()
 # Now import and run the bot
 import logging
 from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
+from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy
+from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
 
 # Configure clean logging
 logging.basicConfig(

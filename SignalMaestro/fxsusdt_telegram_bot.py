@@ -33,10 +33,10 @@ class FXSUSDTTelegramBot:
         # Components
         self.strategy = IchimokuSniperStrategy()
         self.trader = FXSUSDTTrader() # Assuming this is your Binance API wrapper
-        
+
         # Initialize AI processor as None (fallback mode)
         self.ai_processor = None
-        
+
         # Try to initialize AI processor if available
         try:
             from ai_enhanced_signal_processor import AIEnhancedSignalProcessor
@@ -112,12 +112,12 @@ class FXSUSDTTelegramBot:
         """Get time remaining until next signal can be sent"""
         if not self.signal_timestamps:
             return 0
-        
+
         now = datetime.now()
         last_signal_time = max(self.signal_timestamps)
         time_since_last = now - last_signal_time
         cooldown_seconds = self.min_signal_interval_minutes * 60
-        
+
         remaining = cooldown_seconds - time_since_last.total_seconds()
         return max(0, int(remaining))
 
@@ -269,6 +269,7 @@ Margin: CROSS
             if success:
                 self.last_signal_time = datetime.now()
                 self.signal_timestamps.append(self.last_signal_time)
+                self.signal_count += 1 # Increment signal count
                 self.logger.info(f"📡 Signal sent to {self.channel_id}: {signal.action} FXSUSDT.P @ {signal.entry_price:.5f}")
 
                 # Send to admin if configured
@@ -353,8 +354,7 @@ Margin: CROSS
 
                 # Rate limiting check
                 if not self.can_send_signal():
-                    remaining_time = self.get_time_until_next_signal() if hasattr(self, 'get_time_until_next_signal') else 30
-                    self.logger.info(f"⏳ Rate limit active, {remaining_time}s remaining (1 trade per 30min)")
+                    # Rate limit message already handled above
                     continue
 
                 # Enhanced AI analysis if available
@@ -378,13 +378,13 @@ Margin: CROSS
                     # Double-check AI confidence
                     # Get AI confidence and ensure proper scaling
                     ai_confidence_raw = enhanced_signal.get('ai_confidence', 0) if enhanced_signal else 0
-                    
+
                     # Handle confidence scaling (convert to percentage if needed)
                     if ai_confidence_raw <= 1.0:
                         ai_confidence = ai_confidence_raw * 100
                     else:
                         ai_confidence = ai_confidence_raw
-                    
+
                     # Apply enhanced validation with minimum threshold
                     if enhanced_signal and ai_confidence >= confidence_threshold:
                         self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
@@ -1631,8 +1631,17 @@ Use `/alerts` to manage your alerts."""
                 await self.send_message(chat_id, f"🔄 Running accurate backtest...\n📅 Period: {duration_days} days\n⏱️ Timeframe: {timeframe}\n💰 Capital: ${initial_capital}\n📊 Risk: {max_risk_per_trade*100}% per trade")
 
             # Get sufficient historical data
-            candles_needed = duration_days * (1440 // self._get_timeframe_minutes(timeframe))
-            data = await self.trader.get_klines(timeframe, limit=min(1500, candles_needed))
+            # Calculate the number of candles needed based on duration and timeframe
+            timeframe_in_minutes = self._get_timeframe_minutes(timeframe)
+            if timeframe_in_minutes == 0: # Handle invalid timeframe
+                return {'error': f"Invalid timeframe: {timeframe}"}
+            
+            candles_needed = duration_days * (24 * 60 / timeframe_in_minutes)
+            # Binance API limit is 1000 candles per request. We fetch in chunks if needed.
+            # For simplicity here, we assume a maximum reasonable number of candles can be fetched.
+            # A more robust solution would handle pagination.
+            max_candles_fetch = 1000 
+            data = await self.trader.get_klines(timeframe, limit=min(max_candles_fetch, int(candles_needed)))
 
             if not data or len(data) == 0:
                 if chat_id:
@@ -1640,7 +1649,9 @@ Use `/alerts` to manage your alerts."""
                 return {'error': "Failed to fetch historical data"}
 
             # Simulate trades based on timeframe and duration
-            num_trades = max(5, int(duration_days * (1440 / self._get_timeframe_minutes(timeframe)) * 0.05))  # ~5% of candles have signals
+            # Adjusting trade generation to be more proportional to the data length
+            num_signals_per_candle = 0.05 # Simulate that ~5% of candles might generate a signal
+            num_trades = max(5, int(len(data) * num_signals_per_candle))
 
             for i in range(num_trades):
                 # Win probability based on our Ichimoku strategy
@@ -1648,29 +1659,30 @@ Use `/alerts` to manage your alerts."""
                 is_win = random.random() < win_probability
 
                 # Simulate realistic PnL
+                risk_amount = current_capital * max_risk_per_trade
                 if is_win:
                     # Win: 1:2 risk-reward ratio on average
-                    risk_amount = current_capital * max_risk_per_trade
                     # Simulate a reward that averages to 2x the risk, with some variance
                     reward_amount = risk_amount * random.uniform(1.8, 2.2)
                     trade_pnl = reward_amount
-                    current_capital += trade_pnl
-                    pnl_percent = (trade_pnl / (current_capital - trade_pnl)) * 100 if (current_capital - trade_pnl) else 0
+                    
                 else:
                     # Loss: Stop loss hit (risk amount)
-                    risk_amount = current_capital * max_risk_per_trade
                     # Simulate loss slightly less than risk amount for realism
                     trade_pnl = -risk_amount * random.uniform(0.8, 1.0)
-                    current_capital += trade_pnl
-                    pnl_percent = (trade_pnl / (current_capital - trade_pnl)) * 100 if (current_capital - trade_pnl) else 0
+                
+                current_capital += trade_pnl
 
                 # Apply commission
                 commission_cost = abs(trade_pnl) * commission_rate
                 current_capital -= commission_cost
+                
+                # Ensure capital doesn't go below a minimum threshold (e.g., to avoid issues with division by zero)
+                if current_capital < 1.0: # Arbitrary small amount to prevent major issues
+                    current_capital = 1.0 
 
                 trades.append({
                     'trade_num': i + 1,
-                    'pnl_percent': pnl_percent,
                     'pnl_usd': trade_pnl,
                     'capital_after': current_capital,
                     'is_win': is_win
@@ -1682,7 +1694,7 @@ Use `/alerts` to manage your alerts."""
             win_rate = (winning_trades / len(trades)) * 100 if trades else 0
 
             total_pnl = current_capital - initial_capital
-            total_return = (total_pnl / initial_capital) * 100
+            total_return = (total_pnl / initial_capital) * 100 if initial_capital else 0
 
             # Calculate profit factor
             gross_profit = sum(t['pnl_usd'] for t in trades if t['pnl_usd'] > 0)
@@ -1690,10 +1702,16 @@ Use `/alerts` to manage your alerts."""
             profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
 
             # Calculate Sharpe ratio (simplified)
-            returns = [t['pnl_percent'] for t in trades]
-            avg_return = np.mean(returns) if returns else 0
-            std_return = np.std(returns) if returns else 1
-            sharpe_ratio = (avg_return / std_return) * np.sqrt(252) if std_return > 0 else 0 # Assuming 252 trading days
+            # We need a list of returns per trade to calculate std deviation accurately
+            trade_returns_usd = [t['pnl_usd'] for t in trades]
+            if trade_returns_usd:
+                avg_return_usd = np.mean(trade_returns_usd)
+                std_return_usd = np.std(trade_returns_usd)
+                # Annualize Sharpe Ratio (assuming 252 trading days/year, 365 days for simpler calculation)
+                # This is a very rough approximation. A more accurate calculation involves daily returns.
+                sharpe_ratio = (avg_return_usd / std_return_usd) * np.sqrt(365) if std_return_usd > 0 else 0
+            else:
+                sharpe_ratio = 0
 
             # Trading frequency
             trades_per_day = len(trades) / duration_days if duration_days > 0 else 0
@@ -1707,8 +1725,14 @@ Use `/alerts` to manage your alerts."""
             max_drawdown = 0
             for trade in trades:
                 peak_capital = max(peak_capital, trade['capital_after'])
-                drawdown = (peak_capital - trade['capital_after']) / peak_capital * 100
-                max_drawdown = max(max_drawdown, drawdown)
+                # Ensure peak_capital is not zero to avoid division by zero
+                if peak_capital > 0:
+                    drawdown = ((peak_capital - trade['capital_after']) / peak_capital) * 100
+                    max_drawdown = max(max_drawdown, drawdown)
+                else:
+                    # If peak_capital is zero or negative, drawdown calculation might be unstable
+                    # Set to a high value or handle as an error if this scenario is critical
+                    max_drawdown = max(max_drawdown, 100.0) # Assume 100% drawdown if capital drops to zero
 
             return {
                 'duration_days': duration_days,
@@ -1743,8 +1767,8 @@ Use `/alerts` to manage your alerts."""
                 await self.send_message(chat_id, f"❌ Backtest failed: {results['error']}")
                 return
 
-            # Create comprehensive results message
-            profit_status = "🟢 PROFITABLE STRATEGY" if results['total_pnl'] > 0 else "🔴 UNPROFITABLE STRATEGY"
+            # Determine performance status text
+            profit_status = "🟢 PROFITABLE STRATEGY" if results['total_pnl'] >= 0 else "🔴 UNPROFITABLE STRATEGY"
             performance_status = "🎯 EXCELLENT PERFORMANCE" if results['win_rate'] > 60 and results['profit_factor'] > 1.5 else "⚠️ NEEDS OPTIMIZATION" if results['profit_factor'] > 1.0 else "❌ POOR PERFORMANCE"
 
             results_message = f"""🧪 **ICHIMOKU SNIPER BACKTEST RESULTS**
@@ -1784,7 +1808,7 @@ Use `/alerts` to manage your alerts."""
             await self.send_message(chat_id, results_message)
 
             # Additional detailed analysis if performance is good
-            if results['profit_factor'] > 1.5:
+            if results['profit_factor'] > 1.5 and results['total_trades'] > 10: # Only show detailed analysis for substantial results
                 analysis_message = f"""
 🎯 **STRATEGY ANALYSIS:**
 
@@ -1818,7 +1842,7 @@ Use `/alerts` to manage your alerts."""
             '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
             '1h': 60, '2h': 120, '4h': 240, '6h': 360, '8h': 480, '12h': 720, '1d': 1440
         }
-        return timeframe_map.get(timeframe, 30)
+        return timeframe_map.get(timeframe, 0) # Return 0 for invalid timeframe
 
     async def cmd_backtest(self, update, context):
         """Run comprehensive backtest with flexible duration
@@ -2126,6 +2150,7 @@ Use `/alerts` to manage your alerts."""
                 import subprocess
                 import sys
                 try:
+                    # Use a specific version to avoid potential conflicts
                     subprocess.check_call([sys.executable, "-m", "pip", "install", "python-telegram-bot==20.7"])
                 except Exception as install_error:
                     self.logger.error(f"Failed to install telegram bot: {install_error}")

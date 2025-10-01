@@ -365,9 +365,14 @@ Margin: CROSS
                         'entry_price': signal.entry_price,
                         'stop_loss': signal.stop_loss,
                         'take_profit': signal.take_profit,
+                        'take_profit_1': getattr(signal, 'take_profit_1', signal.take_profit),
+                        'take_profit_2': getattr(signal, 'take_profit_2', signal.take_profit * 1.5),
+                        'take_profit_3': getattr(signal, 'take_profit_3', signal.take_profit * 2.0),
                         'signal_strength': signal.signal_strength,
                         'confidence': signal.confidence,
-                        'timeframe': signal.timeframe
+                        'timeframe': signal.timeframe,
+                        'strength': signal.signal_strength,
+                        'leverage': 5  # Default leverage
                     })
 
                     # Double-check AI confidence
@@ -383,7 +388,10 @@ Margin: CROSS
                     # Apply enhanced validation with minimum threshold
                     if enhanced_signal and ai_confidence >= confidence_threshold:
                         self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
-                        await self.send_enhanced_signal(enhanced_signal)
+                        # Convert enhanced signal back to IchimokuSignal format
+                        enhanced_ichimoku_signal = signal
+                        enhanced_ichimoku_signal.confidence = ai_confidence
+                        await self.send_signal_to_channel(enhanced_ichimoku_signal)
                     elif enhanced_signal and ai_confidence > 0:
                         # Log detailed information for debugging
                         self.logger.warning(f"🤖 AI BLOCKED signal - AI confidence {ai_confidence:.1f}% below 75% threshold")

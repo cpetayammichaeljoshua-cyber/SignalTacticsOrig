@@ -169,20 +169,25 @@ class AIEnhancedSignalProcessor:
     
     def _create_signal_text(self, signal: Dict[str, Any]) -> str:
         """Create formatted text for AI analysis"""
+        # Get take profit values with fallback
+        tp1 = signal.get('take_profit_1') or signal.get('take_profit', 0)
+        tp2 = signal.get('take_profit_2', tp1 * 1.5 if tp1 else 0)
+        tp3 = signal.get('take_profit_3', tp1 * 2.0 if tp1 else 0)
+        
         return f"""
 Trading Signal Analysis:
 Symbol: {signal.get('symbol', 'N/A')}
 Direction: {signal.get('action', 'N/A')}
 Entry Price: ${signal.get('entry_price', 0):.6f}
 Stop Loss: ${signal.get('stop_loss', 0):.6f}
-Take Profit 1: ${signal.get('take_profit_1', 0):.6f}
-Take Profit 2: ${signal.get('take_profit_2', 0):.6f}
-Take Profit 3: ${signal.get('take_profit_3', 0):.6f}
-Leverage: {signal.get('leverage', 1)}x
-Signal Strength: {signal.get('strength', 0)}%
-Strategy: {signal.get('strategy', 'N/A')}
+Take Profit 1: ${tp1:.6f}
+Take Profit 2: ${tp2:.6f}
+Take Profit 3: ${tp3:.6f}
+Leverage: {signal.get('leverage', 5)}x
+Signal Strength: {signal.get('strength', signal.get('signal_strength', 0))}%
+Strategy: {signal.get('strategy', 'Ichimoku_Sniper')}
 Timeframe Analysis: {signal.get('timeframe', 'N/A')}
-Market Conditions: {signal.get('market_regime', 'N/A')}
+Market Conditions: {signal.get('market_regime', 'trending')}
 """
     
     def _format_for_cornix(self, signal: Dict[str, Any]) -> Dict[str, Any]:
@@ -355,17 +360,28 @@ Leverage: {leverage}x
     
     def _validate_signal(self, signal: Dict[str, Any]) -> bool:
         """Validate basic signal requirements"""
-        required_fields = ['symbol', 'action', 'entry_price', 'stop_loss', 'take_profit_1']
+        required_fields = ['symbol', 'action', 'entry_price', 'stop_loss']
         
         for field in required_fields:
             if field not in signal or signal[field] is None:
                 self.logger.warning(f"Signal validation failed: missing {field}")
                 return False
         
+        # Check for take profit - accept either take_profit or take_profit_1
+        has_tp = any(field in signal and signal[field] is not None for field in ['take_profit', 'take_profit_1'])
+        if not has_tp:
+            self.logger.warning("Signal validation failed: missing take profit")
+            return False
+        
         # Check numeric values
-        numeric_fields = ['entry_price', 'stop_loss', 'take_profit_1']
+        numeric_fields = ['entry_price', 'stop_loss']
+        if 'take_profit_1' in signal:
+            numeric_fields.append('take_profit_1')
+        elif 'take_profit' in signal:
+            numeric_fields.append('take_profit')
+            
         for field in numeric_fields:
-            if not isinstance(signal[field], (int, float)) or signal[field] <= 0:
+            if field in signal and (not isinstance(signal[field], (int, float)) or signal[field] <= 0):
                 self.logger.warning(f"Signal validation failed: invalid {field}")
                 return False
         

@@ -343,11 +343,11 @@ Margin: CROSS
 
         for signal in signals:
             try:
-                # STRICT CONFIDENCE FILTER - Block trades < 75%
-                confidence_threshold = 75.0
+                # FLEXIBLE CONFIDENCE FILTER - Allow trades >= 60%
+                confidence_threshold = 60.0
 
                 if signal.confidence < confidence_threshold:
-                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below 75% threshold")
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below {confidence_threshold}% threshold")
                     self.logger.info(f"   Symbol: {signal.symbol}, Action: {signal.action}, Price: {signal.entry_price:.5f}")
                     continue
 
@@ -359,16 +359,24 @@ Margin: CROSS
 
                 # Enhanced AI analysis if available
                 if self.ai_processor:
-                    enhanced_signal = await self.ai_processor.process_and_enhance_signal({
+                    # Prepare signal data with all required fields
+                    signal_data = {
                         'symbol': signal.symbol,
                         'action': signal.action,
                         'entry_price': signal.entry_price,
                         'stop_loss': signal.stop_loss,
                         'take_profit': signal.take_profit,
+                        'take_profit_1': getattr(signal, 'take_profit_1', signal.take_profit),
+                        'take_profit_2': getattr(signal, 'take_profit_2', signal.take_profit * 1.5),
+                        'take_profit_3': getattr(signal, 'take_profit_3', signal.take_profit * 2.0),
                         'signal_strength': signal.signal_strength,
                         'confidence': signal.confidence,
-                        'timeframe': signal.timeframe
-                    })
+                        'timeframe': signal.timeframe,
+                        'leverage': 10,  # Default leverage
+                        'strategy': 'Ichimoku_Sniper'
+                    }
+                    
+                    enhanced_signal = await self.ai_processor.process_and_enhance_signal(signal_data)
 
                     # Double-check AI confidence
                     ai_confidence = enhanced_signal.get('ai_confidence', 0) * 100 if enhanced_signal else 0

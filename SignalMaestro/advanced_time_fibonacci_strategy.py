@@ -683,7 +683,7 @@ class AdvancedTimeFibonacciStrategy:
                 time_confluence=time_analysis['time_strength'],
                 fibonacci_confluence=fib_analysis['confluence_strength'],
                 ml_prediction={
-                    **ml_prediction if ml_prediction else {},
+                    **(ml_prediction or {}),
                     'confidence_value': ml_confidence,
                     'confidence_band': confidence_band,
                     'leverage_multiplier': confidence_band_data['leverage_multiplier'],

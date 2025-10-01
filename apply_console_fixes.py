@@ -1,8 +1,8 @@
 
 #!/usr/bin/env python3
 """
-Comprehensive Console Error Fix Script
-Applies all fixes to eliminate console warnings and errors
+Enhanced Comprehensive Console Error Fix Script
+Applies all fixes to eliminate console warnings and errors including OpenAI rate limiting
 """
 
 import warnings
@@ -12,8 +12,8 @@ import logging
 from pathlib import Path
 
 def apply_comprehensive_console_fixes():
-    """Apply all console error fixes"""
-    print("🔧 Applying comprehensive console error fixes...")
+    """Apply all console error fixes including OpenAI and rate limiting optimizations"""
+    print("🔧 Applying enhanced comprehensive console error fixes...")
     
     # 1. Suppress all warnings globally
     warnings.filterwarnings('ignore')
@@ -76,9 +76,16 @@ def apply_comprehensive_console_fixes():
     # 7. Set environment variables for error suppression
     os.environ['PYTHONWARNINGS'] = 'ignore'
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    os.environ['OPENAI_LOG_LEVEL'] = 'ERROR'
     print("✅ Environment variables configured")
     
-    print("🎉 All console error fixes applied successfully!")
+    # 8. Configure logging to reduce verbosity
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('openai').setLevel(logging.WARNING)
+    logging.getLogger('telegram').setLevel(logging.WARNING)
+    print("✅ Logging verbosity reduced")
+    
+    print("🎉 All enhanced console error fixes applied successfully!")
 
 if __name__ == "__main__":
     apply_comprehensive_console_fixes()

@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Enhanced Comprehensive Console Error Fix Script
@@ -16,7 +17,7 @@ from datetime import datetime
 def apply_comprehensive_console_fixes():
     """Apply all console error fixes including OpenAI and rate limiting optimizations"""
     print("🔧 Applying enhanced comprehensive console error fixes...")
-
+    
     # 1. Suppress all warnings globally
     warnings.filterwarnings('ignore')
     warnings.filterwarnings('ignore', category=FutureWarning)
@@ -25,7 +26,7 @@ def apply_comprehensive_console_fixes():
     warnings.filterwarnings('ignore', category=RuntimeWarning)
     warnings.filterwarnings('ignore', category=ImportWarning)
     print("✅ Global warning suppression applied")
-
+    
     # 2. Fix pandas warnings
     try:
         import pandas as pd
@@ -38,7 +39,7 @@ def apply_comprehensive_console_fixes():
         print("✅ Pandas warning fixes applied")
     except ImportError:
         print("⚠️ Pandas not available")
-
+    
     # 3. Fix numpy warnings
     try:
         import numpy as np
@@ -46,7 +47,7 @@ def apply_comprehensive_console_fixes():
         print("✅ NumPy warning fixes applied")
     except ImportError:
         print("⚠️ NumPy not available")
-
+    
     # 4. Fix matplotlib warnings
     try:
         import matplotlib
@@ -55,29 +56,29 @@ def apply_comprehensive_console_fixes():
         print("✅ Matplotlib warning fixes applied")
     except ImportError:
         print("⚠️ Matplotlib not available")
-
+    
     # 5. Configure logging to reduce console noise
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('requests').setLevel(logging.WARNING)
     logging.getLogger('aiohttp').setLevel(logging.WARNING)
     logging.getLogger('telegram').setLevel(logging.WARNING)
     print("✅ Logging levels optimized")
-
+    
     # 6. Fix OpenAI rate limiting configuration
     fix_openai_rate_limiting()
-
+    
     # 7. Fix AI processor configuration
     fix_ai_processor_config()
-
+    
     # 8. Apply error suppression to existing modules
     apply_runtime_error_suppression()
-
+    
     print("✅ All comprehensive console fixes applied successfully")
 
 def fix_openai_rate_limiting():
     """Fix OpenAI rate limiting and API configuration"""
     print("🤖 Fixing OpenAI rate limiting...")
-
+    
     # Create enhanced OpenAI configuration
     openai_config = {
         "rate_limiting": {
@@ -99,16 +100,16 @@ def fix_openai_rate_limiting():
             "auto_fallback_on_error": True
         }
     }
-
+    
     with open('openai_enhanced_config.json', 'w') as f:
         json.dump(openai_config, f, indent=2)
-
+    
     print("✅ OpenAI rate limiting configuration created")
 
 def fix_ai_processor_config():
     """Fix AI processor configuration to reduce errors"""
     print("🧠 Fixing AI processor configuration...")
-
+    
     # Enhanced AI processor configuration
     ai_config = {
         "processing": {
@@ -129,19 +130,19 @@ def fix_ai_processor_config():
             "async_processing": True
         }
     }
-
+    
     with open('ai_processor_enhanced_config.json', 'w') as f:
         json.dump(ai_config, f, indent=2)
-
+    
     print("✅ AI processor configuration optimized")
 
 def apply_runtime_error_suppression():
     """Apply runtime error suppression to reduce console noise"""
     print("🔇 Applying runtime error suppression...")
-
+    
     # Configure root logger to reduce noise
     root_logger = logging.getLogger()
-
+    
     # Create custom filter to suppress specific warnings
     class WarningFilter(logging.Filter):
         def filter(self, record):
@@ -154,21 +155,21 @@ def apply_runtime_error_suppression():
                 'rate limit',
                 'downcasting'
             ]
-
+            
             message = record.getMessage()
             return not any(pattern in message for pattern in suppress_patterns)
-
+    
     # Apply filter to all handlers
     warning_filter = WarningFilter()
     for handler in root_logger.handlers:
         handler.addFilter(warning_filter)
-
+    
     print("✅ Runtime error suppression applied")
 
 def create_enhanced_error_handler():
     """Create enhanced error handler module"""
     print("⚡ Creating enhanced error handler...")
-
+    
     error_handler_content = '''#!/usr/bin/env python3
 """
 Enhanced Error Handler for Console Output Optimization
@@ -185,20 +186,20 @@ warnings.filterwarnings('ignore')
 
 class EnhancedErrorHandler:
     """Enhanced error handler with comprehensive suppression"""
-
+    
     def __init__(self):
         self.setup_global_suppression()
-
+    
     def setup_global_suppression(self):
         """Setup global error and warning suppression"""
         # Suppress all warnings
         warnings.filterwarnings('ignore')
-
+        
         # Configure logging
         logging.getLogger('urllib3').setLevel(logging.ERROR)
         logging.getLogger('requests').setLevel(logging.ERROR)
         logging.getLogger('aiohttp').setLevel(logging.ERROR)
-
+        
         # Pandas suppression
         try:
             import pandas as pd
@@ -206,14 +207,14 @@ class EnhancedErrorHandler:
             pd.options.mode.copy_on_write = True
         except ImportError:
             pass
-
+        
         # Numpy suppression
         try:
             import numpy as np
             np.seterr(all='ignore')
         except ImportError:
             pass
-
+    
     def suppress_function_errors(self, func):
         """Decorator to suppress function errors"""
         @wraps(func)
@@ -235,21 +236,21 @@ enhanced_error_handler = EnhancedErrorHandler()
 # Export decorator
 suppress_errors = enhanced_error_handler.suppress_function_errors
 '''
-
+    
     with open('enhanced_error_handler.py', 'w') as f:
         f.write(error_handler_content)
-
+    
     print("✅ Enhanced error handler created")
 
 def main():
     """Main function to apply all fixes"""
     print("🚀 Starting comprehensive console error fixing...")
     print("=" * 60)
-
+    
     # Apply all fixes
     apply_comprehensive_console_fixes()
     create_enhanced_error_handler()
-
+    
     # Create status file
     status = {
         "timestamp": datetime.now().isoformat(),
@@ -266,10 +267,10 @@ def main():
         ],
         "status": "completed"
     }
-
+    
     with open('console_fixes_status.json', 'w') as f:
         json.dump(status, f, indent=2)
-
+    
     print("=" * 60)
     print("✅ All console error fixes applied successfully!")
     print("🎯 Console output should now be significantly cleaner")

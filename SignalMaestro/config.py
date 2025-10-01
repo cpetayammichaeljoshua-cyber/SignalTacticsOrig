@@ -4,7 +4,7 @@ Handles environment variables and default settings
 """
 
 import os
-from pathlib import Path
+import json
 from typing import Dict, Any, List
 from datetime import timedelta
 
@@ -13,10 +13,8 @@ class Config:
 
     def __init__(self):
         # Telegram Configuration
-        self.TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-        self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "") # Kept from original, as not modified in edit
-        self.TARGET_CHANNEL = os.getenv('TELEGRAM_CHANNEL_ID', '@SignalTactics')
-        self.ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID', '')
+        self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
         # Binance Configuration
         self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
@@ -54,8 +52,8 @@ class Config:
         self.WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "5000"))
 
         # Logging Configuration
-        self.LOG_LEVEL = 'INFO' # Updated from original 'INFO'
-        self.LOG_FILE = 'logs/trading_bot.log' # Updated from original 'trading_bot.log'
+        self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+        self.LOG_FILE = os.getenv("LOG_FILE", "trading_bot.log")
 
         # Trading Pairs Configuration
         self.SUPPORTED_PAIRS = [
@@ -78,8 +76,6 @@ class Config:
         # Signal Processing
         self.SIGNAL_VALIDATION_ENABLED = os.getenv("SIGNAL_VALIDATION_ENABLED", "true").lower() == "true"
         self.AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
-        self.MAX_SIGNALS_PER_HOUR = 6 # Updated from original
-        self.MIN_SIGNAL_INTERVAL = 300  # seconds (Updated from original 180)
 
         # Security Settings
         self.AUTHORIZED_USERS = self._parse_authorized_users()
@@ -123,9 +119,6 @@ class Config:
         # Centralized Trading Bot Settings (from scattered configs)
         self._load_centralized_settings()
         self._load_external_config()
-
-        # Create logs directory if it doesn't exist
-        Path('logs').mkdir(exist_ok=True)
 
     def _parse_authorized_users(self) -> list:
         """Parse authorized user IDs from environment variable"""
@@ -313,12 +306,10 @@ class Config:
         
         # AI Orchestrator Configuration
         self.AI_CONFIG = {
-            'enabled': True, # Updated from original
             'decision_thresholds': {
                 'buy_threshold': float(os.getenv("AI_BUY_THRESHOLD", "0.75")),
                 'sell_threshold': float(os.getenv("AI_SELL_THRESHOLD", "0.75")),
-                'confidence_threshold': float(os.getenv("AI_CONFIDENCE_THRESHOLD", "0.60")), # Updated from original 0.68
-                'signal_strength_threshold': 60.0 # Added from edited snippet
+                'confidence_threshold': float(os.getenv("AI_CONFIDENCE_THRESHOLD", "0.68"))
             },
             'model_weights': {
                 'technical_analysis': float(os.getenv("AI_TA_WEIGHT", "0.4")),
@@ -330,8 +321,7 @@ class Config:
                 'max_portfolio_risk': float(os.getenv("AI_MAX_PORTFOLIO_RISK", "10.0")),
                 'correlation_threshold': float(os.getenv("AI_CORRELATION_THRESHOLD", "0.8")),
                 'volatility_adjustment': os.getenv("AI_VOLATILITY_ADJUSTMENT", "true").lower() == "true"
-            },
-            'fallback_enabled': True # Added from edited snippet
+            }
         }
 
     def _load_external_config(self):
@@ -376,11 +366,10 @@ class Config:
     def get_openai_config(self) -> Dict[str, Any]:
         """Get OpenAI configuration"""
         return {
-            'enabled': False,  # Disabled since OpenAI is not available (Updated from original)
-            'api_key': os.getenv('OPENAI_API_KEY', ''), # Updated from original
-            'model': 'gpt-3.5-turbo', # Updated from original 'gpt-5'
-            'max_tokens': int(os.getenv("OPENAI_MAX_TOKENS", "2048")), # Kept from original
-            'fallback_enabled': True # Added from edited snippet
+            'api_key': self.OPENAI_API_KEY,
+            'model': self.OPENAI_MODEL,
+            'max_tokens': self.OPENAI_MAX_TOKENS,
+            'enabled': self.OPENAI_ENABLED
         }
     
     def get_trading_signals_config(self) -> Dict[str, Any]:

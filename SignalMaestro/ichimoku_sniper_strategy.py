@@ -6,6 +6,7 @@ Exact implementation of the Pine Script strategy with multi-timeframe support
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple

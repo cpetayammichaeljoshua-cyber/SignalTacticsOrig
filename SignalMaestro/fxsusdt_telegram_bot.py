@@ -8,13 +8,14 @@ import asyncio
 import logging
 import aiohttp
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import json
 import numpy as np
 
-from ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
-from fxsusdt_trader import FXSUSDTTrader
+from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
+from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
 
 class FXSUSDTTelegramBot:
     """Telegram bot for FXSUSDT.P signals"""

@@ -14,8 +14,8 @@ from typing import Dict, Any, Optional
 import json
 import numpy as np
 
-from ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
-from fxsusdt_trader import FXSUSDTTrader
+from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
+from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
 
 class FXSUSDTTelegramBot:
     """Telegram bot for FXSUSDT.P signals"""
@@ -944,7 +944,7 @@ Use `/alerts` to manage your alerts."""
                     return
 
             # Create manual signal
-            from ichimoku_sniper_strategy import IchimokuSignal
+            from .ichimoku_sniper_strategy import IchimokuSignal
             from datetime import datetime
 
             # Calculate risk/reward ratio
@@ -1899,7 +1899,7 @@ Use `/alerts` to manage your alerts."""
     async def _test_ichimoku_params(self, data, params):
         """Helper to simulate strategy with given Ichimoku parameters."""
         # This is a simplified simulation. A real implementation would re-calculate indicators.
-        from ichimoku_sniper_strategy import IchimokuSniperStrategy
+        from .ichimoku_sniper_strategy import IchimokuSniperStrategy
         import random
 
         # Temporarily override strategy parameters for testing

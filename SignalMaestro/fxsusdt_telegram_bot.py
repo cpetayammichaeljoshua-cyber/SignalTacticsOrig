@@ -371,13 +371,25 @@ Margin: CROSS
                     })
 
                     # Double-check AI confidence
-                    ai_confidence = enhanced_signal.get('ai_confidence', 0) * 100 if enhanced_signal else 0
-
+                    # Get AI confidence and ensure proper scaling
+                    ai_confidence_raw = enhanced_signal.get('ai_confidence', 0) if enhanced_signal else 0
+                    
+                    # Handle confidence scaling (convert to percentage if needed)
+                    if ai_confidence_raw <= 1.0:
+                        ai_confidence = ai_confidence_raw * 100
+                    else:
+                        ai_confidence = ai_confidence_raw
+                    
+                    # Apply enhanced validation with minimum threshold
                     if enhanced_signal and ai_confidence >= confidence_threshold:
                         self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
                         await self.send_enhanced_signal(enhanced_signal)
-                    else:
+                    elif enhanced_signal and ai_confidence > 0:
+                        # Log detailed information for debugging
                         self.logger.warning(f"🤖 AI BLOCKED signal - AI confidence {ai_confidence:.1f}% below 75% threshold")
+                        self.logger.info(f"   Raw AI confidence: {ai_confidence_raw}, Signal strength: {enhanced_signal.get('signal_strength', 'N/A')}")
+                    else:
+                        self.logger.warning(f"🤖 AI processing failed - no enhanced signal generated")
                 else:
                     # Send signal without AI enhancement (already passed confidence check)
                     self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}% meets 75% threshold")

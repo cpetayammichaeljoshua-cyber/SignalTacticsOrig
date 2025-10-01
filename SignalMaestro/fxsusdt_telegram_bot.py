@@ -345,11 +345,23 @@ Margin: CROSS
 
         for signal in signals:
             try:
+                # Validate signal object
+                if not hasattr(signal, 'confidence') or not hasattr(signal, 'entry_price'):
+                    self.logger.error("Invalid signal object received")
+                    continue
+
                 # STRICT CONFIDENCE FILTER - Block trades < 75%
                 confidence_threshold = 75.0
 
-                if signal.confidence < confidence_threshold:
-                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below 75% threshold")
+                # Ensure confidence is a valid number
+                try:
+                    confidence = float(signal.confidence)
+                except (ValueError, TypeError):
+                    self.logger.error(f"Invalid confidence value: {signal.confidence}")
+                    continue
+
+                if confidence < confidence_threshold:
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {confidence:.1f}% below 75% threshold")
                     self.logger.info(f"   Symbol: {signal.symbol}, Action: {signal.action}, Price: {signal.entry_price:.5f}")
                     continue
 

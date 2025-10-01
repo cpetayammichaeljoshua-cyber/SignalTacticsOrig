@@ -87,17 +87,21 @@ class FXSUSDTTrader:
                     if response.status == 200:
                         data = await response.json()
                         
-                        # Convert to OHLCV format
+                        # Convert to OHLCV format with comprehensive error handling
                         ohlcv_data = []
                         for kline in data:
-                            ohlcv_data.append([
-                                int(kline[0]),      # timestamp
-                                float(kline[1]),    # open
-                                float(kline[2]),    # high
-                                float(kline[3]),    # low
-                                float(kline[4]),    # close
-                                float(kline[5])     # volume
-                            ])
+                            try:
+                                ohlcv_data.append([
+                                    int(float(kline[0])),      # timestamp
+                                    float(kline[1]),           # open
+                                    float(kline[2]),           # high
+                                    float(kline[3]),           # low
+                                    float(kline[4]),           # close
+                                    float(kline[5])            # volume
+                                ])
+                            except (ValueError, TypeError, IndexError) as e:
+                                self.logger.error(f"Error converting kline data: {e}")
+                                continue
                         
                         self.logger.debug(f"📊 Retrieved {len(ohlcv_data)} {interval} candles for {self.symbol}")
                         return ohlcv_data
@@ -613,17 +617,17 @@ class FXSUSDTTrader:
                 
                 kline = [
                     timestamp,  # Open time
-                    f"{open_price:.5f}",   # Open
-                    f"{high_price:.5f}",   # High
-                    f"{low_price:.5f}",    # Low
-                    f"{close_price:.5f}",  # Close
-                    f"{volume:.1f}",       # Volume
+                    open_price,   # Open (as float)
+                    high_price,   # High (as float)
+                    low_price,    # Low (as float)
+                    close_price,  # Close (as float)
+                    volume,       # Volume (as float)
                     timestamp + interval_ms - 1,  # Close time
-                    f"{volume * close_price:.2f}", # Quote volume
+                    volume * close_price, # Quote volume (as float)
                     random.randint(100, 500),      # Count
-                    f"{volume * 0.6:.1f}",         # Taker buy volume
-                    f"{volume * close_price * 0.6:.2f}", # Taker buy quote volume
-                    "0"  # Ignore
+                    volume * 0.6,         # Taker buy volume (as float)
+                    volume * close_price * 0.6, # Taker buy quote volume (as float)
+                    0  # Ignore (as int)
                 ]
                 klines.append(kline)
                 base_price = close_price

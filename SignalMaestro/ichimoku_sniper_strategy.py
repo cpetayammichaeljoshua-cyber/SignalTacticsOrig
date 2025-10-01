@@ -100,16 +100,20 @@ class IchimokuSniperStrategy:
         if len(ohlcv_data) < max(self.conversion_periods, self.base_periods, self.lagging_span2_periods, self.ema_periods):
             return {}
 
-        # Extract OHLCV arrays
-        timestamps = [candle[0] for candle in ohlcv_data]
-        opens = [candle[1] for candle in ohlcv_data]
-        highs = [candle[2] for candle in ohlcv_data]
-        lows = [candle[3] for candle in ohlcv_data]
-        closes = [candle[4] for candle in ohlcv_data]
-        volumes = [candle[5] for candle in ohlcv_data]
+        try:
+            # Extract OHLCV arrays with proper type conversion
+            timestamps = [int(candle[0]) for candle in ohlcv_data]
+            opens = [float(candle[1]) for candle in ohlcv_data]
+            highs = [float(candle[2]) for candle in ohlcv_data]
+            lows = [float(candle[3]) for candle in ohlcv_data]
+            closes = [float(candle[4]) for candle in ohlcv_data]
+            volumes = [float(candle[5]) for candle in ohlcv_data]
 
-        # Current values
-        current_close = closes[-1]
+            # Current values
+            current_close = closes[-1]
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Data conversion error: {e}")
+            return {}
 
         # Ichimoku calculations (Pine Script exact)
         conversion_line = self.donchian(highs, lows, self.conversion_periods)
@@ -148,13 +152,24 @@ class IchimokuSniperStrategy:
         if not ichimoku_data:
             return None
 
-        current_close = ichimoku_data['current_close']
-        conversion_line = ichimoku_data['conversion_line']
-        base_line = ichimoku_data['base_line']
-        lead_line1 = ichimoku_data['lead_line1']
-        lead_line2 = ichimoku_data['lead_line2']
-        ema_200 = ichimoku_data['ema_200']
-        atr_value = ichimoku_data['atr_value']
+        try:
+            # Safely extract values with type conversion
+            current_close = float(ichimoku_data.get('current_close', 0))
+            conversion_line = float(ichimoku_data.get('conversion_line', 0))
+            base_line = float(ichimoku_data.get('base_line', 0))
+            lead_line1 = float(ichimoku_data.get('lead_line1', 0))
+            lead_line2 = float(ichimoku_data.get('lead_line2', 0))
+            ema_200 = float(ichimoku_data.get('ema_200', 0))
+            atr_value = float(ichimoku_data.get('atr_value', 0.001))
+            
+            # Validate all values are non-zero
+            if any(val == 0 for val in [current_close, conversion_line, base_line, lead_line1, lead_line2, ema_200]):
+                self.logger.debug(f"Invalid indicator values for {timeframe}")
+                return None
+                
+        except (ValueError, TypeError, KeyError) as e:
+            self.logger.error(f"Error extracting signal data for {timeframe}: {e}")
+            return None
 
         # Pine Script exact conditions
         long_entry = (current_close > ema_200 and

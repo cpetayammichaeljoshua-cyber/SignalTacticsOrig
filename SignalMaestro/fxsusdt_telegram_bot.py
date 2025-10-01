@@ -8,6 +8,7 @@ import asyncio
 import logging
 import aiohttp
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import json
@@ -1564,7 +1565,7 @@ Use `/alerts` to manage your alerts."""
 
 **📊 Technical Outlook:**
 • **Trend:** {'Bullish momentum' if change_percent > 1 else 'Bearish pressure' if change_percent < -1 else 'Sideways consolidation'}
-• **Support/Resistance:** Key levels around {current_price * 0.98:.5f} / {current_price * 1.02:.5f}
+• **Support/Resistance:** Key levels around {(current_price or 0) * 0.98:.5f} / {(current_price or 0) * 1.02:.5f}
 • **Strategy Focus:** {'Breakout plays' if abs(change_percent) < 1 else 'Trend following'}
 
 **🔍 Market Factors:**
@@ -1620,7 +1621,7 @@ Use `/alerts` to manage your alerts."""
         await self.send_message(chat_id, "🗒️ Watchlist management is currently not implemented.")
         self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
 
-    async def _run_comprehensive_backtest(self, duration_days: int, timeframe: str, chat_id: str = None) -> dict:
+    async def _run_comprehensive_backtest(self, duration_days: int, timeframe: str, chat_id: Optional[str] = None) -> dict:
         """Run comprehensive backtest with specified parameters"""
         try:
             from datetime import datetime, timedelta
@@ -2086,7 +2087,7 @@ Use `/alerts` to manage your alerts."""
         self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
 
 
-    async def handle_webhook_command(self, command: str, chat_id: str, args: list = None) -> bool:
+    async def handle_webhook_command(self, command: str, chat_id: str, args: Optional[list] = None) -> bool:
         """Handle commands via webhook or direct message"""
         try:
             if command in self.commands:
@@ -2174,6 +2175,9 @@ Use `/alerts` to manage your alerts."""
                     return False
 
             # Create application with proper configuration
+            if not self.bot_token:
+                self.logger.error("Bot token is not set")
+                return False
             application = Application.builder().token(self.bot_token).build()
 
             # Add individual command handlers
@@ -2293,7 +2297,11 @@ Use `/alerts` to manage your alerts."""
             await application.start()
 
             # Start polling without creating new event loop
-            await application.updater.start_polling()
+            if application.updater:
+                await application.updater.start_polling()
+            else:
+                self.logger.error("Application updater is not available")
+                return False
 
             await self.send_status_update("🚀 FXSUSDT.P Futures Bot commands are now active!")
 

@@ -44,6 +44,7 @@ async def main():
         sys.exit(1)
     
     # Import bot after config is ready
+    bot = None
     try:
         from SignalMaestro.ultimate_trading_bot import UltimateTradingBot
         
@@ -74,10 +75,11 @@ async def main():
         traceback.print_exc()
     finally:
         logging.info("🧹 Cleaning up console bot...")
-        try:
-            await bot.stop()
-        except:
-            pass
+        if bot and hasattr(bot, 'stop'):
+            try:
+                await bot.stop()
+            except:
+                pass
 
 if __name__ == "__main__":
     try:

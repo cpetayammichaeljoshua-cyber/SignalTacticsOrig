@@ -69,6 +69,7 @@ class MarketSentimentSummary:
     sentiment_momentum: float  # Rate of change
     fear_greed_index: float
     market_risk_level: str
+    sentiment_label: str  # "very_negative", "negative", "neutral", "positive", "very_positive"
     timestamp: datetime
 
 class AISentimentAnalyzer:
@@ -326,6 +327,8 @@ class AISentimentAnalyzer:
                                 continue
                         
                         return feed_data
+                    else:
+                        return []
                         
         except Exception as e:
             self.logger.warning(f"⚠️ RSS fetch failed for {source['name']}: {e}")
@@ -413,6 +416,10 @@ Focus on:
     async def _make_gpt5_request(self, prompt: str) -> Optional[Dict[str, Any]]:
         """Make request to GPT-5 API"""
         try:
+            if not self.openai_client:
+                self.logger.warning("OpenAI client not available")
+                return None
+                
             response = self.openai_client.chat.completions.create(
                 model=self.gpt_model,
                 messages=[
@@ -503,6 +510,18 @@ Focus on:
             else:
                 market_risk_level = "NEUTRAL"
             
+            # Determine sentiment label
+            if overall_sentiment < -0.6:
+                sentiment_label = "very_negative"
+            elif overall_sentiment < -0.2:
+                sentiment_label = "negative"
+            elif overall_sentiment > 0.6:
+                sentiment_label = "very_positive"
+            elif overall_sentiment > 0.2:
+                sentiment_label = "positive"
+            else:
+                sentiment_label = "neutral"
+            
             return MarketSentimentSummary(
                 overall_sentiment=overall_sentiment,
                 confidence=confidence,
@@ -512,6 +531,7 @@ Focus on:
                 sentiment_momentum=sentiment_momentum,
                 fear_greed_index=fear_greed_index,
                 market_risk_level=market_risk_level,
+                sentiment_label=sentiment_label,
                 timestamp=datetime.now()
             )
             
@@ -641,6 +661,7 @@ Focus on:
             sentiment_momentum=0.0,
             fear_greed_index=50.0,
             market_risk_level="UNKNOWN",
+            sentiment_label="neutral",
             timestamp=datetime.now()
         )
 

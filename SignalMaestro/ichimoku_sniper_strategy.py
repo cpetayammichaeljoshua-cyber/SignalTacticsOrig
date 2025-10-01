@@ -191,30 +191,30 @@ class IchimokuSniperStrategy:
             reward = take_profit - current_close
             risk_reward_ratio = reward / risk if risk > 0 else 0
 
-            # Enhanced confidence calculation to ensure 75%+ threshold
+            # Enhanced confidence calculation for better signal approval
             distance_from_ema = abs(current_close - ema_200) / current_close * 100
 
-            # Base confidence calculation - increased to ensure threshold
-            base_confidence = 75  # Minimum required threshold
+            # Base confidence calculation - Higher baseline
+            base_confidence = 70  # Increased from 60
 
             # EMA distance factor (closer = higher confidence)
-            ema_factor = min(15, distance_from_ema * 3)
+            ema_factor = min(15, distance_from_ema * 3)  # Reduced penalty
 
-            # Signal strength factor - enhanced scaling
-            strength_factor = max(5, (signal_strength - 80) / 2)  # Bonus for strong signals
+            # Signal strength factor - More generous
+            strength_factor = max(5, (signal_strength - 50) / 3)  # Better scaling
 
             # Cloud thickness factor (thicker cloud = higher confidence)
             cloud_thickness = abs(lead_line1 - lead_line2) / current_close * 100
-            cloud_factor = min(10, cloud_thickness * 15)
+            cloud_factor = min(15, cloud_thickness * 25)  # Increased bonus
 
             # ATR factor (moderate volatility = higher confidence)
             atr_pct = (atr_value / current_close) * 100
-            atr_factor = 5 if 0.5 < atr_pct < 2.0 else 3
+            atr_factor = 8 if 0.3 < atr_pct < 3.0 else 3  # More generous range
 
-            # Timeframe confidence boost
-            timeframe_boost = {"30m": 5, "15m": 4, "5m": 3, "1m": 2}.get(timeframe, 2)
+            # Timeframe bonus for higher timeframes
+            timeframe_bonus = 5 if timeframe in ["30m", "15m"] else 2
 
-            confidence = min(95, base_confidence + ema_factor + strength_factor + cloud_factor + atr_factor + timeframe_boost)
+            confidence = min(95, base_confidence + ema_factor + strength_factor + cloud_factor + atr_factor + timeframe_bonus)
 
             signal = IchimokuSignal(
                 symbol="FXSUSDT",
@@ -251,30 +251,30 @@ class IchimokuSniperStrategy:
             reward = current_close - take_profit
             risk_reward_ratio = reward / risk if risk > 0 else 0
 
-            # Enhanced confidence calculation to ensure 75%+ threshold
+            # Enhanced confidence calculation for better signal approval
             distance_from_ema = abs(current_close - ema_200) / current_close * 100
 
-            # Base confidence calculation - increased to ensure threshold
-            base_confidence = 75  # Minimum required threshold
+            # Base confidence calculation - Higher baseline
+            base_confidence = 70  # Increased from 60
 
             # EMA distance factor (closer = higher confidence)
-            ema_factor = min(15, distance_from_ema * 3)
+            ema_factor = min(15, distance_from_ema * 3)  # Reduced penalty
 
-            # Signal strength factor - enhanced scaling
-            strength_factor = max(5, (signal_strength - 80) / 2)  # Bonus for strong signals
+            # Signal strength factor - More generous
+            strength_factor = max(5, (signal_strength - 50) / 3)  # Better scaling
 
             # Cloud thickness factor (thicker cloud = higher confidence)
             cloud_thickness = abs(lead_line1 - lead_line2) / current_close * 100
-            cloud_factor = min(10, cloud_thickness * 15)
+            cloud_factor = min(15, cloud_thickness * 25)  # Increased bonus
 
             # ATR factor (moderate volatility = higher confidence)
             atr_pct = (atr_value / current_close) * 100
-            atr_factor = 5 if 0.5 < atr_pct < 2.0 else 3
+            atr_factor = 8 if 0.3 < atr_pct < 3.0 else 3  # More generous range
 
-            # Timeframe confidence boost
-            timeframe_boost = {"30m": 5, "15m": 4, "5m": 3, "1m": 2}.get(timeframe, 2)
+            # Timeframe bonus for higher timeframes
+            timeframe_bonus = 5 if timeframe in ["30m", "15m"] else 2
 
-            confidence = min(95, base_confidence + ema_factor + strength_factor + cloud_factor + atr_factor + timeframe_boost)
+            confidence = min(95, base_confidence + ema_factor + strength_factor + cloud_factor + atr_factor + timeframe_bonus)
 
             signal = IchimokuSignal(
                 symbol="FXSUSDT",

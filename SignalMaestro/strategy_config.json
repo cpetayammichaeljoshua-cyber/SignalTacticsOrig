@@ -3,5 +3,6 @@
   "min_signal_strength": 75.0,
   "strict_filtering": true,
   "ai_confidence_required": true,
-  "block_low_confidence_trades": true
+  "block_low_confidence_trades": true,
+  "enhanced_filtering": true
 }

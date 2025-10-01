@@ -5,5 +5,6 @@
     "enabled": true,
     "threshold": 85.0
   },
-  "dynamic_adjustment": true
+  "dynamic_adjustment": true,
+  "enhanced_rate_management": true
 }

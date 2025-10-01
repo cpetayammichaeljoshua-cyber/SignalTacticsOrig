@@ -354,14 +354,5 @@ except ImportError:
 if __name__ != "__main__":
     try:
         apply_all_fixes()
-        
-        # Apply additional signal processing fixes
-        import warnings
-        warnings.filterwarnings('ignore')
-        
-        # Set up environment for better error handling
-        import os
-        os.environ['PYTHONWARNINGS'] = 'ignore'
-        
     except:
         pass  # Fail silently during import

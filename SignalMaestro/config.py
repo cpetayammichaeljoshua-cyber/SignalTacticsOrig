@@ -465,30 +465,3 @@ class Config:
                 'session_secret': self.SESSION_SECRET
             }
         }
-class Config:
-    """Configuration settings for the trading bot"""
-    
-    def __init__(self):
-        # Telegram settings
-        import os
-        self.TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-        self.TARGET_CHANNEL = "@SignalTactics"
-        
-        # AI Configuration
-        self.AI_CONFIG = {
-            'decision_thresholds': {
-                'confidence_threshold': 0.5  # Lowered threshold
-            }
-        }
-        
-        # Signal settings
-        self.MAX_SIGNALS_PER_HOUR = 6
-        self.MIN_SIGNAL_INTERVAL = 300  # 5 minutes
-    
-    def get_openai_config(self):
-        """Get OpenAI configuration"""
-        return {
-            'enabled': False,  # Disabled for now
-            'api_key': '',
-            'model': 'gpt-3.5-turbo'
-        }

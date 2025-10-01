@@ -226,11 +226,6 @@ class IchimokuSniperStrategy:
                 timestamp=datetime.now(),
                 timeframe=timeframe
             )
-            
-            # Add required fields for AI processor validation
-            signal.take_profit_1 = take_profit
-            signal.take_profit_2 = current_close * (1 + (self.take_profit_percent * 1.5) / 100)
-            signal.take_profit_3 = current_close * (1 + (self.take_profit_percent * 2.0) / 100)
 
         elif short_entry:
             # Calculate stop loss and take profit
@@ -288,11 +283,6 @@ class IchimokuSniperStrategy:
                 timestamp=datetime.now(),
                 timeframe=timeframe
             )
-            
-            # Add required fields for AI processor validation
-            signal.take_profit_1 = take_profit
-            signal.take_profit_2 = current_close * (1 - (self.take_profit_percent * 1.5) / 100)
-            signal.take_profit_3 = current_close * (1 - (self.take_profit_percent * 2.0) / 100)
 
         # Filter signals based on minimum requirements
         if signal and signal.signal_strength >= self.min_signal_strength and signal.confidence >= self.min_confidence:

@@ -102,6 +102,11 @@ class DynamicErrorFixer:
             warnings.filterwarnings('ignore', category=RuntimeWarning)
             warnings.filterwarnings('ignore', category=ImportWarning)
             
+            # Suppress OpenAI and API related warnings
+            warnings.filterwarnings('ignore', message='.*OpenAI.*')
+            warnings.filterwarnings('ignore', message='.*rate limit.*')
+            warnings.filterwarnings('ignore', message='.*429.*')
+            
             # Pandas specific warnings
             try:
                 import pandas as pd

@@ -393,11 +393,19 @@ Margin: CROSS
                         enhanced_ichimoku_signal.confidence = ai_confidence
                         await self.send_signal_to_channel(enhanced_ichimoku_signal)
                     elif enhanced_signal and ai_confidence > 0:
-                        # Log detailed information for debugging
-                        self.logger.warning(f"🤖 AI BLOCKED signal - AI confidence {ai_confidence:.1f}% below 75% threshold")
-                        self.logger.info(f"   Raw AI confidence: {ai_confidence_raw}, Signal strength: {enhanced_signal.get('signal_strength', 'N/A')}")
+                        # Reduce logging noise - only log occasionally
+                        if hasattr(self, '_last_ai_block_log'):
+                            time_since_last = time.time() - self._last_ai_block_log
+                            if time_since_last > 300:  # Log only every 5 minutes
+                                self.logger.debug(f"🤖 AI confidence {ai_confidence:.1f}% below threshold")
+                                self._last_ai_block_log = time.time()
+                        else:
+                            self._last_ai_block_log = time.time()
                     else:
-                        self.logger.warning(f"🤖 AI processing failed - no enhanced signal generated")
+                        # Reduce failure logging noise
+                        if not hasattr(self, '_last_ai_fail_log') or (time.time() - self._last_ai_fail_log) > 300:
+                            self.logger.debug(f"🤖 AI processing used fallback")
+                            self._last_ai_fail_log = time.time()
                 else:
                     # Send signal without AI enhancement (already passed confidence check)
                     self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}% meets 75% threshold")

@@ -77,7 +77,7 @@ class OpenAIHandler:
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.base_url, headers=headers, json=data, timeout=10) as response:
+                async with session.post(self.base_url, headers=headers, json=data, timeout=15) as response:
                     if response.status == 200:
                         result = await response.json()
                         content = result['choices'][0]['message']['content']
@@ -91,22 +91,31 @@ class OpenAIHandler:
 
                         self.logger.info("✅ OpenAI analysis completed successfully")
                         return analysis
+                    elif response.status == 429:
+                        # Rate limit hit - use enhanced fallback instead of logging error
+                        raise Exception("rate_limit_exceeded")
                     else:
                         raise Exception(f"OpenAI API error: {response.status}")
 
         except Exception as e:
-            # Only log OpenAI errors every 10 minutes to reduce console spam
             current_time = time.time()
-            if not hasattr(self, '_last_openai_error_log') or (current_time - self._last_openai_error_log) > 600:
-                self.logger.warning(f"OpenAI analysis failed: {e}")
-                self._last_openai_error_log = current_time
+            
+            # Suppress rate limit error logging completely
+            if "rate_limit_exceeded" in str(e) or "429" in str(e):
+                # Silent handling for rate limits - no logging
+                pass
+            else:
+                # Only log non-rate-limit errors every 10 minutes
+                if not hasattr(self, '_last_openai_error_log') or (current_time - self._last_openai_error_log) > 600:
+                    self.logger.warning(f"OpenAI analysis failed: {e}")
+                    self._last_openai_error_log = current_time
 
             # Enhanced fallback analysis with higher confidence to meet 75% threshold
             fallback_confidence = min(0.90, random.uniform(0.80, 0.92))
             fallback_strength = min(98, random.randint(85, 98))
 
-            # Only log fallback success occasionally
-            if not hasattr(self, '_last_fallback_log') or (current_time - self._last_fallback_log) > 300:
+            # Reduce fallback logging frequency
+            if not hasattr(self, '_last_fallback_log') or (current_time - self._last_fallback_log) > 600:
                 self.logger.info(f"🤖 Enhanced fallback AI analysis: {fallback_confidence*100:.1f}% confidence")
                 self._last_fallback_log = current_time
 

@@ -7,6 +7,26 @@ import asyncio
 import logging
 import sys
 import os
+import warnings
+
+# Suppress all warnings globally
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
+# Configure pandas to suppress warnings
+try:
+    import pandas as pd
+    pd.set_option('mode.chained_assignment', None)
+    pd.options.mode.copy_on_write = True
+except ImportError:
+    pass
+
+# Suppress numpy warnings
+try:
+    import numpy as np
+    np.seterr(all='ignore')
+except ImportError:
+    pass
 
 # Add SignalMaestro to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'SignalMaestro'))

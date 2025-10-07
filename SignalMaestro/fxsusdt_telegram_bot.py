@@ -476,7 +476,16 @@ Margin: CROSS
             await self.send_message(chat_id, f"❌ Error calculating dynamic SL/TP: {e}")
         
         self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
+    
+    async def process_signals(self, signals):
+        """Process and filter signals for trading with 75% confidence threshold"""
+        if not signals:
+            return
 
+        for signal in signals:
+            try:
+                # STRICT CONFIDENCE FILTER - Block trades < 75%
+                confidence_threshold = 75.0
 
                 if signal.confidence < confidence_threshold:
                     self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below 75% threshold")
@@ -485,8 +494,37 @@ Margin: CROSS
 
                 # Rate limiting check
                 if not self.can_send_signal():
-                    # Rate limit message already handled above
                     continue
+
+                # Enhanced AI analysis if available
+                if self.ai_processor:
+                    enhanced_signal = await self.ai_processor.process_and_enhance_signal({
+                        'symbol': signal.symbol,
+                        'action': signal.action,
+                        'entry_price': signal.entry_price,
+                        'stop_loss': signal.stop_loss,
+                        'take_profit': signal.take_profit,
+                        'signal_strength': signal.signal_strength,
+                        'confidence': signal.confidence,
+                        'timeframe': signal.timeframe,
+                        'leverage': 5
+                    })
+
+                    ai_confidence_raw = enhanced_signal.get('ai_confidence', 0) if enhanced_signal else 0
+                    ai_confidence = ai_confidence_raw * 100 if ai_confidence_raw <= 1.0 else ai_confidence_raw
+
+                    if enhanced_signal and ai_confidence >= confidence_threshold:
+                        self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
+                        enhanced_ichimoku_signal = signal
+                        enhanced_ichimoku_signal.confidence = ai_confidence
+                        await self.send_signal_to_channel(enhanced_ichimoku_signal)
+                else:
+                    self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}% meets 75% threshold")
+                    await self.send_signal_to_channel(signal)
+
+            except Exception as e:
+                self.logger.error(f"❌ Error processing signal: {e}")
+                continue
 
 
     async def cmd_market_dashboard(self, update, context):

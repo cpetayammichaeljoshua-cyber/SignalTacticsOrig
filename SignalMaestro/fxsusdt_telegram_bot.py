@@ -389,25 +389,16 @@ Margin: CROSS
 
                     # Apply enhanced validation with minimum threshold
                     if enhanced_signal and ai_confidence >= confidence_threshold:
-                        self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
+                        self.logger.info(f"✅ TRADE APPROVED - Signal {signal.confidence:.1f}%, AI {ai_confidence:.1f}%")
                         # Convert enhanced signal back to IchimokuSignal format
                         enhanced_ichimoku_signal = signal
                         enhanced_ichimoku_signal.confidence = ai_confidence
                         await self.send_signal_to_channel(enhanced_ichimoku_signal)
                     elif enhanced_signal and ai_confidence > 0:
-                        # Reduce logging noise - only log occasionally
-                        if hasattr(self, '_last_ai_block_log'):
-                            time_since_last = time.time() - self._last_ai_block_log
-                            if time_since_last > 300:  # Log only every 5 minutes
-                                self.logger.debug(f"🤖 AI confidence {ai_confidence:.1f}% below threshold")
-                                self._last_ai_block_log = time.time()
-                        else:
+                        # Only log occasionally to reduce noise
+                        if not hasattr(self, '_last_ai_block_log') or (time.time() - self._last_ai_block_log) > 600:
+                            self.logger.debug(f"🤖 Signal filtered: AI confidence {ai_confidence:.1f}%")
                             self._last_ai_block_log = time.time()
-                    else:
-                        # Reduce failure logging noise
-                        if not hasattr(self, '_last_ai_fail_log') or (time.time() - self._last_ai_fail_log) > 300:
-                            self.logger.debug(f"🤖 AI processing used fallback")
-                            self._last_ai_fail_log = time.time()
                 else:
                     # Send signal without AI enhancement (already passed confidence check)
                     self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}% meets 75% threshold")

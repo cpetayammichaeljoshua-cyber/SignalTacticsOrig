@@ -56,18 +56,26 @@ async def main():
 
     logger = logging.getLogger(__name__)
 
-    logger.info("🚀 Starting FXSUSDT Bot with Dynamic Position Management")
+    logger.info("=" * 70)
+    logger.info("🚀 FXSUSDT BOT - COMPREHENSIVE DYNAMIC POSITION MANAGEMENT")
+    logger.info("=" * 70)
     logger.info("📊 Features: Multi-timeframe ATR, Market Regime Detection, Dynamic Leverage")
     logger.info("🎯 Advanced: Trailing Stops, Adaptive SL/TP, Volatility-Based Sizing")
+    logger.info("🤖 AI Enhancement: Fallback AI with 75%+ confidence threshold")
+    logger.info("📡 Channel: @SignalTactics | Bot: @TradeTactics_bot")
+    logger.info("=" * 70)
 
     bot = FXSUSDTTelegramBot()
 
     # Register dynamic commands
-    logger.info("✅ Dynamic SL/TP and Leverage commands registered")
-    logger.info("💡 Commands available:")
+    logger.info("✅ Dynamic commands registered:")
     logger.info("   • /leverage AUTO - Calculate optimal leverage")
     logger.info("   • /dynamic_sltp LONG/SHORT - Get dynamic SL/TP levels")
     logger.info("   • /dashboard - Market analysis dashboard")
+    logger.info("   • /price - Current price & 24h stats")
+    logger.info("   • /balance - Account balance")
+    logger.info("   • /position - Open positions")
+    logger.info("=" * 70)
 
     # Start continuous scanner
     await bot.run_continuous_scanner()

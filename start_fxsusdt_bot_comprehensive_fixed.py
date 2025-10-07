@@ -11,6 +11,9 @@ import warnings
 
 # Suppress all warnings globally
 warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 os.environ['PYTHONWARNINGS'] = 'ignore'
 
 # Configure pandas to suppress warnings
@@ -18,6 +21,10 @@ try:
     import pandas as pd
     pd.set_option('mode.chained_assignment', None)
     pd.options.mode.copy_on_write = True
+    try:
+        pd.set_option('future.no_silent_downcasting', True)
+    except:
+        pass
 except ImportError:
     pass
 
@@ -31,7 +38,14 @@ except ImportError:
 # Add SignalMaestro to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'SignalMaestro'))
 
-from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
+# Import with error handling
+try:
+    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
+except ImportError as e:
+    print(f"❌ Import Error: {e}")
+    print("🔧 Attempting to fix import issues...")
+    sys.path.insert(0, os.path.dirname(__file__))
+    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
 
 async def main():
     """Main function with dynamic position management"""

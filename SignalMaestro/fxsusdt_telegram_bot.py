@@ -2019,6 +2019,186 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         gross_loss = abs(sum(s['return_pct'] for s in signals if not s.get('profitable')))
         return gross_profit / gross_loss if gross_loss > 0 else float('inf')
 
+    async def cmd_dynamic_sltp(self, update, context):
+        """Calculate dynamic SL/TP levels with market regime analysis
+        Usage: /dynamic_sltp LONG or /dynamic_sltp SHORT"""
+        chat_id = str(update.effective_chat.id)
+
+        try:
+            # Parse direction
+            if not context.args:
+                await self.send_message(chat_id, """❌ **Usage:** `/dynamic_sltp LONG` or `/dynamic_sltp SHORT`
+
+**Example:**
+• `/dynamic_sltp LONG` - Calculate dynamic levels for long position
+• `/dynamic_sltp SHORT` - Calculate dynamic levels for short position""")
+                return
+
+            direction = context.args[0].upper()
+            if direction not in ['LONG', 'SHORT', 'BUY', 'SELL']:
+                await self.send_message(chat_id, "❌ Direction must be LONG/BUY or SHORT/SELL")
+                return
+
+            # Normalize direction
+            if direction in ['BUY', 'LONG']:
+                direction = 'LONG'
+            else:
+                direction = 'SHORT'
+
+            from SignalMaestro.dynamic_position_manager import DynamicPositionManager
+
+            # Get current price
+            current_price = await self.trader.get_current_price()
+            if not current_price:
+                await self.send_message(chat_id, "❌ Could not fetch current price")
+                return
+
+            # Initialize position manager
+            position_manager = DynamicPositionManager(self.trader)
+
+            # Calculate multi-timeframe ATR
+            atr_data = await position_manager.calculate_multi_timeframe_atr('FXSUSDT')
+
+            # Detect market regime
+            market_regime = await position_manager.detect_market_regime('FXSUSDT')
+
+            # Calculate dynamic SL/TP
+            sl_tp_config = await position_manager.calculate_dynamic_sl_tp(
+                'FXSUSDT', direction, current_price, atr_data, market_regime
+            )
+
+            # Format response
+            message = f"""🎯 **Dynamic SL/TP Analysis**
+
+**📊 Position Details:**
+• **Direction:** {direction}
+• **Entry Price:** `{current_price:.6f}`
+• **Market Regime:** `{market_regime}`
+
+**🛡️ Stop Loss & Take Profit:**
+• **Stop Loss:** `{sl_tp_config['stop_loss']:.6f}`
+• **Take Profit 1:** `{sl_tp_config['take_profit_1']:.6f}` (33% position)
+• **Take Profit 2:** `{sl_tp_config['take_profit_2']:.6f}` (33% position)
+• **Take Profit 3:** `{sl_tp_config['take_profit_3']:.6f}` (34% position)
+
+**📈 Risk Management:**
+• **Risk/Reward Ratio:** `1:{sl_tp_config['risk_reward_ratio']:.2f}`
+• **ATR Value:** `{sl_tp_config['atr_used']:.6f}`
+• **SL Multiplier:** `{sl_tp_config['sl_multiplier']}x ATR`
+• **TP Multiplier:** `{sl_tp_config['tp_multiplier']}x ATR`
+
+**🎯 Trailing Stop:**"""
+
+            if sl_tp_config.get('trailing_stop'):
+                ts = sl_tp_config['trailing_stop']
+                message += f"""
+• **Activation Price:** `{ts['activation_price']:.6f}`
+• **Trail Distance:** `{ts['trail_distance']:.6f}`
+• **Status:** {'🟢 Active' if ts.get('active') else '⚪ Waiting'}"""
+            else:
+                message += "\n• **Status:** Disabled"
+
+            message += f"""
+
+**💡 Trading Tips:**
+• Adjust position size based on SL distance
+• Consider partial profit taking at each TP level
+• Trail SL once TP1 is reached
+• Market regime: {market_regime} - adjust strategy accordingly"""
+
+            await self.send_message(chat_id, message)
+
+        except Exception as e:
+            self.logger.error(f"Error in cmd_dynamic_sltp: {e}")
+            await self.send_message(chat_id, f"❌ Error calculating dynamic SL/TP: {e}")
+
+        self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
+
+    async def cmd_market_dashboard(self, update, context):
+        """Display comprehensive market analysis dashboard"""
+        chat_id = str(update.effective_chat.id)
+
+        try:
+            await self.send_message(chat_id, "📊 Generating market dashboard...")
+
+            # Get current market data
+            current_price = await self.trader.get_current_price()
+            ticker = await self.trader.get_24hr_ticker_stats('FXSUSDT')
+
+            from SignalMaestro.dynamic_position_manager import DynamicPositionManager
+            position_manager = DynamicPositionManager(self.trader)
+
+            # Get multi-timeframe ATR
+            atr_data = await position_manager.calculate_multi_timeframe_atr('FXSUSDT')
+
+            # Detect market regime
+            market_regime = await position_manager.detect_market_regime('FXSUSDT')
+
+            # Get account balance
+            balance_info = await self.trader.get_account_balance()
+            account_balance = balance_info.get('available_balance', 0)
+
+            # Calculate optimal leverage
+            optimal_leverage = await position_manager.calculate_optimal_leverage(
+                'FXSUSDT', atr_data, market_regime, account_balance
+            )
+
+            # Format dashboard
+            if ticker:
+                change_percent = float(ticker.get('priceChangePercent', 0))
+                volume = float(ticker.get('volume', 0))
+                high_24h = float(ticker.get('highPrice', 0))
+                low_24h = float(ticker.get('lowPrice', 0))
+
+                direction_emoji = "🟢" if change_percent >= 0 else "🔴"
+                volume_status = "🔥" if volume > 1000000 else "📊" if volume > 500000 else "💤"
+
+                dashboard = f"""📊 **FXSUSDT Market Dashboard**
+
+**💰 Price Analysis:**
+• **Current:** `{current_price:.6f}`
+• **24h Change:** {direction_emoji} `{change_percent:+.2f}%`
+• **24h High:** `{high_24h:.6f}`
+• **24h Low:** `{low_24h:.6f}`
+• **24h Range:** `{(high_24h - low_24h):.6f}`
+
+**📈 Market Conditions:**
+• **Regime:** `{market_regime.upper()}`
+• **ATR (Weighted):** `{atr_data['weighted_atr']:.6f}`
+• **ATR Trend:** `{atr_data.get('atr_trend', 'stable').upper()}`
+• **Volume:** {volume_status} `{volume:,.0f}`
+
+**⚡ Trading Recommendations:**
+• **Optimal Leverage:** `{optimal_leverage}x`
+• **Suggested Risk:** `2% per trade`
+• **Account Balance:** `${account_balance:.2f}`
+
+**📊 Multi-Timeframe ATR:**"""
+
+                for tf, atr_val in atr_data.get('individual_atrs', {}).items():
+                    dashboard += f"\n• **{tf}:** `{atr_val:.6f}`"
+
+                dashboard += f"""
+
+**🎯 Market Opportunities:**
+• **Scalping:** {'✅ Favorable' if abs(change_percent) > 0.5 else '⚠️ Limited'}
+• **Swing Trading:** {'✅ Active' if abs(change_percent) > 2 else '⏸️ Patient approach'}
+• **Volatility:** {'🔥 High' if atr_data['weighted_atr'] > 0.0002 else '📊 Normal' if atr_data['weighted_atr'] > 0.0001 else '💤 Low'}
+
+**⏰ Updated:** {datetime.now().strftime('%H:%M:%S UTC')}
+
+💡 Use `/dynamic_sltp LONG` or `/dynamic_sltp SHORT` for precise entry levels"""
+
+                await self.send_message(chat_id, dashboard)
+            else:
+                await self.send_message(chat_id, "❌ Could not retrieve market data")
+
+        except Exception as e:
+            self.logger.error(f"Error in cmd_market_dashboard: {e}")
+            await self.send_message(chat_id, f"❌ Error generating dashboard: {e}")
+
+        self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
+
     async def cmd_optimize_strategy(self, update, context):
         """Optimize strategy parameters based on historical performance"""
         chat_id = str(update.effective_chat.id)

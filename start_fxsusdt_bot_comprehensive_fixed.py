@@ -33,8 +33,10 @@ async def main():
     logger.info("💡 Commands available:")
     logger.info("   • /leverage AUTO - Calculate optimal leverage")
     logger.info("   • /dynamic_sltp LONG/SHORT - Get dynamic SL/TP levels")
+    logger.info("   • /dashboard - Market analysis dashboard")
 
-    await bot.start()
+    # Start continuous scanner
+    await bot.run_continuous_scanner()
 
 if __name__ == "__main__":
     asyncio.run(main())

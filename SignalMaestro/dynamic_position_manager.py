@@ -197,7 +197,7 @@ class DynamicPositionManager:
                 
         except Exception as e:
             self.logger.error(f"Error detecting market regime: {e}")
-
+            return 'ranging'
 
     async def calculate_dynamic_sl_tp(self, symbol: str, direction: str, entry_price: float, 
                                      atr_data: Dict[str, float], market_regime: str) -> Dict[str, Any]:
@@ -397,18 +397,6 @@ class DynamicPositionManager:
             optimal_leverage = max(self.min_leverage, min(base_leverage, self.max_leverage))
             
             self.logger.info(f"🎯 Optimal leverage: {optimal_leverage}x (Regime: {market_regime}, ATR: {atr_value:.6f})")
-            return optimal_leverage
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating optimal leverage: {e}")
-            return self.min_leverageold:
-                    optimal_leverage = leverage
-                    break
-            
-            # Ensure within bounds
-            optimal_leverage = max(self.min_leverage, min(optimal_leverage, self.max_leverage))
-            
-            self.logger.info(f"📊 ATR: {atr_value:.6f} → Optimal Leverage: {optimal_leverage}x")
             return optimal_leverage
             
         except Exception as e:

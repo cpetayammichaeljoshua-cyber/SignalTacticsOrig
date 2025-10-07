@@ -78,7 +78,9 @@ class FXSUSDTTelegramBot:
             '/news': self.cmd_market_news,
             '/watchlist': self.cmd_watchlist,
             '/backtest': self.cmd_backtest,
-            '/optimize': self.cmd_optimize_strategy
+            '/optimize': self.cmd_optimize_strategy,
+            '/dynamic_sltp': self.cmd_dynamic_sltp,
+            '/dashboard': self.cmd_market_dashboard
         }
 
         # Bot statistics and timing
@@ -348,13 +350,51 @@ Margin: CROSS
                 # STRICT CONFIDENCE FILTER - Block trades < 75%
                 confidence_threshold = 75.0
 
+                if signal.confidence < confidence_threshold:
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below 75% threshold")
+                    self.logger.info(f"   Symbol: {signal.symbol}, Action: {signal.action}, Price: {signal.entry_price:.5f}")
+                    continue
+
+                # Rate limiting check
+                if not self.can_send_signal():
+                    continue
+
+                # Enhanced AI analysis if available
+                if self.ai_processor:
+                    enhanced_signal = await self.ai_processor.process_and_enhance_signal({
+                        'symbol': signal.symbol,
+                        'action': signal.action,
+                        'entry_price': signal.entry_price,
+                        'stop_loss': signal.stop_loss,
+                        'take_profit': signal.take_profit,
+                        'signal_strength': signal.signal_strength,
+                        'confidence': signal.confidence,
+                        'timeframe': signal.timeframe,
+                        'leverage': 5
+                    })
+
+                    ai_confidence_raw = enhanced_signal.get('ai_confidence', 0) if enhanced_signal else 0
+                    ai_confidence = ai_confidence_raw * 100 if ai_confidence_raw <= 1.0 else ai_confidence_raw
+
+                    if enhanced_signal and ai_confidence >= confidence_threshold:
+                        self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}%, AI confidence {ai_confidence:.1f}%")
+                        enhanced_ichimoku_signal = signal
+                        enhanced_ichimoku_signal.confidence = ai_confidence
+                        await self.send_signal_to_channel(enhanced_ichimoku_signal)
+                else:
+                    self.logger.info(f"✅ TRADE APPROVED - Signal confidence {signal.confidence:.1f}% meets 75% threshold")
+                    await self.send_signal_to_channel(signal)
+
+            except Exception as e:
+                self.logger.error(f"❌ Error processing signal: {e}")
+                continue
 
     async def cmd_dynamic_sltp(self, update, context):
         """Calculate dynamic SL/TP based on market conditions"""
         chat_id = str(update.effective_chat.id)
         
         try:
-            from dynamic_position_manager import DynamicPositionManager
+            from SignalMaestro.dynamic_position_manager import DynamicPositionManager
             
             # Parse direction from command
             direction = 'LONG'
@@ -454,7 +494,7 @@ Margin: CROSS
         chat_id = str(update.effective_chat.id)
         
         try:
-            from dynamic_position_manager import DynamicPositionManager
+            from SignalMaestro.dynamic_position_manager import DynamicPositionManager
             
             position_manager = DynamicPositionManager(self.trader)
             
@@ -957,7 +997,7 @@ Use `/alerts` to manage your alerts."""
         if len(context.args) >= 1 and context.args[0].upper() == 'AUTO':
             # Calculate optimal leverage dynamically
             try:
-                from dynamic_position_manager import DynamicPositionManager
+                from SignalMaestro.dynamic_position_manager import DynamicPositionManager
                 
                 position_manager = DynamicPositionManager(self.trader)
                 

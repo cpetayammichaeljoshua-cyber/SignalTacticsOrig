@@ -248,7 +248,7 @@ args = "python apply_comprehensive_console_fixes.py && python start_fxsusdt_bot_
 [[workflows.workflow]]
 name = "FXSUSDT Comprehensive Fixed"
 author = 48165985
-mode = "sequential"
+mode = "parallel"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"

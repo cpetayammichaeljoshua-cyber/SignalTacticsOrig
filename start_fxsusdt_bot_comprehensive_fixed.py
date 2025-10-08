@@ -56,6 +56,14 @@ async def main():
 
     logger = logging.getLogger(__name__)
 
+    # Check AI availability
+    ai_available = False
+    try:
+        from SignalMaestro.ai_enhanced_signal_processor import AIEnhancedSignalProcessor
+        ai_available = True
+    except ImportError:
+        pass
+
     # Log startup configuration
     logger.info("=" * 80)
     logger.info("🚀 FXSUSDT.P COMPREHENSIVE FIXED BOT STARTING")

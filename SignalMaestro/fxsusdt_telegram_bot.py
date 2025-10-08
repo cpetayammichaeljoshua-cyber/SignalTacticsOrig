@@ -347,13 +347,6 @@ Margin: CROSS
 
         for signal in signals:
             try:
-                # STRICT TIMEFRAME FILTER - Block all timeframes less than 30m
-                allowed_timeframe = "30m"
-                if signal.timeframe != allowed_timeframe:
-                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal timeframe {signal.timeframe} is not 30m")
-                    self.logger.info(f"   Only {allowed_timeframe} signals are allowed")
-                    continue
-
                 # STRICT CONFIDENCE FILTER - Block trades < 75%
                 confidence_threshold = 75.0
 

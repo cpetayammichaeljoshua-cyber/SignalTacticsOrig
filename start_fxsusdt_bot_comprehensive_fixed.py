@@ -56,26 +56,14 @@ async def main():
 
     logger = logging.getLogger(__name__)
 
-    # Check AI availability
-    ai_available = False
-    try:
-        from SignalMaestro.ai_enhanced_signal_processor import AIEnhancedSignalProcessor
-        ai_available = True
-    except ImportError:
-        pass
-
-    # Log startup configuration
-    logger.info("=" * 80)
-    logger.info("🚀 FXSUSDT.P COMPREHENSIVE FIXED BOT STARTING")
-    logger.info("=" * 80)
-    logger.info(f"📊 Symbol: FXSUSDT.P (Perpetual Futures)")
-    logger.info(f"⏱️ Timeframe: 30 minutes ONLY")
-    logger.info(f"🚫 Blocked Timeframes: 1m, 5m, 15m (ALL signals < 30m blocked)")
-    logger.info(f"🎯 Strategy: Ichimoku Sniper - 30m Exclusive")
-    logger.info(f"📡 Channel: @SignalTactics")
-    logger.info(f"🤖 AI Enhancement: {'Enabled' if ai_available else 'Standard Processing'}")
-    logger.info(f"✅ Confidence Threshold: 75% minimum")
-    logger.info("=" * 80)
+    logger.info("=" * 70)
+    logger.info("🚀 FXSUSDT BOT - COMPREHENSIVE DYNAMIC POSITION MANAGEMENT")
+    logger.info("=" * 70)
+    logger.info("📊 Features: Multi-timeframe ATR, Market Regime Detection, Dynamic Leverage")
+    logger.info("🎯 Advanced: Trailing Stops, Adaptive SL/TP, Volatility-Based Sizing")
+    logger.info("🤖 AI Enhancement: Fallback AI with 75%+ confidence threshold")
+    logger.info("📡 Channel: @SignalTactics | Bot: @TradeTactics_bot")
+    logger.info("=" * 70)
 
     bot = FXSUSDTTelegramBot()
 

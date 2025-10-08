@@ -89,11 +89,11 @@ class FXSUSDTTelegramBot:
         self.bot_start_time = datetime.now()
         self.commands_used = {}
 
-        # Rate limiting configuration - Optimized for 1m scalping
+        # Rate limiting configuration - 1 trade at a time
         self.rate_limit_hours = 24  # 24-hour tracking window
-        self.max_signals_per_period = 3  # Maximum 3 signals per hour for 1m
+        self.max_signals_per_period = 1  # Maximum 1 signal per period
         self.signal_timestamps = []
-        self.min_signal_interval_minutes = 5  # Minimum 5 minutes between signals for 1m
+        self.min_signal_interval_minutes = 30  # Minimum 30 minutes between signals
 
         # FXSUSDT contract specifications
         self.contract_specs = {
@@ -125,11 +125,11 @@ class FXSUSDTTelegramBot:
         return max(0, int(remaining))
 
     def can_send_signal(self) -> bool:
-        """Check if we can send a signal based on rate limiting - Optimized for 1m scalping"""
+        """Check if we can send a signal based on rate limiting - Only 1 trade at a time"""
         now = datetime.now()
 
-        # For 1m scalping, shorter cooldown for higher frequency
-        cooldown_minutes = 5  # 5 minutes between signals for 1m
+        # For 1 trade at a time, we need a longer cooldown
+        cooldown_minutes = 30  # 30 minutes between signals
 
         if self.signal_timestamps:
             # Get the most recent signal time
@@ -138,7 +138,7 @@ class FXSUSDTTelegramBot:
 
             if time_since_last.total_seconds() < cooldown_minutes * 60:
                 remaining_seconds = (cooldown_minutes * 60) - time_since_last.total_seconds()
-                self.logger.info(f"⏳ Rate limit active, {remaining_seconds:.0f}s remaining (1m scalping: {cooldown_minutes}min cooldown)")
+                self.logger.info(f"⏳ Rate limit active, {remaining_seconds:.0f}s remaining (1 trade per {cooldown_minutes}min)")
                 return False
 
         # Clean old timestamps (keep only last 24 hours for tracking)
@@ -194,18 +194,20 @@ class FXSUSDTTelegramBot:
             sl_percent = ((sl - entry) / entry) * 100
             tp_percent = ((entry - tp) / entry) * 100
 
-        # Calculate dynamic leverage based on signal strength - Higher for 1m scalping
-        if signal.timeframe == "1m":
-            # Higher leverage for 1m scalping with order flow confirmation
-            auto_leverage = min(50, max(15, int(signal.signal_strength / 3)))
-            recommended_leverage = min(40, max(12, int(signal.signal_strength / 3.5)))
-        else:
-            # Fallback for other timeframes (should not reach here)
+        # Calculate dynamic leverage based on signal strength and timeframe
+        if signal.timeframe == "30m":
             auto_leverage = min(20, max(5, int(signal.signal_strength / 5)))
-            recommended_leverage = max(2, int(auto_leverage * 0.8))
+        elif signal.timeframe == "15m":
+            auto_leverage = min(15, max(3, int(signal.signal_strength / 6)))
+        elif signal.timeframe == "5m":
+            auto_leverage = min(12, max(3, int(signal.signal_strength / 7)))
+        else:  # 1m
+            auto_leverage = min(10, max(2, int(signal.signal_strength / 8)))
+
+        recommended_leverage = max(2, int(auto_leverage * 0.8))  # More conservative recommendation
 
         cornix_signal = f"""
-{direction_emoji} **1M SCALPING - ADVANCED ORDER FLOW**
+{direction_emoji} **ICHIMOKU SNIPER - PINE SCRIPT v6**
 
 **📊 SIGNAL DETAILS:**
 • **Pair:** `FXSUSDT.P`
@@ -213,7 +215,7 @@ class FXSUSDTTelegramBot:
 • **Entry:** `{entry:.5f}`
 • **Stop Loss:** `{sl:.5f}` (-{sl_percent:.2f}%)
 • **Take Profit:** `{tp:.5f}` (+{tp_percent:.2f}%)
-• **Timeframe:** `{signal.timeframe}` ⚡ FASTEST EXECUTION
+• **Timeframe:** `{signal.timeframe}` ⚡
 
 **⚡ LEVERAGE & MARGIN:**
 • **Recommended:** `{recommended_leverage}x`
@@ -345,11 +347,11 @@ Margin: CROSS
 
         for signal in signals:
             try:
-                # STRICT TIMEFRAME FILTER - Only 1m timeframe allowed
-                allowed_timeframe = "1m"
+                # STRICT TIMEFRAME FILTER - Block all timeframes less than 30m
+                allowed_timeframe = "30m"
                 if signal.timeframe != allowed_timeframe:
-                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal timeframe {signal.timeframe} is not 1m")
-                    self.logger.info(f"   Only {allowed_timeframe} signals are allowed for fastest execution")
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal timeframe {signal.timeframe} is not 30m")
+                    self.logger.info(f"   Only {allowed_timeframe} signals are allowed")
                     continue
 
                 # STRICT CONFIDENCE FILTER - Block trades < 75%
@@ -497,9 +499,9 @@ Use `/alerts` to manage your alerts."""
         # Send startup notification
         await self.send_status_update("🚀 FXSUSDT.P Ichimoku Sniper Bot started\n📊 Monitoring 30-minute timeframe\n🎯 Ready for signals")
 
-        # Dynamic scan intervals optimized for 1m scalping
-        base_scan_interval = 30   # 30 seconds base for 1m
-        fast_scan_interval = 15   # 15 seconds during active periods
+        # Dynamic scan intervals based on market activity
+        base_scan_interval = 120  # 2 minutes base
+        fast_scan_interval = 60   # 1 minute during active periods
         current_interval = base_scan_interval
 
         try:

@@ -66,12 +66,13 @@ async def main():
 
     # Log startup configuration
     logger.info("=" * 80)
-    logger.info("🚀 FXSUSDT.P COMPREHENSIVE FIXED BOT STARTING")
+    logger.info("🚀 FXSUSDT.P 1M SCALPING BOT - ADVANCED ORDER FLOW")
     logger.info("=" * 80)
     logger.info(f"📊 Symbol: FXSUSDT.P (Perpetual Futures)")
-    logger.info(f"⏱️ Timeframe: 30 minutes ONLY")
-    logger.info(f"🚫 Blocked Timeframes: 1m, 5m, 15m (ALL signals < 30m blocked)")
-    logger.info(f"🎯 Strategy: Ichimoku Sniper - 30m Exclusive")
+    logger.info(f"⚡ Timeframe: 1 MINUTE - FASTEST EXECUTION")
+    logger.info(f"🚫 Blocked Timeframes: 5m, 15m, 30m, 1h+ (ONLY 1m allowed)")
+    logger.info(f"🎯 Strategy: Advanced Order Flow + Ichimoku Sniper")
+    logger.info(f"📈 Leverage: 15x-50x (Higher for 1m scalping)")
     logger.info(f"📡 Channel: @SignalTactics")
     logger.info(f"🤖 AI Enhancement: {'Enabled' if ai_available else 'Standard Processing'}")
     logger.info(f"✅ Confidence Threshold: 75% minimum")

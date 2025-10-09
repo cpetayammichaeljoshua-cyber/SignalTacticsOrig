@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-3SL/1TP Dynamic Stop Loss System
+3SL/1TP Dynamic Stop Loss System with Smart Order Flow Integration
 Implements the exact logic requested:
 - TP1 reached → SL moves to entry price 
 - TP2 reached → SL moves to TP1 price
 - TP3 reached → close entire trade automatically
 
-Uses only 3 Stop Loss levels and 3 Take Profit levels as specified.
+Enhanced with intelligent order flow analysis and smart positioning
 """
 
 import asyncio
@@ -19,6 +19,16 @@ from datetime import datetime, timedelta
 from enum import Enum
 import sqlite3
 from pathlib import Path
+
+# Import smart SL/TP system
+try:
+    from .smart_dynamic_sltp_system import (
+        SmartDynamicSLTPSystem, get_smart_sltp_system,
+        OrderFlowAnalysis, LiquidityZone, SmartSLTP
+    )
+    SMART_SLTP_AVAILABLE = True
+except ImportError:
+    SMART_SLTP_AVAILABLE = False
 
 # Explicit exports for compatibility with existing integrations
 __all__ = [
@@ -73,6 +83,10 @@ class ThreeSLOneTpConfig:
     
     # Buffer to prevent immediate re-trigger (in percentage)
     buffer_percent: float = 0.1  # 0.1% buffer
+    
+    # Smart positioning
+    use_smart_sltp: bool = True  # Use order flow analysis for SL/TP
+    use_liquidity_zones: bool = True  # Position at liquidity levels
 
 
 @dataclass

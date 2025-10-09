@@ -2018,7 +2018,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         return gross_profit / gross_loss if gross_loss > 0 else float('inf')
 
     async def cmd_dynamic_sltp(self, update, context):
-        """Calculate dynamic SL/TP levels with market regime analysis
+        """Calculate dynamic SL/TP levels with smart order flow analysis
         Usage: /dynamic_sltp LONG or /dynamic_sltp SHORT"""
         chat_id = str(update.effective_chat.id)
 
@@ -2028,8 +2028,8 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, """❌ **Usage:** `/dynamic_sltp LONG` or `/dynamic_sltp SHORT`
 
 **Example:**
-• `/dynamic_sltp LONG` - Calculate dynamic levels for long position
-• `/dynamic_sltp SHORT` - Calculate dynamic levels for short position""")
+• `/dynamic_sltp LONG` - Calculate smart SL/TP for long position
+• `/dynamic_sltp SHORT` - Calculate smart SL/TP for short position""")
                 return
 
             direction = context.args[0].upper()
@@ -2043,10 +2043,82 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             else:
                 direction = 'SHORT'
 
-            from SignalMaestro.dynamic_position_manager import DynamicPositionManager
+            from SignalMaestro.smart_dynamic_sltp_system import get_smart_sltp_system
 
             # Get current price
             current_price = await self.trader.get_current_price()
+            
+            if not current_price:
+                await self.send_message(chat_id, "❌ Could not fetch current price")
+                return
+            
+            # Get market data for analysis
+            market_data = await self.trader.get_klines('1h', 200)
+            if not market_data or len(market_data) < 100:
+                await self.send_message(chat_id, "❌ Insufficient market data")
+                return
+            
+            # Initialize smart SL/TP system
+            smart_system = get_smart_sltp_system('FXSUSDT')
+            
+            # Analyze order flow
+            order_flow = await smart_system.analyze_order_flow(market_data, current_price)
+            
+            # Detect liquidity zones
+            liquidity_zones = await smart_system.detect_liquidity_zones(market_data, current_price)
+            
+            # Calculate smart SL/TP
+            sltp = await smart_system.calculate_smart_sltp(
+                direction, current_price, market_data, order_flow, liquidity_zones
+            )
+            
+            # Format response with comprehensive analysis
+            message = f"""🎯 **Smart Dynamic SL/TP Analysis**
+
+**📊 Position Details:**
+• **Direction:** {direction}
+• **Entry Price:** `{current_price:.6f}`
+• **Market Regime:** `{sltp.market_regime}`
+• **Confidence:** `{sltp.confidence_score:.1f}%`
+
+**📈 Order Flow Analysis:**
+• **Flow Direction:** {order_flow.direction.value}
+• **Flow Strength:** {order_flow.strength:.1f}%
+• **Volume Imbalance:** {order_flow.volume_imbalance:+.3f}
+• **Aggressive Buy/Sell:** {order_flow.aggressive_buy_ratio:.1%} / {order_flow.aggressive_sell_ratio:.1%}
+
+**🎯 Key Liquidity Zones:**"""
+            
+            for i, zone in enumerate(sltp.dominant_liquidity_zones[:3], 1):
+                zone_emoji = "🔴" if zone.zone_type.value == "resistance" else "🟢"
+                message += f"\n{zone_emoji} **Zone {i}:** {zone.price:.6f} ({zone.zone_type.value}, strength: {zone.strength:.0f})"
+            
+            message += f"""
+
+**🛡️ Smart Stop Loss:**
+• **SL Price:** `{sltp.stop_loss:.6f}`
+• **SL Buffer:** `{sltp.stop_loss_buffer:.6f}`
+• **Reasoning:** {sltp.stop_loss_reasoning}
+
+**🎯 Smart Take Profits:**
+• **TP1 (33%):** `{sltp.take_profit_1:.6f}`
+• **TP2 (33%):** `{sltp.take_profit_2:.6f}`
+• **TP3 (34%):** `{sltp.take_profit_3:.6f}`
+• **Reasoning:** {sltp.tp_reasoning}
+
+**📊 Risk Management:**
+• **Risk/Reward:** `1:{sltp.risk_reward_ratio:.2f}`
+• **Position Multiplier:** `{sltp.position_size_multiplier:.2f}x`
+• **Volatility Adjustment:** `{sltp.volatility_adjustment:.2f}x`
+
+**💡 Trade Quality:** {'✅ EXCELLENT' if sltp.confidence_score > 80 else '🟡 GOOD' if sltp.confidence_score > 65 else '⚠️ FAIR'}
+"""
+            
+            await self.send_message(chat_id, message)
+            
+        except Exception as e:
+            self.logger.error(f"Smart SL/TP command error: {e}")
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
             if not current_price:
                 await self.send_message(chat_id, "❌ Could not fetch current price")
                 return

@@ -5,7 +5,7 @@ integrations = ["python_openai:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk"]
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds", "docker_28"]
 
 [workflows]
 runButton = "FXSUSDT Comprehensive Fixed"

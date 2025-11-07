@@ -254,6 +254,10 @@ mode = "parallel"
 task = "shell.exec"
 args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_fxsusdt_bot_comprehensive_fixed.py"
 
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python keep_alive.py"
+
 [[workflows.workflow]]
 name = "Auto-Train ML Bot"
 author = 46516437
@@ -261,7 +265,7 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_auto_train_ml_bot.py"
+args = "python start_auto_train_ml_bot.py && python start_ultimate_bot.py"
 
 [[ports]]
 localPort = 3000

@@ -156,43 +156,58 @@ def fix_configuration_issues():
             logger.warning(f"   • {var}")
         logger.info("💡 Set missing variables in the Secrets tab")
 
-def fix_ml_model_issues():
-    """Fix ML model and prediction issues"""
+def fix_file_permissions():
+    """Fix file permission issues"""
     logger = logging.getLogger(__name__)
     
-    try:
-        # Create default ML metrics if missing
-        ml_dir = Path("ml_models")
-        ml_dir.mkdir(exist_ok=True)
-        
-        default_metrics = {
-            "signal_accuracy": 0.75,
-            "profit_prediction_accuracy": 0.60,
-            "risk_assessment_accuracy": 0.70,
-            "total_trades_learned": 0,
-            "last_training_time": None
+    # Make Python files executable
+    python_files = list(Path("SignalMaestro").glob("*.py"))
+    python_files.extend(list(Path(".").glob("*.py")))
+    
+    for file_path in python_files:
+        try:
+            # Make readable and executable
+            os.chmod(file_path, 0o755)
+            logger.info(f"✅ Fixed permissions: {file_path.name}")
+        except Exception as e:
+            logger.error(f"❌ Permission fix failed for {file_path}: {e}")
+
+def create_default_configs():
+    """Create default configuration files"""
+    logger = logging.getLogger(__name__)
+    
+    # Create default bot status file
+    default_status = {
+        "status": "ready",
+        "last_update": datetime.now().isoformat(),
+        "version": "production-v1.0",
+        "components": {
+            "database": "initialized",
+            "telegram": "ready",
+            "binance": "simulation",
+            "cornix": "logging"
         }
-        
-        metrics_file = ml_dir / "performance_metrics.json"
-        if not metrics_file.exists():
-            with open(metrics_file, 'w') as f:
-                json.dump(default_metrics, f, indent=2)
-            logger.info("✅ Created default ML metrics")
-        
-        # Create default market insights
-        insights_file = ml_dir / "market_insights.json"
-        if not insights_file.exists():
-            default_insights = {
-                "best_time_sessions": {},
-                "symbol_performance": {},
-                "indicator_effectiveness": {}
-            }
-            with open(insights_file, 'w') as f:
-                json.dump(default_insights, f, indent=2)
-            logger.info("✅ Created default market insights")
-            
-    except Exception as e:
-        logger.error(f"❌ ML model fix failed: {e}")
+    }
+    
+    with open("bot_status.json", "w") as f:
+        json.dump(default_status, f, indent=2)
+    logger.info("✅ Created default status file")
+    
+    # Create default ML metrics
+    ml_metrics = {
+        "total_trades_analyzed": 0,
+        "win_rate": 0.0,
+        "last_training": None,
+        "model_accuracy": {
+            "signal_classification": 0.0,
+            "profit_prediction": 0.0,
+            "risk_assessment": 0.0
+        }
+    }
+    
+    with open("ml_models/performance_metrics.json", "w") as f:
+        json.dump(ml_metrics, f, indent=2)
+    logger.info("✅ Created default ML metrics")
 
 def test_bot_components():
     """Test all bot components for basic functionality"""
@@ -201,22 +216,29 @@ def test_bot_components():
     try:
         # Test configuration
         sys.path.insert(0, "SignalMaestro")
+        from config import Config
+        config = Config()
+        validation = config.validate_config()
         
-        # Test basic imports without crashing
-        test_modules = [
-            ('config', 'Config'),
-            ('database', 'Database'),
-            ('signal_parser', 'SignalParser')
-        ]
+        if validation['valid']:
+            logger.info("✅ Configuration validation passed")
+        else:
+            logger.warning("⚠️ Configuration has issues")
+            
+        # Test database
+        from database import Database
+        db = Database()
+        logger.info("✅ Database class imported")
         
-        for module_name, class_name in test_modules:
-            try:
-                module = __import__(module_name)
-                cls = getattr(module, class_name)
-                logger.info(f"✅ {class_name} imported successfully")
-            except Exception as e:
-                logger.warning(f"⚠️ {class_name} import issue: {e}")
-                
+        # Test signal parser
+        from signal_parser import SignalParser
+        parser = SignalParser()
+        test_signal = parser.parse_signal("BTCUSDT BUY 45000 SL 44000 TP 46000")
+        if test_signal:
+            logger.info("✅ Signal parser working")
+        else:
+            logger.warning("⚠️ Signal parser needs attention")
+            
     except Exception as e:
         logger.error(f"❌ Component test failed: {e}")
 
@@ -234,7 +256,8 @@ def main():
         ("🗃️ Database Issues", fix_database_issues),
         ("📦 Import Issues", fix_import_errors),
         ("⚙️ Configuration", fix_configuration_issues),
-        ("🤖 ML Model Issues", fix_ml_model_issues),
+        ("🔐 File Permissions", fix_file_permissions),
+        ("📄 Default Configs", create_default_configs),
         ("🧪 Component Tests", test_bot_components)
     ]
     
@@ -250,7 +273,6 @@ def main():
     print("=" * 50)
     logger.info("🎉 All fixes completed!")
     logger.info("💡 Next step: Run 'python start_production_bot.py'")
-    logger.info("🔧 Or click the Run button to start the Production Bot")
     print("=" * 50)
 
 if __name__ == "__main__":

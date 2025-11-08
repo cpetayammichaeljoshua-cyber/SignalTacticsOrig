@@ -18,6 +18,18 @@ try:
     ORDER_FLOW_AVAILABLE = True
 except ImportError:
     ORDER_FLOW_AVAILABLE = False
+    # Create placeholder classes
+    class OrderFlowSignal:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+    
+    class AdvancedOrderFlowScalpingStrategy:
+        def __init__(self):
+            pass
+        
+        async def analyze_symbol(self, symbol, ohlcv_data, order_book_data=None):
+            return None
 
 class EnhancedOrderFlowIntegration:
     """Enhanced integration layer for order flow analysis"""

@@ -416,6 +416,30 @@ class AdvancedMLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error updating ML models incrementally: {e}")
 
+    def _fallback_ml_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Fallback ML prediction when main analyzer fails"""
+        signal_strength = signal_data.get('signal_strength', 50)
+        
+        if signal_strength >= 85:
+            prediction = 'favorable'
+            confidence = 85
+        elif signal_strength >= 75:
+            prediction = 'neutral'
+            confidence = 70
+        else:
+            prediction = 'unfavorable'
+            confidence = 40
+        
+        return {
+            'prediction': prediction,
+            'confidence': confidence,
+            'expected_profit': 1.0,
+            'risk_probability': 25.0,
+            'recommendation': "Signal Strength Based",
+            'model_accuracy': 0.0,
+            'trades_learned_from': 0
+        }
+
     def _get_time_session(self, timestamp: datetime) -> str:
         """Determine trading session"""
         hour = timestamp.hour
@@ -767,7 +791,7 @@ class AdvancedMLTradeAnalyzer:
     def predict_trade_outcome(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Advanced ML prediction for trade outcome"""
         try:
-            if not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
+            if not ML_AVAILABLE or not all([self.signal_classifier, self.profit_predictor, self.risk_assessor, self.scaler]):
                 return self._fallback_prediction(signal_data)
 
             # Prepare features as DataFrame
@@ -778,10 +802,19 @@ class AdvancedMLTradeAnalyzer:
             # Scale features - now using DataFrame
             features_scaled = self.scaler.transform(features_df)
 
-            # Get predictions
-            profit_prob = self.signal_classifier.predict_proba(features_scaled)[0][1]
-            profit_amount = self.profit_predictor.predict(features_scaled)[0]
-            risk_prob = self.risk_assessor.predict_proba(features_scaled)[0][1]
+            # Get predictions with proper error handling
+            try:
+                prob_result = self.signal_classifier.predict_proba(features_scaled)[0]
+                profit_prob = prob_result[1] if len(prob_result) > 1 else prob_result[0]
+                profit_amount = self.profit_predictor.predict(features_scaled)[0]
+                
+                risk_result = self.risk_assessor.predict_proba(features_scaled)[0]
+                risk_prob = risk_result[1] if len(risk_result) > 1 else risk_result[0]
+            except (IndexError, ValueError) as e:
+                self.logger.warning(f"ML prediction error: {e}, using fallback values")
+                profit_prob = 0.75
+                profit_amount = 1.0
+                risk_prob = 0.25
 
             # Calculate overall confidence
             confidence = profit_prob * 100
@@ -1048,9 +1081,13 @@ class UltimateTradingBot:
         self.active_symbols = set()  # Track symbols with open trades
         self.symbol_trade_lock = {}  # Lock mechanism for each symbol
 
-        # Advanced ML Trade Analyzer
-        self.ml_analyzer = AdvancedMLTradeAnalyzer()
-        self.ml_analyzer.load_ml_models()
+        # Advanced ML Trade Analyzer with error handling
+        try:
+            self.ml_analyzer = AdvancedMLTradeAnalyzer()
+            self.ml_analyzer.load_ml_models()
+        except Exception as e:
+            self.logger.warning(f"ML Analyzer initialization warning: {e}")
+            self.ml_analyzer = None
 
         # Closed Trades Scanner for ML Training
         self.closed_trades_scanner = None
@@ -1708,7 +1745,15 @@ class UltimateTradingBot:
                 'ema_bullish': indicators.get('ema_bullish', False)
             }
 
-            ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
+            # ML prediction with safety check
+            if self.ml_analyzer:
+                try:
+                    ml_prediction = self.ml_analyzer.predict_trade_outcome(ml_signal_data)
+                except Exception as e:
+                    self.logger.warning(f"ML prediction failed: {e}")
+                    ml_prediction = self._fallback_ml_prediction(ml_signal_data)
+            else:
+                ml_prediction = self._fallback_ml_prediction(ml_signal_data)
 
             # Only proceed with favorable predictions - Optimized thresholds
             ml_confidence = ml_prediction.get('confidence', 50)
@@ -2417,15 +2462,18 @@ Models Active:
                     for signal in signals:
                         self.signal_counter += 1
 
-                        # Send chart first
-                        try:
-                            df = await self.get_binance_data(signal['symbol'], '1h', 100)
-                            if df is not None:
-                                chart_data = self.generate_chart(signal['symbol'], df, signal)
-                                if chart_data:
-                                    await self.send_photo(chat_id, chart_data, f"📊 {signal['symbol']} Chart")
-                        except Exception as e:
-                            self.logger.warning(f"Chart generation failed: {e}")
+                        # Send chart first (with safety check)
+                        if CHART_AVAILABLE:
+                            try:
+                                df = await self.get_binance_data(signal['symbol'], '1h', 100)
+                                if df is not None:
+                                    chart_data = self.generate_chart(signal['symbol'], df, signal)
+                                    if chart_data:
+                                        await self.send_photo(chat_id, chart_data, f"📊 {signal['symbol']} Chart")
+                            except Exception as e:
+                                self.logger.warning(f"Chart generation failed: {e}")
+                        else:
+                            self.logger.debug("Chart generation skipped - libraries not available")
 
                         # Send signal info separately  
                         signal_msg = self.format_ml_signal_message(signal)

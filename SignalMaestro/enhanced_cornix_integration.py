@@ -1,317 +1,231 @@
-
 """
-Enhanced Cornix Integration with Advanced SL/TP Management
-Handles dynamic stop loss updates and position management
-"""
-
-import aiohttp
-import logging
-import json
-from typing import Dict, Any, Optional
-from datetime import datetime
-
-from config import Config
-
-class EnhancedCornixIntegration:
-    """Enhanced Cornix integration with advanced trade management"""
-    
-    def __init__(self):
-        self.config = Config()
-        self.logger = logging.getLogger(__name__)
-        self.webhook_url = self.config.CORNIX_WEBHOOK_URL
-        self.bot_uuid = self.config.CORNIX_BOT_UUID
-        
-    async def send_initial_signal(self, signal: Dict[str, Any]) -> Dict[str, Any]:
-        """Send initial trading signal to Cornix with proper formatting"""
-        try:
-            # Format for Cornix webhook
-            cornix_payload = {
-                'uuid': self.bot_uuid,
-                'timestamp': datetime.utcnow().isoformat(),
-                'source': 'enhanced_perfect_scalping_bot',
-                'action': signal['action'].lower(),
-                'symbol': signal['symbol'].replace('USDT', '/USDT'),
-                'entry_price': float(signal['entry_price']),
-                'stop_loss': float(signal['stop_loss']),
-                'take_profit_1': float(signal['tp1']),
-                'take_profit_2': float(signal['tp2']),
-                'take_profit_3': float(signal['tp3']),
-                'leverage': signal.get('leverage', 10),
-                'exchange': 'binance_futures',
-                'type': 'futures',
-                'margin_type': 'cross',
-                'position_size_percentage': 100,
-                
-                # Enhanced TP distribution
-                'tp_distribution': [40, 35, 25],  # 40% at TP1, 35% at TP2, 25% at TP3
-                
-                # Advanced SL management
-                'sl_management': {
-                    'move_to_entry_on_tp1': True,
-                    'move_to_tp1_on_tp2': True,
-                    'close_all_on_tp3': True,
-                    'auto_sl_updates': True
-                },
-                
-                # Signal metadata
-                'risk_reward': signal.get('risk_reward_ratio', 3.0),
-                'signal_strength': signal.get('signal_strength', 85),
-                'strategy': 'Enhanced Perfect Scalping',
-                'timeframe': 'Multi-TF',
-                'auto_execute': True
-            }
-            
-            result = await self._send_webhook(cornix_payload)
-            
-            if result.get('status') == 'success':
-                self.logger.info(f"✅ Initial signal sent to Cornix: {signal['symbol']}")
-                return {'success': True, 'response': result}
-            else:
-                self.logger.warning(f"⚠️ Cornix signal failed: {result}")
-                return {'success': False, 'error': result.get('error')}
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error sending signal to Cornix: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def update_stop_loss(self, symbol: str, new_sl: float, reason: str) -> Dict[str, Any]:
-        """Send stop loss update to Cornix"""
-        try:
-            update_payload = {
-                'uuid': self.bot_uuid,
-                'timestamp': datetime.utcnow().isoformat(),
-                'action': 'update_stop_loss',
-                'symbol': symbol.replace('USDT', '/USDT'),
-                'new_stop_loss': new_sl,
-                'reason': reason,
-                'update_type': 'trailing_sl',
-                'auto_execute': True,
-                'priority': 'high'
-            }
-            
-            result = await self._send_webhook(update_payload)
-            
-            if result.get('status') == 'success':
-                self.logger.info(f"✅ SL update sent to Cornix: {symbol} -> {new_sl}")
-                return {'success': True, 'response': result}
-            else:
-                self.logger.warning(f"⚠️ Cornix SL update failed: {result}")
-                return {'success': False, 'error': result.get('error')}
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error updating SL in Cornix: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def close_position(self, symbol: str, reason: str, percentage: int = 100) -> Dict[str, Any]:
-        """Send position closure to Cornix"""
-        try:
-            closure_payload = {
-                'uuid': self.bot_uuid,
-                'timestamp': datetime.utcnow().isoformat(),
-                'action': 'close_position',
-                'symbol': symbol.replace('USDT', '/USDT'),
-                'close_percentage': percentage,
-                'reason': reason,
-                'close_type': 'market_order',
-                'auto_execute': True,
-                'priority': 'high',
-                'final_closure': percentage == 100
-            }
-            
-            result = await self._send_webhook(closure_payload)
-            
-            if result.get('status') == 'success':
-                self.logger.info(f"✅ Position closure sent to Cornix: {symbol} ({percentage}%)")
-                return {'success': True, 'response': result}
-            else:
-                self.logger.warning(f"⚠️ Cornix closure failed: {result}")
-                return {'success': False, 'error': result.get('error')}
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error closing position in Cornix: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def partial_take_profit(self, symbol: str, tp_level: int, percentage: int) -> Dict[str, Any]:
-        """Send partial take profit to Cornix"""
-        try:
-            tp_payload = {
-                'uuid': self.bot_uuid,
-                'timestamp': datetime.utcnow().isoformat(),
-                'action': 'partial_take_profit',
-                'symbol': symbol.replace('USDT', '/USDT'),
-                'tp_level': tp_level,
-                'close_percentage': percentage,
-                'reason': f'TP{tp_level} hit - partial closure',
-                'auto_execute': True,
-                'update_remaining_sl': True
-            }
-            
-            result = await self._send_webhook(tp_payload)
-            
-            if result.get('status') == 'success':
-                self.logger.info(f"✅ Partial TP sent to Cornix: {symbol} TP{tp_level} ({percentage}%)")
-                return {'success': True, 'response': result}
-            else:
-                self.logger.warning(f"⚠️ Cornix partial TP failed: {result}")
-                return {'success': False, 'error': result.get('error')}
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error sending partial TP to Cornix: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def _send_webhook(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Send webhook request to Cornix with enhanced error handling"""
-        try:
-            headers = {
-                'Content-Type': 'application/json',
-                'User-Agent': 'EnhancedPerfectScalpingBot/2.0'
-            }
-            
-            # Add authentication if configured
-            if self.config.WEBHOOK_SECRET:
-                headers['Authorization'] = f"Bearer {self.config.WEBHOOK_SECRET}"
-            
-            timeout = aiohttp.ClientTimeout(total=15)
-            
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    self.webhook_url,
-                    json=payload,
-                    headers=headers
-                ) as response:
-                    
-                    response_text = await response.text()
-                    
-                    if response.status == 200:
-                        try:
-                            response_data = json.loads(response_text)
-                            return {
-                                'status': 'success',
-                                'status_code': response.status,
-                                'response': response_data
-                            }
-                        except json.JSONDecodeError:
-                            return {
-                                'status': 'success',
-                                'status_code': response.status,
-                                'response': response_text
-                            }
-                    else:
-                        return {
-                            'status': 'error',
-                            'status_code': response.status,
-                            'error': response_text
-                        }
-                        
-        except aiohttp.ClientError as e:
-            return {
-                'status': 'error',
-                'error': f'Network error: {str(e)}'
-            }
-        except Exception as e:
-            return {
-                'status': 'error',
-                'error': f'Unexpected error: {str(e)}'
-            }
-    
-    async def test_connection(self) -> Dict[str, Any]:
-        """Test Cornix webhook connection"""
-        try:
-            test_payload = {
-                'type': 'connection_test',
-                'timestamp': datetime.utcnow().isoformat(),
-                'uuid': self.bot_uuid,
-                'source': 'enhanced_perfect_scalping_bot',
-                'test_message': 'Enhanced bot connection test'
-            }
-            
-            result = await self._send_webhook(test_payload)
-            
-            return {
-                'success': result.get('status') == 'success',
-                'response': result,
-                'webhook_url': self.webhook_url,
-                'bot_uuid': self.bot_uuid
-            }
-            
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def format_tradingview_alert(self, signal: Dict[str, Any]) -> str:
-        """Format signal as TradingView alert for Cornix"""
-        try:
-            parts = [
-                f"uuid={self.bot_uuid}",
-                f"action={signal['action'].lower()}",
-                f"symbol={signal['symbol']}",
-                f"price={signal['entry_price']}",
-                f"sl={signal['stop_loss']}",
-                f"tp1={signal['tp1']}",
-                f"tp2={signal['tp2']}",
-                f"tp3={signal['tp3']}"
-            ]
-            
-            return "\n".join(parts)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error formatting TradingView alert: {e}")
-            return ""
-#!/usr/bin/env python3
-"""
-Enhanced Cornix Integration for Ultimate Scalping Bot
+Enhanced Cornix Integration with comprehensive error handling
+Handles Cornix webhook forwarding with fallback mechanisms
 """
 
 import asyncio
-import logging
 import aiohttp
 import json
+import logging
+from datetime import datetime
 from typing import Dict, Any, Optional
 
 class EnhancedCornixIntegration:
-    """Enhanced Cornix integration with advanced features"""
-    
-    def __init__(self):
+    """Enhanced Cornix integration with robust error handling"""
+
+    def __init__(self, webhook_url: str = "", api_key: str = ""):
+        self.webhook_url = webhook_url
+        self.api_key = api_key
         self.logger = logging.getLogger(__name__)
-        self.api_url = "https://api.cornix.io/v1"
-        self.webhook_url = None
-        self.api_key = None
-        
+
+        # Fallback to logging mode if no webhook configured
+        self.logging_mode = not bool(webhook_url)
+
+        if self.logging_mode:
+            self.logger.info("🔧 Cornix integration running in LOGGING mode")
+        else:
+            self.logger.info("🌐 Cornix integration configured with webhook")
+
     async def test_connection(self) -> Dict[str, Any]:
-        """Test Cornix connection"""
+        """Test Cornix webhook connection"""
         try:
-            return {'success': True, 'message': 'Cornix connection simulated'}
+            if self.logging_mode:
+                return {'success': True, 'mode': 'logging', 'message': 'Logging mode active'}
+
+            # Test webhook with ping
+            test_payload = {
+                'action': 'ping',
+                'timestamp': datetime.now().isoformat(),
+                'source': 'trading_bot_test'
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.webhook_url,
+                    json=test_payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=10
+                ) as response:
+                    if response.status in [200, 201, 202]:
+                        return {'success': True, 'mode': 'webhook', 'status': response.status}
+                    else:
+                        self.logger.warning(f"Cornix webhook test returned {response.status}")
+                        return {'success': False, 'status': response.status}
+
         except Exception as e:
+            self.logger.error(f"Cornix connection test failed: {e}")
             return {'success': False, 'error': str(e)}
-    
-    async def send_initial_signal(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def send_initial_signal(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Send initial trading signal to Cornix"""
         try:
-            self.logger.info(f"Sending signal to Cornix: {signal['symbol']} {signal['action']}")
-            
-            # Simulate successful signal forwarding
-            return {'success': True, 'message': 'Signal forwarded successfully'}
-            
+            # Format signal for Cornix
+            cornix_payload = self._format_cornix_signal(signal_data)
+
+            if self.logging_mode:
+                self.logger.info(f"📝 CORNIX LOG: Initial signal - {signal_data.get('symbol')} {signal_data.get('action')}")
+                self._log_signal_details(cornix_payload)
+                return {'success': True, 'mode': 'logged'}
+
+            # Send to Cornix webhook
+            return await self._send_webhook(cornix_payload, "initial_signal")
+
         except Exception as e:
-            self.logger.error(f"Error sending signal to Cornix: {e}")
+            self.logger.error(f"Error sending initial signal: {e}")
             return {'success': False, 'error': str(e)}
-    
-    async def update_stop_loss(self, symbol: str, new_sl: float, reason: str) -> bool:
-        """Update stop loss for active position"""
+
+    async def send_advanced_signal(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Send advanced trading signal with enhanced formatting"""
         try:
-            self.logger.info(f"Updating SL for {symbol} to {new_sl}: {reason}")
-            return True
+            # Enhanced signal formatting
+            enhanced_payload = self._format_advanced_signal(signal_data)
+
+            if self.logging_mode:
+                self.logger.info(f"📝 CORNIX LOG: Advanced signal - {signal_data.get('symbol')}")
+                self._log_signal_details(enhanced_payload)
+                return {'success': True, 'mode': 'logged'}
+
+            return await self._send_webhook(enhanced_payload, "advanced_signal")
+
         except Exception as e:
-            self.logger.error(f"Error updating SL: {e}")
-            return False
-    
-    async def close_position(self, symbol: str, reason: str, percentage: int = 100) -> bool:
-        """Close position partially or fully"""
+            self.logger.error(f"Error sending advanced signal: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def update_stop_loss(self, symbol: str, new_sl: float, reason: str) -> bool:
+        """Update stop loss for existing position"""
         try:
-            self.logger.info(f"Closing {percentage}% of {symbol} position: {reason}")
-            return True
+            update_payload = {
+                'action': 'update_stop_loss',
+                'symbol': symbol,
+                'new_stop_loss': new_sl,
+                'reason': reason,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            if self.logging_mode:
+                self.logger.info(f"📝 CORNIX LOG: SL Update - {symbol} → {new_sl} ({reason})")
+                return True
+
+            result = await self._send_webhook(update_payload, "stop_loss_update")
+            return result.get('success', False)
+
+        except Exception as e:
+            self.logger.error(f"Error updating stop loss: {e}")
+            return False
+
+    async def close_position(self, symbol: str, reason: str, percentage: int = 100) -> bool:
+        """Close position (partial or full)"""
+        try:
+            close_payload = {
+                'action': 'close_position',
+                'symbol': symbol,
+                'percentage': percentage,
+                'reason': reason,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            if self.logging_mode:
+                self.logger.info(f"📝 CORNIX LOG: Close Position - {symbol} {percentage}% ({reason})")
+                return True
+
+            result = await self._send_webhook(close_payload, "position_close")
+            return result.get('success', False)
+
         except Exception as e:
             self.logger.error(f"Error closing position: {e}")
             return False
+
+    def _format_cornix_signal(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Format signal data for Cornix"""
+        return {
+            'action': 'signal',
+            'symbol': signal_data.get('symbol'),
+            'side': signal_data.get('action', '').lower(),
+            'entry': signal_data.get('entry_price'),
+            'stop_loss': signal_data.get('stop_loss'),
+            'take_profits': [
+                signal_data.get('tp1'),
+                signal_data.get('tp2'),
+                signal_data.get('tp3')
+            ],
+            'leverage': signal_data.get('leverage', 50),
+            'quantity': signal_data.get('quantity'),
+            'timestamp': datetime.now().isoformat(),
+            'source': 'enhanced_trading_bot'
+        }
+
+    def _format_advanced_signal(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Format advanced signal with additional metadata"""
+        base_signal = self._format_cornix_signal(signal_data)
+
+        # Add advanced fields
+        base_signal.update({
+            'signal_strength': signal_data.get('signal_strength', 0),
+            'strategy': signal_data.get('strategy', 'enhanced_scalping'),
+            'timeframe': signal_data.get('timeframe', 'multi'),
+            'risk_reward_ratio': signal_data.get('risk_reward_ratio', 3.0),
+            'market_conditions': signal_data.get('market_conditions', {}),
+            'ml_enhanced': signal_data.get('ml_enhanced', False)
+        })
+
+        return base_signal
+
+    async def _send_webhook(self, payload: Dict[str, Any], action_type: str) -> Dict[str, Any]:
+        """Send webhook request to Cornix"""
+        try:
+            headers = {'Content-Type': 'application/json'}
+            if self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.webhook_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=15
+                ) as response:
+                    if response.status in [200, 201, 202]:
+                        self.logger.info(f"✅ Cornix {action_type} sent successfully")
+                        return {'success': True, 'status': response.status}
+                    else:
+                        error_text = await response.text()
+                        self.logger.error(f"❌ Cornix {action_type} failed: {response.status} - {error_text}")
+                        return {'success': False, 'status': response.status, 'error': error_text}
+
+        except asyncio.TimeoutError:
+            self.logger.error(f"⏰ Cornix {action_type} timeout")
+            return {'success': False, 'error': 'timeout'}
+        except Exception as e:
+            self.logger.error(f"❌ Cornix {action_type} error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def _log_signal_details(self, payload: Dict[str, Any]):
+        """Log signal details in structured format"""
+        try:
+            self.logger.info("=" * 50)
+            self.logger.info("📊 CORNIX SIGNAL DETAILS:")
+            self.logger.info(f"Symbol: {payload.get('symbol')}")
+            self.logger.info(f"Action: {payload.get('side', '').upper()}")
+            self.logger.info(f"Entry: {payload.get('entry')}")
+            self.logger.info(f"Stop Loss: {payload.get('stop_loss')}")
+
+            tps = payload.get('take_profits', [])
+            for i, tp in enumerate(tps, 1):
+                if tp:
+                    self.logger.info(f"TP{i}: {tp}")
+
+            self.logger.info(f"Leverage: {payload.get('leverage')}x")
+            self.logger.info(f"Timestamp: {payload.get('timestamp')}")
+            self.logger.info("=" * 50)
+
+        except Exception as e:
+            self.logger.error(f"Error logging signal details: {e}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get integration status"""
+        return {
+            'configured': bool(self.webhook_url),
+            'mode': 'webhook' if self.webhook_url else 'logging',
+            'webhook_url': self.webhook_url[:50] + "..." if len(self.webhook_url) > 50 else self.webhook_url,
+            'api_key_configured': bool(self.api_key)
+        }

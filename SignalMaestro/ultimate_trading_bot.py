@@ -49,9 +49,11 @@ except ImportError:
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.preprocessing import LabelEncoder
+    from sklearn.preprocessing import LabelEncoder, StandardScaler
     from sklearn.metrics import classification_report, accuracy_score
     from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import GradientBoostingRegressor
+    from sklearn.metrics import r2_score
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
@@ -72,7 +74,6 @@ class AdvancedMLTradeAnalyzer:
         self.market_regime_detector = None
         # Initialize StandardScaler for ML models
         if ML_AVAILABLE:
-            from sklearn.preprocessing import StandardScaler
             self.scaler = StandardScaler()
         else:
             self.scaler = None
@@ -418,109 +419,44 @@ class AdvancedMLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error updating ML models incrementally: {e}")
 
-    def _fallback_ml_prediction(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback ML prediction when main analyzer fails"""
-        signal_strength = signal_data.get('signal_strength', 50)
-        
-        if signal_strength >= 85:
-            prediction = 'favorable'
-            confidence = 85
-        elif signal_strength >= 75:
-            prediction = 'neutral'
-            confidence = 70
-        else:
-            prediction = 'unfavorable'
-            confidence = 40
-        
-        return {
-            'prediction': prediction,
-            'confidence': confidence,
-            'expected_profit': 1.0,
-            'risk_probability': 25.0,
-            'recommendation': "Signal Strength Based",
-            'model_accuracy': 0.0,
-            'trades_learned_from': 0
-        }
-
-    def _get_time_session(self, timestamp: datetime) -> str:
-        """Determine trading session"""
-        hour = timestamp.hour
-
-        if 8 <= hour < 10:
-            return 'LONDON_OPEN'
-        elif 10 <= hour < 13:
-            return 'LONDON_MAIN'
-        elif 13 <= hour < 15:
-            return 'NY_OVERLAP'
-        elif 15 <= hour < 18:
-            return 'NY_MAIN'
-        elif 18 <= hour < 22:
-            return 'NY_CLOSE'
-        elif 22 <= hour < 24 or 0 <= hour < 6:
-            return 'ASIA_MAIN'
-        else:
-            return 'TRANSITION'
-
-    def _get_time_session(self, timestamp: datetime) -> str:
-        """Determine trading session"""
-        hour = timestamp.hour
-
-        if 8 <= hour < 10:
-            return 'LONDON_OPEN'
-        elif 10 <= hour < 13:
-            return 'LONDON_MAIN'
-        elif 13 <= hour < 15:
-            return 'NY_OVERLAP'
-        elif 15 <= hour < 18:
-            return 'NY_MAIN'
-        elif 18 <= hour < 22:
-            return 'NY_CLOSE'
-        elif 22 <= hour < 24 or 0 <= hour < 6:
-            return 'ASIA_MAIN'
-        else:
-            return 'TRANSITION'
-
     async def retrain_models(self):
-        """Retrain all ML models with new data"""
+        """Retrain ML models with optimized frequency and error handling"""
         try:
             if not ML_AVAILABLE:
-                self.logger.warning("ML libraries not available")
                 return
 
-            self.logger.info("🧠 Retraining ML models with new data...")
+            if self.trades_since_retrain >= self.retrain_threshold:
+                self.logger.info(f"🧠 Retraining ML models with {self.trades_since_retrain} new trades...")
 
-            # Get training data
-            training_data = self._get_training_data()
+                training_data = self._get_training_data()
 
-            if len(training_data) < 10:  # Reduced threshold for development
-                self.logger.warning(f"Insufficient training data: {len(training_data)} trades")
-                return
+                if len(training_data) < 20: # Increased minimum threshold
+                    self.logger.warning(f"Insufficient training data: {len(training_data)} trades")
+                    return
 
-            # Prepare features and targets
-            features, targets = self._prepare_ml_features(training_data)
+                features, targets = self._prepare_ml_features(training_data)
 
-            if features is None or len(features) == 0:
-                return
+                if features is None or len(features) == 0:
+                    return
 
-            # Train signal classifier
-            await self._train_signal_classifier(features, targets)
+                # Train models with error handling
+                try:
+                    await self._train_signal_classifier(features, targets)
+                    await self._train_profit_predictor(features, targets)
+                    await self._train_risk_assessor(features, targets)
+                    await self._analyze_market_insights(training_data)
+                except Exception as model_error:
+                    self.logger.warning(f"Model training warning: {model_error}")
 
-            # Train profit predictor
-            await self._train_profit_predictor(features, targets)
+                # Save models
+                self._save_ml_models()
 
-            # Train risk assessor
-            await self._train_risk_assessor(features, targets)
+                self.trades_since_retrain = 0
+                self.model_performance['last_training_time'] = datetime.now().isoformat()
 
-            # Analyze market insights
-            await self._analyze_market_insights(training_data)
-
-            # Save models
-            self._save_ml_models()
-
-            self.trades_since_retrain = 0
-            self.model_performance['last_training_time'] = datetime.now().isoformat()
-
-            self.logger.info(f"✅ ML models retrained with {len(training_data)} trades")
+                # Only log completion every 100 trades learned to reduce spam
+                if self.model_performance['total_trades_learned'] % 100 == 0:
+                    self.logger.info(f"✅ ML models retrained with {self.model_performance['total_trades_learned']} total trades")
 
         except Exception as e:
             self.logger.error(f"Error retraining ML models: {e}")
@@ -663,7 +599,6 @@ class AdvancedMLTradeAnalyzer:
 
 
             # Train model
-            from sklearn.ensemble import GradientBoostingRegressor
             self.profit_predictor = GradientBoostingRegressor(
                 n_estimators=100,
                 learning_rate=0.1,
@@ -674,7 +609,6 @@ class AdvancedMLTradeAnalyzer:
 
             # Evaluate
             y_pred = self.profit_predictor.predict(X_test_scaled)
-            from sklearn.metrics import r2_score
             r2 = r2_score(y_test, y_pred)
 
             self.model_performance['profit_prediction_accuracy'] = max(0, r2)
@@ -828,7 +762,7 @@ class AdvancedMLTradeAnalyzer:
                 prob_result = self.signal_classifier.predict_proba(features_scaled)[0]
                 profit_prob = prob_result[1] if len(prob_result) > 1 else prob_result[0]
                 profit_amount = self.profit_predictor.predict(features_scaled)[0]
-                
+
                 risk_result = self.risk_assessor.predict_proba(features_scaled)[0]
                 risk_prob = risk_result[1] if len(risk_result) > 1 else risk_result[0]
             except (IndexError, ValueError) as e:
@@ -1109,7 +1043,7 @@ class UltimateTradingBot:
         except Exception as e:
             self.logger.warning(f"ML Analyzer initialization warning: {e}")
             self.ml_analyzer = None
-            
+
         # Set minimum confidence for signal if ML analyzer exists
         if self.ml_analyzer:
             self.ml_analyzer.min_confidence_for_signal = 85.0
@@ -1119,16 +1053,16 @@ class UltimateTradingBot:
                 def __init__(self):
                     self.min_confidence_for_signal = 85.0
                     self.db_path = "fallback_ml.db"
-                    
+
                 def predict_trade_outcome(self, signal_data):
                     return self._fallback_ml_prediction(signal_data)
-                    
+
                 def record_trade_outcome(self, trade_data):
                     pass  # No-op for fallback
-                    
+
                 def update_open_trade_data(self, trade_data):
                     pass  # No-op for fallback
-                    
+
                 def get_ml_summary(self):
                     return {
                         'model_performance': {'signal_accuracy': 0.75, 'total_trades_learned': 0},
@@ -1137,7 +1071,7 @@ class UltimateTradingBot:
                         'next_retrain_in': 0,
                         'ml_available': False
                     }
-                    
+
                 def _fallback_ml_prediction(self, signal_data):
                     signal_strength = signal_data.get('signal_strength', 50)
                     if signal_strength >= 85:
@@ -1146,7 +1080,7 @@ class UltimateTradingBot:
                         return {'prediction': 'neutral', 'confidence': 70}
                     else:
                         return {'prediction': 'unfavorable', 'confidence': 40}
-                        
+
             self.ml_analyzer = FallbackAnalyzer()
 
         # Closed Trades Scanner for ML Training
@@ -3183,7 +3117,7 @@ Use /train to manually scan and train""")
                                 'market_volatility': indicators.get('market_volatility', 0.02),
                                 'volume_ratio': indicators.get('volume_ratio', 1.0),
                                 'rsi_value': indicators.get('rsi', 50),
-                                'ema_alignment': indicators.get('ema_bullish', False) or indicators.get('ema_bearish', False),
+                                'ema_alignment': indicators.get('ema_bullish', False),
                                 'cvd_trend': indicators.get('cvd_trend', 'neutral')
                             })
             except Exception as market_error:
@@ -3269,11 +3203,10 @@ Use /train to manually scan and train""")
                                 channel_sent = await self.send_message(self.target_channel, signal_msg)
 
                             if channel_sent:
-                                chart_status = "📊✅" if chart_sent else "📊❌"
-                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered {chart_status}: Channel @SignalTactics")
+                                enhancement_type = "Order Flow Enhanced" if signal.get('order_flow_enhanced') else "ML Enhanced"
+                                self.logger.info(f"📤 ML Signal #{self.signal_counter} delivered {'✅' if chart_sent else '❌'} chart: Channel @SignalTactics")
 
-                                ml_conf = signal.get('ml_prediction', {}).get('confidence', 0)
-                                self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {ml_conf:.1f}%)")
+                                self.logger.info(f"✅ ML Signal sent: {signal['symbol']} {signal['direction']} (Strength: {signal['signal_strength']:.0f}%, ML: {signal.get('ml_prediction', {}).get('confidence', 0):.1f}%)")
 
                                 # Record open trade for immediate ML learning
                                 await self.record_open_trade_for_ml(signal)
@@ -3288,10 +3221,6 @@ Use /train to manually scan and train""")
 
                             signals_sent_count += 1
                             await asyncio.sleep(5)
-
-                        except Exception as signal_error:
-                            self.logger.error(f"Error processing ML signal for {signal.get('symbol', 'unknown')}: {signal_error}")
-                            continue
 
                 else:
                     self.logger.info("📊 No ML signals found - models filtering for optimal opportunities")
@@ -3415,6 +3344,7 @@ Use /train to manually scan and train""")
             self.logger.critical(f"Critical ML bot error: {e}")
             raise
         finally:
+            self.logger.info("🏁 Ultimate ML Trading Bot stopped")
             if self.admin_chat_id and not self.shutdown_requested:
                 try:
                     shutdown_msg = "🛑 **Ultimate ML Trading Bot Shutdown**\n\nBot has stopped. All ML models and learning data preserved for restart."

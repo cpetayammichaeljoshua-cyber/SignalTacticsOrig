@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Production Bot Fixed"
+runButton = "Production Bot Ultimate Fixed"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -184,6 +184,15 @@ args = "cd SignalMaestro && python ultimate_trading_bot.py"
 
 [[workflows.workflow]]
 name = "Production Bot Fixed"
+author = 46820824
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_production_bot.py"
+
+[[workflows.workflow]]
+name = "Production Bot Ultimate Fixed"
 author = 46820824
 mode = "sequential"
 

@@ -87,14 +87,14 @@ async def start_trading_bot():
     try:
         logger.info("🤖 Starting Ultimate Trading Bot...")
 
-        # Import the main bot
-        from ultimate_trading_bot import UltimateTradingBot
+        # Import the main bot from SignalMaestro directory
+        from SignalMaestro.ultimate_trading_bot import UltimateTradingBot
 
         # Create and configure bot
         bot = UltimateTradingBot()
 
-        # Run the bot
-        await bot.start()
+        # Run the bot using the correct method
+        await bot.run_bot()
 
         return True
 

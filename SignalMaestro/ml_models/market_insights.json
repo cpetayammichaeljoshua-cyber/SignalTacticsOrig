@@ -1,0 +1,43 @@
+{
+  "best_time_sessions": {
+    "mean": {
+      "NY_CLOSE": -4.334123045589235
+    },
+    "count": {
+      "NY_CLOSE": 68
+    },
+    "std": {
+      "NY_CLOSE": 7.161640180181798
+    }
+  },
+  "symbol_performance": {
+    "mean": {
+      "AAVEUSDT": -12.730320046117868,
+      "ALPHAUSDT": 0.0,
+      "EOSUSDT": 0.0,
+      "SUSHIUSDT": -14.00560224089603,
+      "XRPUSDT": -2.6366672525922232
+    },
+    "count": {
+      "AAVEUSDT": 14,
+      "ALPHAUSDT": 26,
+      "EOSUSDT": 14,
+      "SUSHIUSDT": 7,
+      "XRPUSDT": 7
+    },
+    "std": {
+      "AAVEUSDT": 6.3837975483282,
+      "ALPHAUSDT": 0.0,
+      "EOSUSDT": 0.0,
+      "SUSHIUSDT": 8.950963469983126,
+      "XRPUSDT": 1.4491679071753585
+    }
+  },
+  "indicator_effectiveness": {
+    "signal_strength": NaN,
+    "rsi_value": NaN,
+    "volume_ratio": NaN,
+    "profit_loss": 1.0
+  },
+  "risk_patterns": {}
+}

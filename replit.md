@@ -28,6 +28,15 @@ The bot implements several sophisticated trading strategies:
 2. **Time-Fibonacci Strategy**: Combines market session analysis with Fibonacci retracements for optimal entry timing
 3. **ML-Enhanced Strategy**: Machine learning models that learn from past trades to improve future signal quality
 4. **Ultimate Scalping Strategy**: Multi-indicator confluence system with dynamic stop-loss management
+5. **Advanced Order Flow Scalping Strategy**: Institutional-grade order flow analysis with real-time market microstructure data
+   - **Real Order Book Analysis**: Uses live bid/ask depth with prices and volumes from exchange order books
+   - **Trade-by-Trade CVD**: Calculates Cumulative Volume Delta from actual market trades (buy vs sell volume)
+   - **Smart Money Detection**: Identifies large institutional orders and block trades
+   - **Delta Divergence**: Detects when price diverges from underlying order flow
+   - **Aggressive/Passive Flow**: Distinguishes market orders from limit orders for flow analysis
+   - **Volume Footprint**: Price-level volume distribution patterns
+   - **Market Microstructure**: Spread analysis, depth scoring, tick momentum
+   - **Execution Speed**: Ultra-fast analysis with 30s minimum intervals, targeting 60-180s holds
 
 ### Process Management
 

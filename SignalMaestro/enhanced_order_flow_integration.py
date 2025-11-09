@@ -12,6 +12,7 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 import aiohttp
+import traceback
 
 try:
     from advanced_order_flow_scalping_strategy import AdvancedOrderFlowScalpingStrategy, OrderFlowSignal
@@ -82,10 +83,11 @@ class EnhancedOrderFlowIntegration:
             
         except Exception as e:
             self.logger.error(f"Error in order flow analysis for {symbol}: {e}")
+            self.logger.debug(f"Full traceback: {traceback.format_exc()}")
             return await self._fallback_order_flow_analysis(symbol, ohlcv_data)
     
     async def _fetch_order_book_data(self, symbol: str) -> Optional[Dict]:
-        """Fetch real-time order book data from Binance"""
+        """Fetch real-time order book data from Binance with enhanced error handling"""
         try:
             url = f"https://fapi.binance.com/fapi/v1/depth"
             params = {
@@ -93,109 +95,182 @@ class EnhancedOrderFlowIntegration:
                 'limit': 20
             }
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        order_book = await response.json()
-                        
-                        # Fetch recent trades for delta calculation
-                        trades_url = f"https://fapi.binance.com/fapi/v1/aggTrades"
-                        trades_params = {'symbol': symbol, 'limit': 100}
-                        
-                        async with session.get(trades_url, params=trades_params) as trades_response:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.get(url, params=params) as response:
+                        if response.status == 200:
+                            order_book = await response.json()
+                            
+                            # Fetch recent trades for delta calculation
+                            trades_url = f"https://fapi.binance.com/fapi/v1/aggTrades"
+                            trades_params = {'symbol': symbol, 'limit': 100}
+                            
                             recent_trades = []
-                            if trades_response.status == 200:
-                                trades_data = await trades_response.json()
-                                recent_trades = [{
-                                    'side': 'sell' if trade['m'] else 'buy',
-                                    'amount': float(trade['q']),
-                                    'price': float(trade['p']),
-                                    'timestamp': trade['T']
-                                } for trade in trades_data]
-                        
-                        return {
-                            'bids': [[float(bid[0]), float(bid[1])] for bid in order_book.get('bids', [])],
-                            'asks': [[float(ask[0]), float(ask[1])] for ask in order_book.get('asks', [])],
-                            'recent_trades': recent_trades
-                        }
+                            try:
+                                async with session.get(trades_url, params=trades_params) as trades_response:
+                                    if trades_response.status == 200:
+                                        trades_data = await trades_response.json()
+                                        recent_trades = [{
+                                            'side': 'sell' if trade.get('m', False) else 'buy',
+                                            'amount': float(trade.get('q', 0)),
+                                            'price': float(trade.get('p', 0)),
+                                            'timestamp': trade.get('T', 0)
+                                        } for trade in trades_data if isinstance(trade, dict)]
+                            except Exception as e:
+                                self.logger.debug(f"Error fetching trades for {symbol}: {e}")
+                            
+                            # Validate and clean order book data
+                            try:
+                                cleaned_bids = []
+                                for bid in order_book.get('bids', []):
+                                    if isinstance(bid, list) and len(bid) >= 2:
+                                        price = float(bid[0])
+                                        volume = float(bid[1])
+                                        if price > 0 and volume > 0:
+                                            cleaned_bids.append([price, volume])
+                                
+                                cleaned_asks = []
+                                for ask in order_book.get('asks', []):
+                                    if isinstance(ask, list) and len(ask) >= 2:
+                                        price = float(ask[0])
+                                        volume = float(ask[1])
+                                        if price > 0 and volume > 0:
+                                            cleaned_asks.append([price, volume])
+                                
+                                return {
+                                    'bids': cleaned_bids,
+                                    'asks': cleaned_asks,
+                                    'recent_trades': recent_trades
+                                }
+                            except Exception as e:
+                                self.logger.debug(f"Error cleaning order book data for {symbol}: {e}")
+                                return None
+                        else:
+                            self.logger.debug(f"Order book fetch failed for {symbol}: {response.status}")
+                except asyncio.TimeoutError:
+                    self.logger.debug(f"Timeout fetching order book for {symbol}")
+                except Exception as e:
+                    self.logger.debug(f"Network error fetching order book for {symbol}: {e}")
+            
             return None
             
         except Exception as e:
-            self.logger.debug(f"Error fetching order book for {symbol}: {e}")
+            self.logger.debug(f"Error in order book fetch for {symbol}: {e}")
             return None
     
     def _convert_to_enhanced_format(self, signal: OrderFlowSignal) -> Dict[str, Any]:
         """Convert OrderFlowSignal to enhanced format for the trading bot"""
-        return {
-            'symbol': signal.symbol,
-            'direction': signal.direction,
-            'entry_price': signal.entry_price,
-            'stop_loss': signal.stop_loss,
-            'tp1': signal.tp1,
-            'tp2': signal.tp2,
-            'tp3': signal.tp3,
-            'signal_strength': signal.signal_strength,
-            'leverage': signal.leverage,
-            'cvd_trend': signal.cvd_trend,
-            'cvd_strength': signal.cvd_strength,
-            'delta_divergence': signal.delta_divergence,
-            'bid_ask_imbalance': signal.bid_ask_imbalance,
-            'order_book_pressure': signal.order_book_pressure,
-            'aggressive_flow_ratio': signal.aggressive_flow_ratio,
-            'smart_money_flow': signal.smart_money_flow,
-            'liquidity_zone_proximity': signal.liquidity_zone_proximity,
-            'volume_footprint_score': signal.volume_footprint_score,
-            'spread_quality': signal.spread_quality,
-            'market_depth_score': signal.market_depth_score,
-            'tick_momentum_score': signal.tick_momentum_score,
-            'execution_urgency': signal.execution_urgency,
-            'expected_hold_seconds': signal.expected_hold_seconds,
-            'confidence_level': signal.confidence_level,
-            'timestamp': signal.timestamp or datetime.now(),
-            'order_flow_enhanced': True,
-            'order_flow_score': signal.signal_strength,
-            'smart_money_detected': signal.smart_money_flow in ['bullish', 'bearish']
-        }
+        try:
+            return {
+                'symbol': getattr(signal, 'symbol', ''),
+                'direction': getattr(signal, 'direction', ''),
+                'entry_price': getattr(signal, 'entry_price', 0),
+                'stop_loss': getattr(signal, 'stop_loss', 0),
+                'tp1': getattr(signal, 'tp1', 0),
+                'tp2': getattr(signal, 'tp2', 0),
+                'tp3': getattr(signal, 'tp3', 0),
+                'signal_strength': getattr(signal, 'signal_strength', 0),
+                'leverage': getattr(signal, 'leverage', 25),
+                'cvd_trend': getattr(signal, 'cvd_trend', 'neutral'),
+                'cvd_strength': getattr(signal, 'cvd_strength', 0),
+                'delta_divergence': getattr(signal, 'delta_divergence', False),
+                'bid_ask_imbalance': getattr(signal, 'bid_ask_imbalance', 1.0),
+                'order_book_pressure': getattr(signal, 'order_book_pressure', 'balanced'),
+                'aggressive_flow_ratio': getattr(signal, 'aggressive_flow_ratio', 1.0),
+                'smart_money_flow': getattr(signal, 'smart_money_flow', 'neutral'),
+                'liquidity_zone_proximity': getattr(signal, 'liquidity_zone_proximity', 
+                                                  getattr(signal, 'liquidity_zone_near', False)),
+                'volume_footprint_score': getattr(signal, 'volume_footprint_score', 50),
+                'spread_quality': getattr(signal, 'spread_quality', 'normal'),
+                'market_depth_score': getattr(signal, 'market_depth_score', 50),
+                'tick_momentum_score': getattr(signal, 'tick_momentum_score', 50),
+                'execution_urgency': getattr(signal, 'execution_urgency', 'normal'),
+                'expected_hold_seconds': getattr(signal, 'expected_hold_seconds', 120),
+                'confidence_level': getattr(signal, 'confidence_level', 0),
+                'timestamp': getattr(signal, 'timestamp', datetime.now()),
+                'order_flow_enhanced': True,
+                'order_flow_score': getattr(signal, 'signal_strength', 0),
+                'smart_money_detected': getattr(signal, 'smart_money_flow', 'neutral') in ['bullish', 'bearish']
+            }
+        except Exception as e:
+            self.logger.error(f"Error converting signal to enhanced format: {e}")
+            return None
     
     async def _fallback_order_flow_analysis(self, symbol: str, ohlcv_data: Dict[str, List]) -> Optional[Dict[str, Any]]:
         """Fallback order flow analysis when main strategy is unavailable"""
         try:
             # Use 1m or 3m data for fallback analysis
-            primary_tf = '3m' if '3m' in ohlcv_data else '1m'
-            if primary_tf not in ohlcv_data:
+            primary_tf = '3m' if '3m' in ohlcv_data else '1m' if '1m' in ohlcv_data else None
+            if primary_tf not in ohlcv_data or not ohlcv_data[primary_tf]:
                 return None
             
-            df = pd.DataFrame(ohlcv_data[primary_tf], columns=[
-                'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                'close_time', 'quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote', 'ignore'
-            ])
-            
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = pd.to_numeric(df[col])
-            
-            if len(df) < 20:
+            # Safely create DataFrame
+            try:
+                raw_data = ohlcv_data[primary_tf]
+                if not raw_data or len(raw_data) < 20:
+                    return None
+                
+                # Determine column count
+                col_count = len(raw_data[0]) if raw_data[0] else 0
+                
+                if col_count == 6:
+                    columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                elif col_count >= 12:
+                    columns = [
+                        'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                        'close_time', 'quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote', 'ignore'
+                    ]
+                else:
+                    self.logger.debug(f"Unexpected column count for {symbol}: {col_count}")
+                    return None
+                
+                df = pd.DataFrame(raw_data, columns=columns[:col_count])
+                
+                # Convert numeric columns
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                # Clean data
+                df = df.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
+                
+                if len(df) < 20:
+                    return None
+                    
+            except Exception as e:
+                self.logger.debug(f"Error creating DataFrame for {symbol}: {e}")
                 return None
             
             # Simple order flow estimation
-            current_price = df['close'].iloc[-1]
+            current_price = float(df['close'].iloc[-1])
             
             # Volume analysis
-            volume_ma = df['volume'].rolling(20).mean().iloc[-1]
-            current_volume = df['volume'].iloc[-1]
-            volume_ratio = current_volume / volume_ma if volume_ma > 0 else 1.0
+            try:
+                volume_ma = df['volume'].rolling(20).mean().iloc[-1]
+                current_volume = df['volume'].iloc[-1]
+                volume_ratio = current_volume / volume_ma if volume_ma > 0 else 1.0
+            except Exception:
+                volume_ratio = 1.0
             
             # Price momentum
-            price_change = (df['close'].iloc[-1] - df['close'].iloc[-5]) / df['close'].iloc[-5]
+            try:
+                price_change = (df['close'].iloc[-1] - df['close'].iloc[-5]) / df['close'].iloc[-5]
+            except Exception:
+                price_change = 0
             
             # Simple CVD estimation
             cvd_estimate = 0
-            for i in range(-10, 0):
-                if i >= -len(df):
-                    candle = df.iloc[i]
-                    if candle['close'] > candle['open']:
-                        cvd_estimate += candle['volume']
-                    else:
-                        cvd_estimate -= candle['volume']
+            try:
+                for i in range(-10, 0):
+                    if abs(i) <= len(df):
+                        candle = df.iloc[i]
+                        if candle['close'] > candle['open']:
+                            cvd_estimate += candle['volume']
+                        else:
+                            cvd_estimate -= candle['volume']
+            except Exception:
+                cvd_estimate = 0
             
             cvd_trend = 'bullish' if cvd_estimate > 0 else 'bearish' if cvd_estimate < 0 else 'neutral'
             
@@ -216,6 +291,8 @@ class EnhancedOrderFlowIntegration:
                     tp2 = current_price * (1 - risk_pct * 1.5 / 100)
                     tp3 = current_price * (1 - risk_pct * 2.2 / 100)
                 
+                volume_ma_safe = volume_ma if volume_ma > 0 else 1
+                
                 return {
                     'symbol': symbol,
                     'direction': direction,
@@ -227,7 +304,7 @@ class EnhancedOrderFlowIntegration:
                     'signal_strength': signal_strength,
                     'leverage': 25,
                     'cvd_trend': cvd_trend,
-                    'cvd_strength': min(100, abs(cvd_estimate) / volume_ma * 10) if volume_ma > 0 else 0,
+                    'cvd_strength': min(100, abs(cvd_estimate) / volume_ma_safe * 10),
                     'bid_ask_imbalance': volume_ratio,
                     'order_flow_enhanced': False,
                     'order_flow_score': signal_strength * 0.7,
@@ -240,7 +317,8 @@ class EnhancedOrderFlowIntegration:
             return None
             
         except Exception as e:
-            self.logger.error(f"Error in fallback order flow analysis: {e}")
+            self.logger.error(f"Error in fallback order flow analysis for {symbol}: {e}")
+            self.logger.debug(f"Full traceback: {traceback.format_exc()}")
             return None
     
     def is_available(self) -> bool:

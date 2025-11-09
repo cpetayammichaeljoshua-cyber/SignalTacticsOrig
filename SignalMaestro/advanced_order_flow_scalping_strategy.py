@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Advanced Order Flow Scalping Strategy - Institutional-Grade Analysis
@@ -62,6 +63,7 @@ class OrderFlowSignal:
     market_depth_score: float = 50.0
     tick_momentum_score: float = 50.0
     liquidity_zone_near: bool = False
+    liquidity_zone_proximity: bool = False  # Added for compatibility
     
     execution_urgency: str = "normal"
     expected_hold_seconds: int = 120
@@ -135,7 +137,7 @@ class AdvancedOrderFlowScalpingStrategy:
             if not self._can_trade_symbol(symbol):
                 return None
             
-            # Validate input data
+            # Validate input data with enhanced error handling
             if not ohlcv_data or not isinstance(ohlcv_data, dict):
                 self.logger.warning(f"Invalid OHLCV data for {symbol}")
                 return None
@@ -144,7 +146,7 @@ class AdvancedOrderFlowScalpingStrategy:
             for tf in self.timeframes:
                 if tf in ohlcv_data and isinstance(ohlcv_data[tf], list) and len(ohlcv_data[tf]) >= 50:
                     try:
-                        df = self._prepare_dataframe(ohlcv_data[tf])
+                        df = self._prepare_dataframe_enhanced(ohlcv_data[tf], symbol)
                         if df is not None and len(df) >= 30:
                             tf_data[tf] = df
                     except Exception as e:
@@ -164,17 +166,22 @@ class AdvancedOrderFlowScalpingStrategy:
                 trades_data = order_book_data['recent_trades']
                 self.logger.debug(f"Using {len(trades_data)} trades for {symbol}")
             
-            cvd_analysis = await self._analyze_cumulative_volume_delta(primary_df, symbol, trades_data)
-            delta_div_analysis = await self._detect_delta_divergence(primary_df, cvd_analysis)
-            imbalance_analysis = await self._analyze_bid_ask_imbalance(primary_df, order_book_data)
-            aggressive_flow = await self._analyze_aggressive_vs_passive_flow(primary_df)
-            volume_footprint = await self._analyze_volume_footprint(primary_df)
-            smart_money = await self._detect_smart_money_flow(primary_df)
-            
-            liquidity_zones = await self._identify_liquidity_zones(primary_df)
-            tick_momentum = await self._calculate_tick_momentum(primary_df)
-            spread_analysis = await self._analyze_spread_quality(primary_df, order_book_data)
-            depth_analysis = await self._analyze_market_depth(order_book_data)
+            # Enhanced order flow analysis with error handling
+            try:
+                cvd_analysis = await self._analyze_cumulative_volume_delta_fixed(primary_df, symbol, trades_data)
+                delta_div_analysis = await self._detect_delta_divergence(primary_df, cvd_analysis)
+                imbalance_analysis = await self._analyze_bid_ask_imbalance(primary_df, order_book_data)
+                aggressive_flow = await self._analyze_aggressive_vs_passive_flow(primary_df)
+                volume_footprint = await self._analyze_volume_footprint(primary_df)
+                smart_money = await self._detect_smart_money_flow(primary_df)
+                
+                liquidity_zones = await self._identify_liquidity_zones(primary_df)
+                tick_momentum = await self._calculate_tick_momentum(primary_df)
+                spread_analysis = await self._analyze_spread_quality(primary_df, order_book_data)
+                depth_analysis = await self._analyze_market_depth(order_book_data)
+            except Exception as e:
+                self.logger.error(f"Error in order flow analysis for {symbol}: {e}")
+                return None
             
             order_flow_score = self._calculate_order_flow_score(
                 cvd_analysis, delta_div_analysis, imbalance_analysis,
@@ -192,7 +199,7 @@ class AdvancedOrderFlowScalpingStrategy:
             if not direction:
                 return None
             
-            signal = await self._generate_signal(
+            signal = await self._generate_signal_fixed(
                 symbol, direction, primary_df, tf_data,
                 cvd_analysis, delta_div_analysis, imbalance_analysis,
                 aggressive_flow, volume_footprint, smart_money,
@@ -220,36 +227,55 @@ class AdvancedOrderFlowScalpingStrategy:
             self.logger.debug(f"Full traceback for {symbol}: {traceback.format_exc()}")
             return None
     
-    def _prepare_dataframe(self, ohlcv: List) -> Optional[pd.DataFrame]:
-        """Convert OHLCV list to pandas DataFrame with enhanced error handling"""
+    def _prepare_dataframe_enhanced(self, ohlcv: List, symbol: str) -> Optional[pd.DataFrame]:
+        """Enhanced DataFrame preparation with comprehensive error handling"""
         try:
             if not ohlcv or not isinstance(ohlcv, list):
                 return None
             
             # Use error handler if available
             if self.error_handler:
-                return self.error_handler.safe_dataframe_creation("", ohlcv)
+                df = self.error_handler.safe_dataframe_creation(symbol, ohlcv)
+                if df is not None:
+                    return df
             
-            # Fallback method
+            # Enhanced fallback method with column detection
             col_count = len(ohlcv[0]) if ohlcv else 0
             
+            # Dynamically determine column structure based on actual data
             if col_count == 6:
                 columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            elif col_count >= 12:
+            elif col_count == 8:
+                columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_volume']
+            elif col_count == 12:
                 columns = [
                     'timestamp', 'open', 'high', 'low', 'close', 'volume',
                     'close_time', 'quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote', 'ignore'
                 ]
+            elif col_count >= 11:
+                # Handle variable column count from Binance API
+                columns = [
+                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote'
+                ]
+                if col_count > 11:
+                    columns.extend([f'extra_col_{i}' for i in range(col_count - 11)])
             else:
-                self.logger.warning(f"Unexpected column count: {col_count}")
+                self.logger.warning(f"Unexpected column count for {symbol}: {col_count}")
                 return None
             
-            df = pd.DataFrame(ohlcv, columns=columns[:col_count])
+            try:
+                df = pd.DataFrame(ohlcv, columns=columns[:col_count])
+            except Exception as e:
+                self.logger.error(f"DataFrame creation failed for {symbol}: {e}")
+                return None
             
             # Convert numeric columns safely
             numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+            if col_count >= 8:
+                numeric_cols.extend(['quote_volume'])
             if col_count >= 12:
-                numeric_cols.extend(['quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote'])
+                numeric_cols.extend(['trades', 'taker_buy_volume', 'taker_buy_quote'])
             
             for col in numeric_cols:
                 if col in df.columns:
@@ -265,22 +291,28 @@ class AdvancedOrderFlowScalpingStrategy:
             
             # Validate data
             if len(df) == 0:
+                self.logger.warning(f"No valid data after cleaning for {symbol}")
                 return None
             
-            if (df['high'] < df['low']).any() or (df['close'] <= 0).any():
+            # Validate price relationships
+            invalid_prices = (df['high'] < df['low']) | (df['close'] <= 0) | (df['open'] <= 0)
+            if invalid_prices.any():
+                self.logger.warning(f"Invalid price data detected for {symbol}, cleaning...")
+                df = df[~invalid_prices]
+            
+            if len(df) == 0:
                 return None
             
             return df
             
         except Exception as e:
-            self.logger.error(f"DataFrame preparation error: {e}")
+            self.logger.error(f"Enhanced DataFrame preparation error for {symbol}: {e}")
             return None
     
-    async def _analyze_cumulative_volume_delta(self, df: pd.DataFrame, symbol: str,
-                                              trades_data: Optional[List[Dict]] = None) -> Dict[str, Any]:
+    async def _analyze_cumulative_volume_delta_fixed(self, df: pd.DataFrame, symbol: str,
+                                                   trades_data: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
-        Calculate Cumulative Volume Delta (CVD)
-        Uses Binance taker buy volume data for precise calculations
+        Fixed CVD calculation with enhanced error handling
         """
         try:
             high = df['high'].values
@@ -292,81 +324,79 @@ class AdvancedOrderFlowScalpingStrategy:
             if len(close) < self.cvd_lookback_periods:
                 return {'trend': 'neutral', 'strength': 0, 'delta_values': []}
             
-            # Use Binance taker buy volume for more accurate CVD
+            # Enhanced CVD calculation with multiple fallback methods
+            delta_values = []
+            
+            # Method 1: Use Binance taker buy volume if available
             if 'taker_buy_volume' in df.columns:
                 taker_buy_volume = df['taker_buy_volume'].values
-                delta_values = []
-                
                 for i in range(len(volume)):
-                    buy_volume = float(taker_buy_volume[i])
-                    sell_volume = float(volume[i]) - buy_volume
-                    delta = buy_volume - sell_volume
-                    delta_values.append(delta)
-                    
-                self.logger.debug(f"Using Binance taker buy volume for CVD calculation")
+                    try:
+                        buy_volume = float(taker_buy_volume[i]) if not pd.isna(taker_buy_volume[i]) else 0
+                        sell_volume = float(volume[i]) - buy_volume
+                        delta = buy_volume - sell_volume
+                        delta_values.append(delta)
+                    except (ValueError, TypeError):
+                        delta_values.append(0)
+                        
+                self.logger.debug(f"Using Binance taker buy volume for CVD calculation: {symbol}")
                 
+            # Method 2: Use real trades data
             elif trades_data and len(trades_data) > 0:
-                self.logger.debug(f"Using {len(trades_data)} real trades for CVD calculation")
+                self.logger.debug(f"Using {len(trades_data)} real trades for CVD calculation: {symbol}")
                 
                 buy_volume_total = 0
                 sell_volume_total = 0
                 
                 for trade in trades_data:
-                    side = trade.get('side')
-                    amount = trade.get('amount', 0)
-                    
-                    if side == 'buy':
-                        buy_volume_total += amount
-                    elif side == 'sell':
-                        sell_volume_total += amount
+                    try:
+                        side = trade.get('side')
+                        amount = float(trade.get('amount', 0))
+                        
+                        if side == 'buy':
+                            buy_volume_total += amount
+                        elif side == 'sell':
+                            sell_volume_total += amount
+                    except (ValueError, TypeError):
+                        continue
                 
                 real_delta = buy_volume_total - sell_volume_total
                 
-                delta_values = []
+                # Distribute real delta across candles
                 for i in range(len(close)):
                     if i == len(close) - 1:
                         delta_values.append(real_delta)
                     else:
-                        candle_range = high[i] - low[i]
-                        if candle_range == 0:
-                            delta = 0
-                        else:
-                            close_position = (close[i] - low[i]) / candle_range
-                            if close[i] >= open_price[i]:
-                                buy_volume = volume[i] * (0.5 + close_position * 0.5)
-                                sell_volume = volume[i] - buy_volume
-                            else:
-                                sell_volume = volume[i] * (0.5 + (1 - close_position) * 0.5)
-                                buy_volume = volume[i] - sell_volume
-                            delta = buy_volume - sell_volume
+                        # Estimate based on candle structure
+                        delta = self._estimate_candle_delta(
+                            open_price[i], high[i], low[i], close[i], volume[i]
+                        )
                         delta_values.append(delta)
             else:
-                # Fallback estimation method
-                delta_values = []
+                # Method 3: Estimation method
                 for i in range(len(close)):
-                    candle_range = high[i] - low[i]
-                    if candle_range == 0:
-                        delta = 0
-                    else:
-                        close_position = (close[i] - low[i]) / candle_range
-                        
-                        if close[i] >= open_price[i]:
-                            buy_volume = volume[i] * (0.5 + close_position * 0.5)
-                            sell_volume = volume[i] - buy_volume
-                        else:
-                            sell_volume = volume[i] * (0.5 + (1 - close_position) * 0.5)
-                            buy_volume = volume[i] - sell_volume
-                        
-                        delta = buy_volume - sell_volume
-                    
+                    delta = self._estimate_candle_delta(
+                        open_price[i], high[i], low[i], close[i], volume[i]
+                    )
                     delta_values.append(delta)
             
-            cvd = np.cumsum(delta_values)
+            # Calculate CVD with error handling
+            try:
+                cvd = np.cumsum(delta_values)
+                recent_cvd = cvd[-self.cvd_lookback_periods:]
+                
+                if len(recent_cvd) > 1:
+                    cvd_slope = np.polyfit(range(len(recent_cvd)), recent_cvd, 1)[0]
+                    volume_mean = np.mean(volume[-self.cvd_lookback_periods:])
+                    cvd_normalized = cvd_slope / (volume_mean + 1e-10) if volume_mean > 0 else 0
+                else:
+                    cvd_normalized = 0
+            except Exception as e:
+                self.logger.warning(f"CVD calculation error for {symbol}: {e}")
+                cvd_normalized = 0
+                cvd = np.zeros_like(delta_values)
             
-            recent_cvd = cvd[-self.cvd_lookback_periods:]
-            cvd_slope = np.polyfit(range(len(recent_cvd)), recent_cvd, 1)[0]
-            cvd_normalized = cvd_slope / (np.mean(volume[-self.cvd_lookback_periods:]) + 1e-10)
-            
+            # Determine trend and strength
             if cvd_normalized > 0.15:
                 trend = 'bullish'
                 strength = min(abs(cvd_normalized) * 200, 100)
@@ -389,11 +419,34 @@ class AdvancedOrderFlowScalpingStrategy:
             }
             
         except Exception as e:
-            self.logger.error(f"Error calculating CVD: {e}")
-            return {'trend': 'neutral', 'strength': 0, 'delta_values': []}
+            self.logger.error(f"Error calculating CVD for {symbol}: {e}")
+            return {'trend': 'neutral', 'strength': 0, 'delta_values': [], 'cvd': np.array([]), 'slope': 0, 'buy_sell_ratio': 0}
+    
+    def _estimate_candle_delta(self, open_price: float, high: float, low: float, close: float, volume: float) -> float:
+        """Estimate buy/sell delta from candle structure"""
+        try:
+            candle_range = high - low
+            if candle_range == 0 or volume == 0:
+                return 0
+            
+            close_position = (close - low) / candle_range
+            
+            if close >= open_price:
+                # Bullish candle
+                buy_volume = volume * (0.5 + close_position * 0.5)
+                sell_volume = volume - buy_volume
+            else:
+                # Bearish candle
+                sell_volume = volume * (0.5 + (1 - close_position) * 0.5)
+                buy_volume = volume - sell_volume
+            
+            return buy_volume - sell_volume
+            
+        except Exception:
+            return 0
     
     async def _detect_delta_divergence(self, df: pd.DataFrame, cvd_analysis: Dict) -> Dict[str, Any]:
-        """Detect price/delta divergence patterns"""
+        """Detect price/delta divergence patterns with enhanced error handling"""
         try:
             close = df['close'].values
             cvd = cvd_analysis.get('cvd', np.array([]))
@@ -402,10 +455,13 @@ class AdvancedOrderFlowScalpingStrategy:
                 return {'divergence_detected': False, 'divergence_type': 'none', 'strength': 0}
             
             close_recent = close[-10:]
-            cvd_recent = cvd[-10:]
+            cvd_recent = cvd[-10:] if len(cvd) >= 10 else cvd
             
-            price_slope = np.polyfit(range(len(close_recent)), close_recent, 1)[0]
-            cvd_slope = np.polyfit(range(len(cvd_recent)), cvd_recent, 1)[0]
+            try:
+                price_slope = np.polyfit(range(len(close_recent)), close_recent, 1)[0] if len(close_recent) > 1 else 0
+                cvd_slope = np.polyfit(range(len(cvd_recent)), cvd_recent, 1)[0] if len(cvd_recent) > 1 else 0
+            except Exception:
+                return {'divergence_detected': False, 'divergence_type': 'none', 'strength': 0}
             
             price_direction = 'up' if price_slope > 0 else 'down'
             cvd_direction = 'up' if cvd_slope > 0 else 'down'
@@ -445,7 +501,7 @@ class AdvancedOrderFlowScalpingStrategy:
             volume = df['volume'].values
             
             if len(close) < 5:
-                return {'pressure': 'balanced', 'ratio': 1.0, 'strength': 0}
+                return {'pressure': 'balanced', 'ratio': 1.0, 'strength': 0, 'bid_volume': 0, 'ask_volume': 0}
             
             if order_book_data and 'bids' in order_book_data and 'asks' in order_book_data:
                 bids = order_book_data.get('bids', [])
@@ -454,15 +510,19 @@ class AdvancedOrderFlowScalpingStrategy:
                 if bids and asks:
                     self.logger.debug(f"Using real order book: {len(bids)} bids, {len(asks)} asks")
                     
-                    bid_volume = sum([bid[1] for bid in bids[:10]])
-                    ask_volume = sum([ask[1] for ask in asks[:10]])
-                    
-                    total_volume = bid_volume + ask_volume
-                    if total_volume > 0:
-                        imbalance_ratio = bid_volume / ask_volume if ask_volume > 0 else 2.0
-                    else:
-                        imbalance_ratio = 1.0
-                    
+                    try:
+                        bid_volume = sum([float(bid[1]) for bid in bids[:10] if len(bid) >= 2])
+                        ask_volume = sum([float(ask[1]) for ask in asks[:10] if len(ask) >= 2])
+                        
+                        total_volume = bid_volume + ask_volume
+                        if total_volume > 0:
+                            imbalance_ratio = bid_volume / ask_volume if ask_volume > 0 else 2.0
+                        else:
+                            imbalance_ratio = 1.0
+                    except (ValueError, TypeError, IndexError):
+                        bid_volume, ask_volume, imbalance_ratio = self._estimate_imbalance_from_candles(
+                            close, high, low, volume
+                        )
                 else:
                     bid_volume, ask_volume, imbalance_ratio = self._estimate_imbalance_from_candles(
                         close, high, low, volume
@@ -492,30 +552,37 @@ class AdvancedOrderFlowScalpingStrategy:
             
         except Exception as e:
             self.logger.error(f"Error analyzing bid/ask imbalance: {e}")
-            return {'pressure': 'balanced', 'ratio': 1.0, 'strength': 0}
+            return {'pressure': 'balanced', 'ratio': 1.0, 'strength': 0, 'bid_volume': 0, 'ask_volume': 0}
     
     def _estimate_imbalance_from_candles(self, close: np.array, high: np.array, 
                                          low: np.array, volume: np.array) -> Tuple[float, float, float]:
-        """Estimate bid/ask imbalance from candle structure"""
+        """Estimate bid/ask imbalance from candle structure with error handling"""
         bid_volume = 0
         ask_volume = 0
         
-        for i in range(-5, 0):
-            candle_range = high[i] - low[i]
-            if candle_range == 0:
-                continue
-            
-            close_position = (close[i] - low[i]) / candle_range
-            
-            if close_position > 0.6:
-                bid_volume += volume[i] * close_position
-                ask_volume += volume[i] * (1 - close_position)
-            elif close_position < 0.4:
-                ask_volume += volume[i] * (1 - close_position)
-                bid_volume += volume[i] * close_position
-            else:
-                bid_volume += volume[i] * 0.5
-                ask_volume += volume[i] * 0.5
+        try:
+            for i in range(-min(5, len(close)), 0):
+                if i >= -len(close):
+                    candle_range = high[i] - low[i]
+                    if candle_range == 0:
+                        continue
+                    
+                    close_position = (close[i] - low[i]) / candle_range
+                    vol = volume[i] if not pd.isna(volume[i]) else 0
+                    
+                    if close_position > 0.6:
+                        bid_volume += vol * close_position
+                        ask_volume += vol * (1 - close_position)
+                    elif close_position < 0.4:
+                        ask_volume += vol * (1 - close_position)
+                        bid_volume += vol * close_position
+                    else:
+                        bid_volume += vol * 0.5
+                        ask_volume += vol * 0.5
+        except Exception:
+            # Fallback values
+            bid_volume = 1
+            ask_volume = 1
         
         total_volume = bid_volume + ask_volume
         if total_volume > 0:
@@ -539,15 +606,20 @@ class AdvancedOrderFlowScalpingStrategy:
             aggressive_volume = 0
             passive_volume = 0
             
-            for i in range(-10, 0):
-                candle_volatility = (high[i] - low[i]) / close[i] if close[i] > 0 else 0
-                
-                if candle_volatility > 0.003:
-                    aggressive_volume += volume[i] * 0.7
-                    passive_volume += volume[i] * 0.3
-                else:
-                    passive_volume += volume[i] * 0.7
-                    aggressive_volume += volume[i] * 0.3
+            for i in range(-min(10, len(volume)), 0):
+                if i >= -len(volume):
+                    try:
+                        candle_volatility = (high[i] - low[i]) / close[i] if close[i] > 0 else 0
+                        vol = volume[i] if not pd.isna(volume[i]) else 0
+                        
+                        if candle_volatility > 0.003:
+                            aggressive_volume += vol * 0.7
+                            passive_volume += vol * 0.3
+                        else:
+                            passive_volume += vol * 0.7
+                            aggressive_volume += vol * 0.3
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        continue
             
             total = aggressive_volume + passive_volume
             ratio = aggressive_volume / passive_volume if passive_volume > 0 else 1.5
@@ -630,8 +702,8 @@ class AdvancedOrderFlowScalpingStrategy:
             volume_ma = np.mean(volume[-30:])
             
             large_volume_candles = []
-            for i in range(-10, 0):
-                if volume[i] > volume_ma * self.smart_money_threshold:
+            for i in range(-min(10, len(volume)), 0):
+                if i >= -len(volume) and volume[i] > volume_ma * self.smart_money_threshold:
                     candle_range = high[i] - low[i]
                     close_position = (close[i] - low[i]) / (candle_range + 1e-10)
                     
@@ -682,9 +754,10 @@ class AdvancedOrderFlowScalpingStrategy:
                 return {'zones': [], 'near_zone': False}
             
             price_levels = {}
-            for i in range(-50, 0):
-                level = round(close[i], -1)
-                price_levels[level] = price_levels.get(level, 0) + 1
+            for i in range(-min(50, len(close)), 0):
+                if i >= -len(close):
+                    level = round(close[i], -1)
+                    price_levels[level] = price_levels.get(level, 0) + 1
             
             liquidity_zones = sorted(
                 [(level, count) for level, count in price_levels.items() if count >= 3],
@@ -750,20 +823,23 @@ class AdvancedOrderFlowScalpingStrategy:
                 bids = order_book_data.get('bids', [])
                 asks = order_book_data.get('asks', [])
                 
-                if bids and asks:
-                    spread = asks[0][0] - bids[0][0]
-                    spread_pct = (spread / close) * 100
-                    
-                    if spread_pct < 0.01:
-                        quality = 'excellent'
-                    elif spread_pct < 0.05:
-                        quality = 'good'
-                    elif spread_pct < 0.1:
-                        quality = 'normal'
-                    else:
-                        quality = 'wide'
-                    
-                    return {'quality': quality, 'spread_pct': spread_pct}
+                if bids and asks and len(bids[0]) >= 2 and len(asks[0]) >= 2:
+                    try:
+                        spread = float(asks[0][0]) - float(bids[0][0])
+                        spread_pct = (spread / close) * 100
+                        
+                        if spread_pct < 0.01:
+                            quality = 'excellent'
+                        elif spread_pct < 0.05:
+                            quality = 'good'
+                        elif spread_pct < 0.1:
+                            quality = 'normal'
+                        else:
+                            quality = 'wide'
+                        
+                        return {'quality': quality, 'spread_pct': spread_pct}
+                    except (ValueError, TypeError, IndexError):
+                        pass
             
             return {'quality': 'normal', 'spread_pct': 0.05}
             
@@ -783,24 +859,27 @@ class AdvancedOrderFlowScalpingStrategy:
             if not bids or not asks:
                 return {'score': 50, 'quality': 'normal'}
             
-            total_bid_volume = sum([b[1] for b in bids[:20]])
-            total_ask_volume = sum([a[1] for a in asks[:20]])
-            total_depth = total_bid_volume + total_ask_volume
-            
-            depth_levels = min(len(bids), len(asks))
-            
-            score = 50
-            if depth_levels >= 20 and total_depth > 0:
-                score = min(50 + depth_levels * 2, 100)
-            
-            if score >= 80:
-                quality = 'deep'
-            elif score >= 60:
-                quality = 'good'
-            else:
-                quality = 'normal'
-            
-            return {'score': score, 'quality': quality}
+            try:
+                total_bid_volume = sum([float(b[1]) for b in bids[:20] if len(b) >= 2])
+                total_ask_volume = sum([float(a[1]) for a in asks[:20] if len(a) >= 2])
+                total_depth = total_bid_volume + total_ask_volume
+                
+                depth_levels = min(len(bids), len(asks))
+                
+                score = 50
+                if depth_levels >= 20 and total_depth > 0:
+                    score = min(50 + depth_levels * 2, 100)
+                
+                if score >= 80:
+                    quality = 'deep'
+                elif score >= 60:
+                    quality = 'good'
+                else:
+                    quality = 'normal'
+                
+                return {'score': score, 'quality': quality}
+            except (ValueError, TypeError, IndexError):
+                return {'score': 50, 'quality': 'normal'}
             
         except Exception as e:
             self.logger.error(f"Error analyzing market depth: {e}")
@@ -813,12 +892,12 @@ class AdvancedOrderFlowScalpingStrategy:
         try:
             score = 0
             
-            score += cvd_analysis['strength'] * self.order_flow_weights['cvd_analysis']
-            score += delta_div['strength'] * self.order_flow_weights['delta_divergence']
-            score += imbalance['strength'] * self.order_flow_weights['bid_ask_imbalance']
-            score += aggressive_flow['strength'] * self.order_flow_weights['aggressive_flow']
-            score += (footprint['score'] / 100) * 100 * self.order_flow_weights['volume_footprint']
-            score += smart_money['strength'] * self.order_flow_weights['smart_money_detection']
+            score += cvd_analysis.get('strength', 0) * self.order_flow_weights['cvd_analysis']
+            score += delta_div.get('strength', 0) * self.order_flow_weights['delta_divergence']
+            score += imbalance.get('strength', 0) * self.order_flow_weights['bid_ask_imbalance']
+            score += aggressive_flow.get('strength', 0) * self.order_flow_weights['aggressive_flow']
+            score += (footprint.get('score', 50) / 100) * 100 * self.order_flow_weights['volume_footprint']
+            score += smart_money.get('strength', 0) * self.order_flow_weights['smart_money_detection']
             
             return min(max(score, 0), 100)
             
@@ -834,25 +913,25 @@ class AdvancedOrderFlowScalpingStrategy:
             bullish_signals = 0
             bearish_signals = 0
             
-            if cvd_analysis['trend'] == 'bullish':
+            if cvd_analysis.get('trend') == 'bullish':
                 bullish_signals += 1
-            elif cvd_analysis['trend'] == 'bearish':
+            elif cvd_analysis.get('trend') == 'bearish':
                 bearish_signals += 1
             
-            if delta_div['divergence_detected']:
-                if delta_div['divergence_type'] == 'bullish':
+            if delta_div.get('divergence_detected'):
+                if delta_div.get('divergence_type') == 'bullish':
                     bullish_signals += 1
-                elif delta_div['divergence_type'] == 'bearish':
+                elif delta_div.get('divergence_type') == 'bearish':
                     bearish_signals += 1
             
-            if imbalance['pressure'] == 'bullish':
+            if imbalance.get('pressure') == 'bullish':
                 bullish_signals += 1
-            elif imbalance['pressure'] == 'bearish':
+            elif imbalance.get('pressure') == 'bearish':
                 bearish_signals += 1
             
-            if smart_money['flow'] == 'bullish':
+            if smart_money.get('flow') == 'bullish':
                 bullish_signals += 1
-            elif smart_money['flow'] == 'bearish':
+            elif smart_money.get('flow') == 'bearish':
                 bearish_signals += 1
             
             if bullish_signals >= 3 and bullish_signals > bearish_signals:
@@ -866,13 +945,13 @@ class AdvancedOrderFlowScalpingStrategy:
             self.logger.error(f"Error determining direction: {e}")
             return None
     
-    async def _generate_signal(self, symbol: str, direction: str, primary_df: pd.DataFrame,
-                              tf_data: Dict, cvd_analysis: Dict, delta_div: Dict,
-                              imbalance: Dict, aggressive_flow: Dict, footprint: Dict,
-                              smart_money: Dict, liquidity_zones: Dict, tick_momentum: Dict,
-                              spread_analysis: Dict, depth_analysis: Dict,
-                              order_flow_score: float) -> Optional[OrderFlowSignal]:
-        """Generate complete order flow signal"""
+    async def _generate_signal_fixed(self, symbol: str, direction: str, primary_df: pd.DataFrame,
+                                   tf_data: Dict, cvd_analysis: Dict, delta_div: Dict,
+                                   imbalance: Dict, aggressive_flow: Dict, footprint: Dict,
+                                   smart_money: Dict, liquidity_zones: Dict, tick_momentum: Dict,
+                                   spread_analysis: Dict, depth_analysis: Dict,
+                                   order_flow_score: float) -> Optional[OrderFlowSignal]:
+        """Generate complete order flow signal with enhanced error handling"""
         try:
             close = primary_df['close'].values
             current_price = float(close[-1])
@@ -896,10 +975,10 @@ class AdvancedOrderFlowScalpingStrategy:
             
             leverage = self._calculate_dynamic_leverage(order_flow_score)
             
-            confidence = min((order_flow_score / 100) * (imbalance['strength'] / 100) * 100, 95)
+            confidence = min((order_flow_score / 100) * (imbalance.get('strength', 0) / 100) * 100, 95)
             
-            execution_urgency = 'high' if aggressive_flow['dominant_flow'] == 'aggressive' else 'normal'
-            expected_hold = 90 if aggressive_flow['dominant_flow'] == 'aggressive' else 150
+            execution_urgency = 'high' if aggressive_flow.get('dominant_flow') == 'aggressive' else 'normal'
+            expected_hold = 90 if aggressive_flow.get('dominant_flow') == 'aggressive' else 150
             
             signal = OrderFlowSignal(
                 symbol=symbol,
@@ -911,18 +990,19 @@ class AdvancedOrderFlowScalpingStrategy:
                 tp3=tp3,
                 signal_strength=order_flow_score,
                 leverage=leverage,
-                cvd_trend=cvd_analysis['trend'],
-                cvd_strength=cvd_analysis['strength'],
-                delta_divergence=delta_div['divergence_detected'],
-                bid_ask_imbalance=imbalance['ratio'],
-                order_book_pressure=imbalance['pressure'],
-                smart_money_flow=smart_money['flow'],
-                aggressive_flow_ratio=aggressive_flow['ratio'],
-                volume_footprint_score=footprint['score'],
-                spread_quality=spread_analysis['quality'],
-                market_depth_score=depth_analysis['score'],
-                tick_momentum_score=tick_momentum['score'],
-                liquidity_zone_near=liquidity_zones['near_zone'],
+                cvd_trend=cvd_analysis.get('trend', 'neutral'),
+                cvd_strength=cvd_analysis.get('strength', 0),
+                delta_divergence=delta_div.get('divergence_detected', False),
+                bid_ask_imbalance=imbalance.get('ratio', 1.0),
+                order_book_pressure=imbalance.get('pressure', 'balanced'),
+                smart_money_flow=smart_money.get('flow', 'neutral'),
+                aggressive_flow_ratio=aggressive_flow.get('ratio', 1.0),
+                volume_footprint_score=footprint.get('score', 50),
+                spread_quality=spread_analysis.get('quality', 'normal'),
+                market_depth_score=depth_analysis.get('score', 50),
+                tick_momentum_score=tick_momentum.get('score', 50),
+                liquidity_zone_near=liquidity_zones.get('near_zone', False),
+                liquidity_zone_proximity=liquidity_zones.get('near_zone', False),
                 execution_urgency=execution_urgency,
                 expected_hold_seconds=expected_hold,
                 confidence_level=confidence,
@@ -936,25 +1016,26 @@ class AdvancedOrderFlowScalpingStrategy:
             return None
     
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
-        """Calculate Average True Range"""
+        """Calculate Average True Range with error handling"""
         try:
             high = df['high'].values
             low = df['low'].values
             close = df['close'].values
             
             if len(close) < period + 1:
-                return (high[-1] - low[-1])
+                return (high[-1] - low[-1]) if len(high) > 0 else 0
             
             tr_list = []
             for i in range(-period, 0):
-                tr = max(
-                    high[i] - low[i],
-                    abs(high[i] - close[i-1]),
-                    abs(low[i] - close[i-1])
-                )
-                tr_list.append(tr)
+                if i >= -len(close) and i-1 >= -len(close):
+                    tr = max(
+                        high[i] - low[i],
+                        abs(high[i] - close[i-1]),
+                        abs(low[i] - close[i-1])
+                    )
+                    tr_list.append(tr)
             
-            return np.mean(tr_list)
+            return np.mean(tr_list) if tr_list else 0
             
         except Exception as e:
             self.logger.error(f"Error calculating ATR: {e}")
@@ -962,41 +1043,50 @@ class AdvancedOrderFlowScalpingStrategy:
     
     def _calculate_dynamic_leverage(self, signal_strength: float) -> int:
         """Calculate dynamic leverage based on signal strength"""
-        if signal_strength >= 90:
-            return self.max_leverage
-        elif signal_strength >= 80:
-            return int(self.max_leverage * 0.8)
-        elif signal_strength >= 75:
-            return int(self.max_leverage * 0.6)
-        else:
+        try:
+            if signal_strength >= 90:
+                return self.max_leverage
+            elif signal_strength >= 80:
+                return int(self.max_leverage * 0.8)
+            elif signal_strength >= 75:
+                return int(self.max_leverage * 0.6)
+            else:
+                return self.min_leverage
+        except Exception:
             return self.min_leverage
     
     def _can_trade_symbol(self, symbol: str) -> bool:
         """Check if symbol can be traded based on frequency limits"""
-        current_time = time.time()
-        current_hour = datetime.now().strftime('%Y-%m-%d-%H')
-        
-        if symbol in self.last_trade_times:
-            time_since_last = current_time - self.last_trade_times[symbol]
-            if time_since_last < self.min_trade_interval:
-                return False
-        
-        hour_key = f"{symbol}_{current_hour}"
-        if hour_key in self.hourly_trade_counts:
-            if self.hourly_trade_counts[hour_key] >= self.max_trades_per_hour:
-                return False
-        
-        return True
+        try:
+            current_time = time.time()
+            current_hour = datetime.now().strftime('%Y-%m-%d-%H')
+            
+            if symbol in self.last_trade_times:
+                time_since_last = current_time - self.last_trade_times[symbol]
+                if time_since_last < self.min_trade_interval:
+                    return False
+            
+            hour_key = f"{symbol}_{current_hour}"
+            if hour_key in self.hourly_trade_counts:
+                if self.hourly_trade_counts[hour_key] >= self.max_trades_per_hour:
+                    return False
+            
+            return True
+        except Exception:
+            return True
     
     def _record_trade_time(self, symbol: str):
         """Record trade time for frequency limiting"""
-        current_time = time.time()
-        current_hour = datetime.now().strftime('%Y-%m-%d-%H')
-        
-        self.last_trade_times[symbol] = current_time
-        
-        hour_key = f"{symbol}_{current_hour}"
-        self.hourly_trade_counts[hour_key] = self.hourly_trade_counts.get(hour_key, 0) + 1
+        try:
+            current_time = time.time()
+            current_hour = datetime.now().strftime('%Y-%m-%d-%H')
+            
+            self.last_trade_times[symbol] = current_time
+            
+            hour_key = f"{symbol}_{current_hour}"
+            self.hourly_trade_counts[hour_key] = self.hourly_trade_counts.get(hour_key, 0) + 1
+        except Exception as e:
+            self.logger.error(f"Error recording trade time: {e}")
     
     def get_strategy_name(self) -> str:
         """Get strategy name"""

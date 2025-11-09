@@ -1,0 +1,38 @@
+{
+  "timestamp": "2025-11-09T01:53:21.696704",
+  "restart_count": 10,
+  "max_restarts": 10,
+  "critical_errors": [
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #1: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #2: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #3: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #4: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #5: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #6: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #7: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #8: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #9: near \"INDEX\": syntax error",
+    "Bot execution: near \"INDEX\": syntax error",
+    "Crash #10: near \"INDEX\": syntax error"
+  ],
+  "environment_vars": {
+    "TELEGRAM_BOT_TOKEN": "***",
+    "TARGET_CHANNEL": "3013505527",
+    "DEFAULT_LEVERAGE": "25",
+    "LOG_LEVEL": "INFO"
+  },
+  "system_info": {
+    "python_version": "3.11.13 (main, Jun  3 2025, 18:38:25) [GCC 14.3.0]",
+    "working_directory": "/home/runner/workspace",
+    "script_path": "/home/runner/workspace/start_production_ultimate_bot.py"
+  }
+}

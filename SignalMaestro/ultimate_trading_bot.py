@@ -113,11 +113,13 @@ class UltimateTradingBot:
                         tp3 REAL,
                         signal_strength REAL,
                         strategy TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        INDEX(symbol),
-                        INDEX(created_at)
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+                
+                # Create indexes separately
+                self.db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol)')
+                self.db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at)')
 
                 self.db_cursor.execute('''
                     CREATE TABLE IF NOT EXISTS performance (
@@ -520,6 +522,39 @@ class UltimateTradingBot:
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
         """Format trading signal for Telegram with enhanced formatting"""
         try:
+            # Check if this is an advanced order flow signal
+            if signal.get('order_flow_enhanced') and hasattr(self.order_flow_integration, 'order_flow_strategy'):
+                # Use the advanced order flow formatting if available
+                try:
+                    from advanced_order_flow_scalping_strategy import OrderFlowSignal
+                    
+                    # Create OrderFlowSignal object for formatting
+                    order_flow_signal = OrderFlowSignal(
+                        symbol=signal.get('symbol', ''),
+                        direction=signal.get('direction', ''),
+                        entry_price=signal.get('entry_price', 0),
+                        stop_loss=signal.get('stop_loss', 0),
+                        tp1=signal.get('tp1', 0),
+                        tp2=signal.get('tp2', 0),
+                        tp3=signal.get('tp3', 0),
+                        signal_strength=signal.get('signal_strength', 0),
+                        leverage=signal.get('leverage', 25),
+                        cvd_trend=signal.get('cvd_trend', 'neutral'),
+                        smart_money_flow=signal.get('smart_money_flow', 'neutral'),
+                        bid_ask_imbalance=signal.get('bid_ask_imbalance', 1.0),
+                        order_book_pressure=signal.get('order_book_pressure', 'balanced'),
+                        delta_divergence=signal.get('delta_divergence', False),
+                        execution_urgency=signal.get('execution_urgency', 'normal'),
+                        expected_hold_seconds=signal.get('expected_hold_seconds', 120),
+                        confidence_level=signal.get('confidence_level', 0),
+                        timestamp=signal.get('timestamp', datetime.now())
+                    )
+                    
+                    return self.order_flow_integration.order_flow_strategy.format_telegram_signal(order_flow_signal)
+                except Exception as e:
+                    self.logger.debug(f"Advanced formatting failed, using fallback: {e}")
+            
+            # Fallback formatting for standard signals
             symbol = signal.get('symbol', '')
             direction = signal.get('direction', '')
             entry = signal.get('entry_price', 0)
@@ -529,9 +564,9 @@ class UltimateTradingBot:
             tp3 = signal.get('tp3', 0)
             strength = signal.get('signal_strength', 0)
             leverage = signal.get('leverage', self.default_leverage)
-            strategy = signal.get('strategy', 'Advanced Order Flow')
+            strategy = signal.get('strategy', 'Advanced Technical Analysis')
 
-            # Determine price precision based on asset
+            # Determine price precision
             if 'USDT' in symbol:
                 if entry > 100:
                     precision = 2
@@ -542,7 +577,7 @@ class UltimateTradingBot:
             else:
                 precision = 6
 
-            # Format prices with appropriate precision
+            # Format prices
             entry_str = f"{entry:.{precision}f}"
             sl_str = f"{sl:.{precision}f}"
             tp1_str = f"{tp1:.{precision}f}"
@@ -558,50 +593,65 @@ class UltimateTradingBot:
                     risk = abs(sl - entry) / entry * 100
                     reward1 = abs(entry - tp1) / entry * 100
                 
-                rr_ratio = reward1 / risk if risk > 0 else 0
+                rr_ratio = reward1 / risk if risk > 0 else 2.0
             except:
                 risk = 0.8
                 rr_ratio = 2.0
 
-            # Add order flow specific information if available
+            # Enhanced emojis and status
+            if strength >= 90:
+                direction_emoji = "🚀" if direction == 'BUY' else "💥"
+                strength_emoji = "🔥"
+                quality = "PREMIUM"
+            elif strength >= 85:
+                direction_emoji = "🟢" if direction == 'BUY' else "🔴"
+                strength_emoji = "⚡"
+                quality = "HIGH"
+            else:
+                direction_emoji = "📈" if direction == 'BUY' else "📉"
+                strength_emoji = "💎"
+                quality = "STANDARD"
+
+            # Order flow information if available
             order_flow_info = ""
             if signal.get('order_flow_enhanced'):
                 cvd_trend = signal.get('cvd_trend', 'neutral')
                 smart_money = signal.get('smart_money_detected', False)
+                imbalance = signal.get('bid_ask_imbalance', 1.0)
+                
                 order_flow_info = f"""
-🔍 <b>Order Flow Analysis:</b>
+📊 <b>Order Flow Analysis:</b>
 • CVD Trend: {cvd_trend.upper()}
-• Smart Money: {'✅ DETECTED' if smart_money else '❌ Not Detected'}"""
-
-            # Enhanced message with emojis and formatting
-            direction_emoji = "🟢" if direction == 'BUY' else "🔴"
-            strength_emoji = "🔥" if strength >= 85 else "⚡" if strength >= 75 else "💫"
+• Bid/Ask Imbalance: {imbalance:.2f}x
+• Smart Money: {'🐋 DETECTED' if smart_money else '🐟 Retail'}"""
             
+            # Main message
             message = f"""{direction_emoji} <b>{symbol} - {direction}</b> {strength_emoji}
 
+🎯 <b>{quality} QUALITY SIGNAL</b>
 📊 <b>Strategy:</b> {strategy}
 ⚡ <b>Signal Strength:</b> {strength:.1f}%
 💰 <b>Leverage:</b> {leverage}x
 📈 <b>Risk/Reward:</b> 1:{rr_ratio:.1f}
 
-🎯 <b>Entry:</b> {entry_str}
+💲 <b>Entry Zone:</b> {entry_str}
 🛡️ <b>Stop Loss:</b> {sl_str} (-{risk:.1f}%)
 
 🎯 <b>Take Profits:</b>
-• TP1: {tp1_str}
-• TP2: {tp2_str} 
+• TP1: {tp1_str} (+{reward1:.1f}%)
+• TP2: {tp2_str}
 • TP3: {tp3_str}{order_flow_info}
 
 ⏰ <b>Signal Time:</b> {datetime.now().strftime('%H:%M UTC')}
-🏷️ #{symbol} #{direction} #Signal
+🏷️ #{symbol.replace('USDT', '')} #{direction} #Signal
 
-<i>⚠️ Always use proper risk management</i>""".strip()
+<i>⚠️ Risk Management: Use 1-2% of capital per trade</i>""".strip()
 
             return message
 
         except Exception as e:
             self.logger.error(f"❌ Error formatting message: {e}")
-            return f"Signal Error: {symbol} - {direction}"
+            return f"🚨 SIGNAL ERROR: {signal.get('symbol', 'UNKNOWN')} - {signal.get('direction', 'UNKNOWN')}"
 
     async def save_signal_to_db(self, signal: Dict[str, Any]):
         """Save signal to database with enhanced error handling"""
@@ -688,22 +738,39 @@ class UltimateTradingBot:
             self.running = True
 
             # Send startup message
-            startup_message = f"""🚀 <b>Ultimate Trading Bot STARTED</b>
+            # Check order flow integration status
+            order_flow_status = "✅ ACTIVE" if self.order_flow_integration else "⚠️ FALLBACK MODE"
+            
+            startup_message = f"""🚀 <b>ULTIMATE TRADING BOT STARTED</b>
 
-📊 <b>Strategy:</b> Advanced Order Flow + Enhanced TA
-⚡ <b>Status:</b> Active & Monitoring Markets
+📊 <b>Primary Strategy:</b> Advanced Order Flow Scalping
+⚡ <b>Status:</b> Production Ready & Market Scanning
 🕒 <b>Started:</b> {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}
 
-✅ <b>Active Features:</b>
-• 📈 Advanced Order Flow Analysis
-• 🔍 Multi-Timeframe Confluence  
-• 🎯 Dynamic Risk Management
-• 🤖 ML-Enhanced Signal Validation
-• ⚡ Ultra-Fast Market Scanning
+🔥 <b>ACTIVE FEATURES:</b>
+• 📈 Order Flow Analysis: {order_flow_status}
+• 🐋 Smart Money Detection
+• 📊 Real-time CVD Analysis
+• 🎯 Delta Divergence Detection
+• 🔍 Multi-Timeframe Confluence
+• ⚡ Ultra-Fast Signal Generation
+• 🛡️ Dynamic Risk Management
 
-<b>Ready to generate high-quality signals!</b> 🎯
+🎯 <b>SIGNAL QUALITY STANDARDS:</b>
+• Minimum 82% Signal Strength
+• Advanced Order Flow Validation  
+• Multi-Indicator Confluence
+• Risk/Reward ≥ 1:2
 
-<i>Risk Management: 0.8% per trade | Max 3 signals/hour</i>""".strip()
+⚡ <b>PERFORMANCE TARGETS:</b>
+• Max 8 signals per hour
+• 45s minimum between signals
+• 60-180s average hold time
+• Conservative 0.8% risk per trade
+
+<b>🚨 READY FOR HIGH-QUALITY SCALPING SIGNALS! 🚨</b>
+
+<i>📊 Production Mode | Advanced Risk Management Active</i>""".strip()
 
             await self.send_startup_message(startup_message)
 

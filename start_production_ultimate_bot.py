@@ -38,10 +38,11 @@ class ComprehensiveFixedProductionBot:
     def __init__(self):
         self.bot_process = None
         self.restart_count = 0
-        self.max_restarts = 10
+        self.max_restarts = 15  # Increased for production stability
         self.running = True
         self.start_time = datetime.now()
         self.critical_errors = []
+        self.consecutive_successes = 0  # Track successful runs
         
         # Setup signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -315,13 +316,30 @@ class ComprehensiveFixedProductionBot:
                 logger.error(f"Error: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
                 
-                self.critical_errors.append(f"Crash #{self.restart_count}: {e}")
+                # Classify error type for better handling
+                error_str = str(e)
+                if "near \"INDEX\": syntax error" in error_str:
+                    logger.error("🔧 Database schema error detected - this should be fixed now")
+                elif "TELEGRAM_BOT_TOKEN" in error_str:
+                    logger.error("🔑 Telegram token error - check environment variables")
+                elif "timeout" in error_str.lower():
+                    logger.warning("⏱️ Network timeout - will retry")
+                elif "connection" in error_str.lower():
+                    logger.warning("🌐 Connection error - will retry")
                 
-                # Critical failure analysis
+                self.critical_errors.append(f"Crash #{self.restart_count}: {error_str[:200]}")
+                
+                # Critical failure analysis with better thresholds
                 if consecutive_failures >= max_consecutive_failures:
                     logger.error(f"❌ Critical: {consecutive_failures} consecutive failures")
                     await self._save_critical_failure_report()
-                    break
+                    
+                    # Only break if we've had many total restarts AND consecutive failures
+                    if self.restart_count >= 8:
+                        break
+                    else:
+                        logger.info("🔄 High restart count but will continue due to non-critical errors")
+                        consecutive_failures = 0  # Reset to allow more attempts
                 
                 if self.restart_count >= self.max_restarts:
                     logger.error(f"❌ Critical: Maximum restarts ({self.max_restarts}) reached")

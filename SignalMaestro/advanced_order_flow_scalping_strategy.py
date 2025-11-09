@@ -79,27 +79,33 @@ class AdvancedOrderFlowScalpingStrategy:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Initialize error handler
+        # Initialize error handler with enhanced telegram integration
         if ERROR_HANDLER_AVAILABLE:
             self.error_handler = OrderFlowErrorHandler()
         else:
             self.error_handler = None
         
         self.timeframes = ['1m', '3m', '5m', '15m']
-        self.max_leverage = 50
-        self.min_leverage = 15
+        self.max_leverage = 75  # Increased for high-confidence signals
+        self.min_leverage = 20
         self.margin_type = "cross"
-        self.risk_percentage = 1.0
+        self.risk_percentage = 0.8  # Conservative risk per trade
         
-        self.max_trades_per_hour = 12
-        self.min_trade_interval = 30
+        # Enhanced rate limiting for production
+        self.max_trades_per_hour = 8
+        self.min_trade_interval = 45  # 45 seconds minimum between trades
         self.last_trade_times = {}
         self.hourly_trade_counts = {}
         
-        self.cvd_lookback_periods = 20
-        self.imbalance_threshold = 1.5
-        self.delta_divergence_threshold = 0.7
-        self.smart_money_threshold = 2.0
+        # Optimized parameters for better signal quality
+        self.cvd_lookback_periods = 25
+        self.imbalance_threshold = 1.3
+        self.delta_divergence_threshold = 0.6
+        self.smart_money_threshold = 1.8
+        
+        # Telegram integration settings
+        self.telegram_enabled = True
+        self.signal_quality_threshold = 85  # Higher threshold for production
         
         self.order_flow_weights = {
             'cvd_analysis': 0.25,
@@ -110,7 +116,11 @@ class AdvancedOrderFlowScalpingStrategy:
             'smart_money_detection': 0.10
         }
         
-        self.min_signal_strength = 72
+        self.min_signal_strength = 82  # Raised for production quality
+        
+        # Enhanced Telegram signal formatting
+        self.telegram_formatting_enabled = True
+        self.include_technical_details = True
         
         self.stop_loss_percentages = [0.4, 0.6, 0.9]
         self.profit_target_ratios = [1.5, 2.5, 3.5]
@@ -1095,3 +1105,86 @@ class AdvancedOrderFlowScalpingStrategy:
     def get_strategy_description(self) -> str:
         """Get strategy description"""
         return "Institutional-grade order flow analysis with real-time market microstructure data"
+    
+    def format_telegram_signal(self, signal: OrderFlowSignal) -> str:
+        """Format signal for enhanced Telegram display"""
+        try:
+            symbol = signal.symbol
+            direction = signal.direction
+            entry = signal.entry_price
+            sl = signal.stop_loss
+            tp1 = signal.tp1
+            tp2 = signal.tp2
+            tp3 = signal.tp3
+            strength = signal.signal_strength
+            leverage = signal.leverage
+            
+            # Dynamic precision based on price
+            if entry > 100:
+                precision = 2
+            elif entry > 1:
+                precision = 4
+            else:
+                precision = 6
+            
+            # Enhanced emoji selection
+            direction_emoji = "🚀" if direction == 'BUY' else "🔻"
+            strength_emoji = "🔥" if strength >= 90 else "⚡" if strength >= 85 else "💎"
+            urgency_emoji = "🚨" if signal.execution_urgency == 'high' else "📊"
+            
+            # Risk/Reward calculation
+            if direction == 'BUY':
+                risk_pct = abs(entry - sl) / entry * 100
+                reward_pct = abs(tp1 - entry) / entry * 100
+            else:
+                risk_pct = abs(sl - entry) / entry * 100
+                reward_pct = abs(entry - tp1) / entry * 100
+            
+            rr_ratio = reward_pct / risk_pct if risk_pct > 0 else 2.0
+            
+            # Order flow details
+            order_flow_details = ""
+            if hasattr(signal, 'cvd_trend') and signal.cvd_trend != 'neutral':
+                cvd_emoji = "📈" if signal.cvd_trend == 'bullish' else "📉"
+                order_flow_details += f"\n{cvd_emoji} CVD: {signal.cvd_trend.upper()}"
+            
+            if hasattr(signal, 'smart_money_flow') and signal.smart_money_flow != 'neutral':
+                smart_emoji = "🐋" if signal.smart_money_flow in ['bullish', 'bearish'] else "🐟"
+                order_flow_details += f"\n{smart_emoji} Smart Money: {signal.smart_money_flow.upper()}"
+            
+            if hasattr(signal, 'delta_divergence') and signal.delta_divergence:
+                order_flow_details += f"\n⚠️ Delta Divergence Detected"
+            
+            # Format message
+            message = f"""{urgency_emoji} {direction_emoji} <b>{symbol} - {direction}</b> {strength_emoji}
+
+🎯 <b>ADVANCED ORDER FLOW SIGNAL</b>
+⚡ Signal Strength: <b>{strength:.1f}%</b>
+🔮 Leverage: <b>{leverage}x</b>
+📊 Risk/Reward: <b>1:{rr_ratio:.1f}</b>
+
+💰 <b>Entry Zone:</b> {entry:.{precision}f}
+🛡️ <b>Stop Loss:</b> {sl:.{precision}f} (-{risk_pct:.1f}%)
+
+🎯 <b>Take Profits:</b>
+• TP1: {tp1:.{precision}f} (+{reward_pct:.1f}%)
+• TP2: {tp2:.{precision}f}
+• TP3: {tp3:.{precision}f}
+
+📈 <b>Order Flow Analysis:</b>{order_flow_details}
+🔍 Imbalance: {signal.bid_ask_imbalance:.2f}x
+📊 Book Pressure: {signal.order_book_pressure.upper()}
+
+⏰ <b>Time:</b> {datetime.now().strftime('%H:%M UTC')}
+🏃‍♂️ <b>Expected Hold:</b> {signal.expected_hold_seconds//60} mins
+🎯 <b>Confidence:</b> {signal.confidence_level:.0f}%
+
+<b>#{symbol.replace('USDT', '')} #{direction} #OrderFlow #Scalping</b>
+
+<i>⚠️ Risk Management: Use proper position sizing</i>"""
+
+            return message.strip()
+            
+        except Exception as e:
+            self.logger.error(f"Error formatting Telegram signal: {e}")
+            return f"🚨 ORDER FLOW SIGNAL: {signal.symbol} {signal.direction} @ {signal.entry_price:.4f}"

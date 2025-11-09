@@ -51,36 +51,55 @@ class EnhancedOrderFlowIntegration:
     
     async def analyze_with_order_flow(self, symbol: str, ohlcv_data: Dict[str, List]) -> Optional[Dict[str, Any]]:
         """
-        Enhanced order flow analysis with comprehensive market data
+        Enhanced order flow analysis with comprehensive market data and production optimizations
         """
         try:
             if not self.order_flow_strategy:
                 return await self._fallback_order_flow_analysis(symbol, ohlcv_data)
             
-            # Get real-time order book data
-            order_book_data = await self._fetch_order_book_data(symbol)
+            # Get real-time order book data with timeout
+            order_book_data = await asyncio.wait_for(
+                self._fetch_order_book_data(symbol), 
+                timeout=10.0
+            )
             
             # Analyze with order flow strategy
-            order_flow_signal = await self.order_flow_strategy.analyze_symbol(
-                symbol, ohlcv_data, order_book_data
+            order_flow_signal = await asyncio.wait_for(
+                self.order_flow_strategy.analyze_symbol(symbol, ohlcv_data, order_book_data),
+                timeout=15.0
             )
             
             if not order_flow_signal:
+                # Try fallback if main analysis returns None
+                return await self._fallback_order_flow_analysis(symbol, ohlcv_data)
+            
+            # Additional production-level validation
+            if order_flow_signal.signal_strength < 82:
+                self.logger.debug(f"Signal strength too low for production: {order_flow_signal.signal_strength:.1f}%")
                 return None
             
-            # Convert to enhanced signal format
+            # Convert to enhanced signal format with additional metadata
             enhanced_signal_data = self._convert_to_enhanced_format(order_flow_signal)
             
+            # Add production metadata
+            enhanced_signal_data['production_validated'] = True
+            enhanced_signal_data['analysis_timestamp'] = datetime.now()
+            enhanced_signal_data['order_book_available'] = order_book_data is not None
+            enhanced_signal_data['signal_version'] = '3.0'
+            
             self.logger.info(
-                f"📊 Order Flow Analysis Complete: {symbol} "
-                f"Signal: {order_flow_signal.direction} "
-                f"Strength: {order_flow_signal.signal_strength:.1f}% "
-                f"CVD: {order_flow_signal.cvd_trend} "
-                f"Smart Money: {order_flow_signal.smart_money_flow}"
+                f"🎯 HIGH-QUALITY ORDER FLOW SIGNAL: {symbol} "
+                f"{order_flow_signal.direction} @ {order_flow_signal.signal_strength:.1f}% | "
+                f"CVD: {order_flow_signal.cvd_trend} | "
+                f"Smart: {order_flow_signal.smart_money_flow} | "
+                f"Confidence: {getattr(order_flow_signal, 'confidence_level', 0):.0f}%"
             )
             
             return enhanced_signal_data
             
+        except asyncio.TimeoutError:
+            self.logger.warning(f"⏱️ Order flow analysis timeout for {symbol}, using fallback")
+            return await self._fallback_order_flow_analysis(symbol, ohlcv_data)
         except Exception as e:
             self.logger.error(f"Error in order flow analysis for {symbol}: {e}")
             self.logger.debug(f"Full traceback: {traceback.format_exc()}")

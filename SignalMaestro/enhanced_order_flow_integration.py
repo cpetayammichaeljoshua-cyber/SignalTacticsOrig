@@ -166,7 +166,8 @@ class EnhancedOrderFlowIntegration:
                 return None
             
             df = pd.DataFrame(ohlcv_data[primary_tf], columns=[
-                'timestamp', 'open', 'high', 'low', 'close', 'volume'
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote', 'ignore'
             ])
             
             for col in ['open', 'high', 'low', 'close', 'volume']:

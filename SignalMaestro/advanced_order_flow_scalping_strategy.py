@@ -27,6 +27,12 @@ try:
 except ImportError:
     TALIB_AVAILABLE = False
 
+try:
+    from order_flow_error_handler import OrderFlowErrorHandler
+    ERROR_HANDLER_AVAILABLE = True
+except ImportError:
+    ERROR_HANDLER_AVAILABLE = False
+
 
 @dataclass
 class OrderFlowSignal:
@@ -70,6 +76,12 @@ class AdvancedOrderFlowScalpingStrategy:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize error handler
+        if ERROR_HANDLER_AVAILABLE:
+            self.error_handler = OrderFlowErrorHandler()
+        else:
+            self.error_handler = None
         
         self.timeframes = ['1m', '3m', '5m', '15m']
         self.max_leverage = 50
@@ -123,15 +135,28 @@ class AdvancedOrderFlowScalpingStrategy:
             if not self._can_trade_symbol(symbol):
                 return None
             
-            tf_data = {}
-            for tf in self.timeframes:
-                if tf in ohlcv_data and len(ohlcv_data[tf]) >= 50:
-                    tf_data[tf] = self._prepare_dataframe(ohlcv_data[tf])
-            
-            if len(tf_data) < 2:
+            # Validate input data
+            if not ohlcv_data or not isinstance(ohlcv_data, dict):
+                self.logger.warning(f"Invalid OHLCV data for {symbol}")
                 return None
             
-            primary_tf = '3m' if '3m' in tf_data else '1m' if '1m' in tf_data else '5m'
+            tf_data = {}
+            for tf in self.timeframes:
+                if tf in ohlcv_data and isinstance(ohlcv_data[tf], list) and len(ohlcv_data[tf]) >= 50:
+                    try:
+                        df = self._prepare_dataframe(ohlcv_data[tf])
+                        if df is not None and len(df) >= 30:
+                            tf_data[tf] = df
+                    except Exception as e:
+                        self.logger.warning(f"Error preparing {tf} data for {symbol}: {e}")
+                        continue
+            
+            if len(tf_data) < 1:
+                self.logger.debug(f"Insufficient timeframe data for {symbol}")
+                return None
+            
+            # Select primary timeframe
+            primary_tf = '3m' if '3m' in tf_data else '1m' if '1m' in tf_data else '5m' if '5m' in tf_data else list(tf_data.keys())[0]
             primary_df = tf_data[primary_tf]
             
             trades_data = None
@@ -190,21 +215,72 @@ class AdvancedOrderFlowScalpingStrategy:
             return signal
             
         except Exception as e:
-            self.logger.error(f"Error analyzing {symbol}: {e}")
+            self.logger.error(f"Error analyzing {symbol}: {str(e)[:200]}")
+            import traceback
+            self.logger.debug(f"Full traceback for {symbol}: {traceback.format_exc()}")
             return None
     
-    def _prepare_dataframe(self, ohlcv: List) -> pd.DataFrame:
-        """Convert OHLCV list to pandas DataFrame"""
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df.dropna()
+    def _prepare_dataframe(self, ohlcv: List) -> Optional[pd.DataFrame]:
+        """Convert OHLCV list to pandas DataFrame with enhanced error handling"""
+        try:
+            if not ohlcv or not isinstance(ohlcv, list):
+                return None
+            
+            # Use error handler if available
+            if self.error_handler:
+                return self.error_handler.safe_dataframe_creation("", ohlcv)
+            
+            # Fallback method
+            col_count = len(ohlcv[0]) if ohlcv else 0
+            
+            if col_count == 6:
+                columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            elif col_count >= 12:
+                columns = [
+                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote', 'ignore'
+                ]
+            else:
+                self.logger.warning(f"Unexpected column count: {col_count}")
+                return None
+            
+            df = pd.DataFrame(ohlcv, columns=columns[:col_count])
+            
+            # Convert numeric columns safely
+            numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+            if col_count >= 12:
+                numeric_cols.extend(['quote_volume', 'trades', 'taker_buy_volume', 'taker_buy_quote'])
+            
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Convert timestamps
+            df['timestamp'] = pd.to_numeric(df['timestamp'], errors='coerce')
+            if 'close_time' in df.columns:
+                df['close_time'] = pd.to_numeric(df['close_time'], errors='coerce')
+            
+            # Clean invalid data
+            df = df.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
+            
+            # Validate data
+            if len(df) == 0:
+                return None
+            
+            if (df['high'] < df['low']).any() or (df['close'] <= 0).any():
+                return None
+            
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"DataFrame preparation error: {e}")
+            return None
     
     async def _analyze_cumulative_volume_delta(self, df: pd.DataFrame, symbol: str,
                                               trades_data: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Calculate Cumulative Volume Delta (CVD)
-        Uses real trade data when available, otherwise estimates from candles
+        Uses Binance taker buy volume data for precise calculations
         """
         try:
             high = df['high'].values
@@ -216,7 +292,20 @@ class AdvancedOrderFlowScalpingStrategy:
             if len(close) < self.cvd_lookback_periods:
                 return {'trend': 'neutral', 'strength': 0, 'delta_values': []}
             
-            if trades_data and len(trades_data) > 0:
+            # Use Binance taker buy volume for more accurate CVD
+            if 'taker_buy_volume' in df.columns:
+                taker_buy_volume = df['taker_buy_volume'].values
+                delta_values = []
+                
+                for i in range(len(volume)):
+                    buy_volume = float(taker_buy_volume[i])
+                    sell_volume = float(volume[i]) - buy_volume
+                    delta = buy_volume - sell_volume
+                    delta_values.append(delta)
+                    
+                self.logger.debug(f"Using Binance taker buy volume for CVD calculation")
+                
+            elif trades_data and len(trades_data) > 0:
                 self.logger.debug(f"Using {len(trades_data)} real trades for CVD calculation")
                 
                 buy_volume_total = 0
@@ -252,6 +341,7 @@ class AdvancedOrderFlowScalpingStrategy:
                             delta = buy_volume - sell_volume
                         delta_values.append(delta)
             else:
+                # Fallback estimation method
                 delta_values = []
                 for i in range(len(close)):
                     candle_range = high[i] - low[i]
@@ -294,7 +384,8 @@ class AdvancedOrderFlowScalpingStrategy:
                 'strength': strength,
                 'delta_values': delta_values,
                 'cvd': cvd,
-                'slope': cvd_normalized
+                'slope': cvd_normalized,
+                'buy_sell_ratio': np.mean([d for d in delta_values[-5:] if d != 0]) if any(delta_values[-5:]) else 0
             }
             
         except Exception as e:

@@ -73,9 +73,10 @@ class EnhancedOrderFlowIntegration:
                 # Try fallback if main analysis returns None
                 return await self._fallback_order_flow_analysis(symbol, ohlcv_data)
             
-            # Additional production-level validation
-            if order_flow_signal.signal_strength < 82:
-                self.logger.debug(f"Signal strength too low for production: {order_flow_signal.signal_strength:.1f}%")
+            # Production-level validation with dynamic thresholds
+            min_strength = float(os.getenv('ORDER_FLOW_MIN_SIGNAL_STRENGTH', '78'))
+            if order_flow_signal.signal_strength < min_strength:
+                self.logger.debug(f"Signal strength below threshold for {symbol}: {order_flow_signal.signal_strength:.1f}% (min: {min_strength}%)")
                 return None
             
             # Convert to enhanced signal format with additional metadata

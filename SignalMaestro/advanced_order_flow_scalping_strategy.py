@@ -116,7 +116,7 @@ class AdvancedOrderFlowScalpingStrategy:
             'smart_money_detection': 0.10
         }
         
-        self.min_signal_strength = 82  # Raised for production quality
+        self.min_signal_strength = float(os.getenv('ORDER_FLOW_MIN_SIGNAL_STRENGTH', '78'))  # Configurable for production
         
         # Enhanced Telegram signal formatting
         self.telegram_formatting_enabled = True

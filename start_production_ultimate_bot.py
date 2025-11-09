@@ -63,12 +63,12 @@ class ComprehensiveFixedProductionBot:
             env_defaults = {
                 'TARGET_CHANNEL': '@SignalTactics',
                 'TELEGRAM_CHAT_ID': '@SignalTactics',
-                'MAX_MESSAGES_PER_HOUR': '3',
-                'MIN_TRADE_INTERVAL_SECONDS': '900',
+                'MAX_MESSAGES_PER_HOUR': '8',
+                'MIN_TRADE_INTERVAL_SECONDS': '120',
                 'DEFAULT_LEVERAGE': '25',  # Conservative default
                 'MARGIN_TYPE': 'cross',
                 'LOG_LEVEL': 'INFO',
-                'ORDER_FLOW_MIN_SIGNAL_STRENGTH': '75',
+                'ORDER_FLOW_MIN_SIGNAL_STRENGTH': '78',
                 'CVD_LOOKBACK_PERIODS': '20',
                 'IMBALANCE_THRESHOLD': '1.5',
                 'SMART_MONEY_THRESHOLD': '2.0',

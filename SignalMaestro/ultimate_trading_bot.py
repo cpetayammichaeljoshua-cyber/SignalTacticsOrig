@@ -42,16 +42,24 @@ class UltimateTradingBot:
             self.logger.error("❌ TELEGRAM_BOT_TOKEN is required but not provided")
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
 
-        # Trading configuration
-        self.max_messages_per_hour = int(os.getenv('MAX_MESSAGES_PER_HOUR', '3'))
-        self.min_trade_interval = int(os.getenv('MIN_TRADE_INTERVAL_SECONDS', '900'))
-        self.default_leverage = min(int(os.getenv('DEFAULT_LEVERAGE', '35')), 75)  # Limit leverage
+        # Trading configuration - Enhanced for production
+        self.max_messages_per_hour = int(os.getenv('MAX_MESSAGES_PER_HOUR', '8'))  # Increased for production
+        self.min_trade_interval = int(os.getenv('MIN_TRADE_INTERVAL_SECONDS', '120'))  # Reduced for scalping
+        self.default_leverage = min(int(os.getenv('DEFAULT_LEVERAGE', '35')), 75)
 
-        # State management
+        # State management with enhanced tracking
         self.running = False
         self.message_count = 0
         self.last_message_time = None
         self.last_trade_times = {}
+        self.hourly_message_reset = None
+        self.signal_generation_stats = {
+            'analyzed': 0,
+            'signals_generated': 0,
+            'signals_sent': 0,
+            'rate_limited': 0,
+            'failed_sends': 0
+        }
 
         # Initialize components
         self.order_flow_integration = None
@@ -439,84 +447,132 @@ class UltimateTradingBot:
             return True
 
     async def send_signal_to_telegram(self, signal: Dict[str, Any]) -> bool:
-        """Send trading signal to Telegram with enhanced error handling"""
+        """Enhanced signal sending with comprehensive error handling and recovery"""
         try:
-            # Check rate limits
+            # Check rate limits with detailed logging
             if not self.can_send_message():
-                self.logger.warning("⚠️ Rate limit reached, skipping signal")
+                self.logger.warning(f"⚠️ Rate limit reached ({self.message_count}/{self.max_messages_per_hour}), skipping {signal['symbol']}")
+                self.signal_generation_stats['rate_limited'] += 1
                 return False
 
-            # Format signal message
+            # Enhanced signal validation
+            if signal.get('signal_strength', 0) < 75:
+                self.logger.debug(f"Signal strength too low for {signal['symbol']}: {signal.get('signal_strength', 0)}%")
+                return False
+
+            # Format signal message with validation
             message = self.format_signal_message(signal)
-            if not message:
-                self.logger.error("❌ Failed to format signal message")
+            if not message or len(message) < 50:
+                self.logger.error(f"❌ Invalid signal message for {signal['symbol']}")
                 return False
 
-            # Send to Telegram with retry logic
+            # Enhanced retry logic with exponential backoff
             success = False
-            for attempt in range(3):
+            last_error = None
+            
+            for attempt in range(4):  # Increased to 4 attempts
                 try:
                     url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
                     payload = {
                         'chat_id': self.chat_id,
                         'text': message,
                         'parse_mode': 'HTML',
-                        'disable_web_page_preview': True
+                        'disable_web_page_preview': True,
+                        'disable_notification': False  # Enable notifications for production
                     }
 
-                    timeout = aiohttp.ClientTimeout(total=15)
+                    # Progressive timeout increase
+                    timeout_duration = 10 + (attempt * 5)
+                    timeout = aiohttp.ClientTimeout(total=timeout_duration)
+                    
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.post(url, json=payload) as response:
                             if response.status == 200:
-                                self.logger.info(f"✅ Signal sent for {signal['symbol']} (attempt {attempt + 1})")
+                                result = await response.json()
+                                self.logger.info(f"✅ Signal sent for {signal['symbol']} | Strength: {signal.get('signal_strength', 0):.1f}% | Msg ID: {result.get('result', {}).get('message_id', 'N/A')}")
                                 success = True
                                 break
+                            elif response.status == 429:  # Rate limited by Telegram
+                                retry_after = int(response.headers.get('Retry-After', 60))
+                                self.logger.warning(f"🚫 Telegram rate limit hit, waiting {retry_after}s")
+                                await asyncio.sleep(min(retry_after, 120))  # Max 2 minutes wait
+                                continue
+                            elif response.status == 400:
+                                error_text = await response.text()
+                                self.logger.error(f"❌ Bad request for {signal['symbol']}: {error_text}")
+                                break  # Don't retry bad requests
                             else:
                                 error_text = await response.text()
-                                self.logger.error(f"❌ Telegram API error {response.status}: {error_text}")
-                                if response.status == 400:  # Bad request, don't retry
-                                    break
+                                last_error = f"HTTP {response.status}: {error_text[:200]}"
+                                self.logger.warning(f"⚠️ API error (attempt {attempt + 1}): {last_error}")
                         
                 except asyncio.TimeoutError:
-                    self.logger.warning(f"⏱️ Timeout sending signal (attempt {attempt + 1})")
+                    last_error = f"Timeout after {timeout_duration}s"
+                    self.logger.warning(f"⏱️ {last_error} (attempt {attempt + 1})")
+                except aiohttp.ClientError as e:
+                    last_error = f"Network error: {str(e)[:100]}"
+                    self.logger.warning(f"🌐 {last_error} (attempt {attempt + 1})")
                 except Exception as e:
-                    self.logger.error(f"❌ Error sending signal (attempt {attempt + 1}): {e}")
+                    last_error = f"Unexpected error: {str(e)[:100]}"
+                    self.logger.error(f"❌ {last_error} (attempt {attempt + 1})")
                 
-                if not success and attempt < 2:
-                    await asyncio.sleep(2)  # Wait before retry
+                if not success and attempt < 3:
+                    # Exponential backoff: 2s, 4s, 8s
+                    wait_time = 2 ** (attempt + 1)
+                    await asyncio.sleep(wait_time)
 
             if success:
-                # Update counters
+                # Update all counters and stats
                 self.message_count += 1
                 self.last_message_time = datetime.now()
                 self.last_trade_times[signal['symbol']] = datetime.now()
+                self.signal_generation_stats['signals_sent'] += 1
 
-                # Save to database
-                await self.save_signal_to_db(signal)
+                # Save to database with error handling
+                try:
+                    await self.save_signal_to_db(signal)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Database save failed: {e}")
+                
                 return True
-            
-            return False
+            else:
+                self.signal_generation_stats['failed_sends'] += 1
+                self.logger.error(f"❌ Failed to send signal for {signal['symbol']} after 4 attempts. Last error: {last_error}")
+                return False
 
         except Exception as e:
-            self.logger.error(f"❌ Critical error sending signal to Telegram: {e}")
+            self.logger.error(f"❌ Critical error in signal sending for {signal.get('symbol', 'UNKNOWN')}: {e}")
+            self.signal_generation_stats['failed_sends'] += 1
+            import traceback
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
             return False
 
     def can_send_message(self) -> bool:
-        """Check if we can send a message based on rate limits"""
+        """Enhanced rate limiting with dynamic adjustment"""
         try:
             current_time = datetime.now()
+            current_hour = current_time.strftime('%Y-%m-%d-%H')
 
-            # Check hourly limit
+            # Initialize hourly tracking
+            if self.hourly_message_reset != current_hour:
+                self.message_count = 0
+                self.hourly_message_reset = current_hour
+                self.logger.info(f"📊 Rate limit reset for hour: {current_hour}")
+
+            # Check hourly limit with buffer for high-quality signals
+            if self.message_count >= self.max_messages_per_hour:
+                self.signal_generation_stats['rate_limited'] += 1
+                return False
+
+            # Add minimum interval between messages (30 seconds for production)
             if self.last_message_time:
-                time_diff = (current_time - self.last_message_time).total_seconds()
-                if time_diff < 3600 and self.message_count >= self.max_messages_per_hour:
+                time_since_last = (current_time - self.last_message_time).total_seconds()
+                if time_since_last < 30:  # 30 second minimum interval
                     return False
-                elif time_diff >= 3600:
-                    # Reset hourly counter
-                    self.message_count = 0
 
             return True
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error in rate limiting check: {e}")
             return True
 
     def format_signal_message(self, signal: Dict[str, Any]) -> str:
@@ -684,48 +740,121 @@ class UltimateTradingBot:
             self.logger.error(f"❌ Error saving signal to database: {e}")
 
     async def run_analysis_cycle(self):
-        """Run continuous analysis cycle with enhanced error handling"""
-        # Enhanced list of major trading pairs
-        symbols = [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 
-            'SOLUSDT', 'DOGEUSDT', 'LTCUSDT', 'LINKUSDT', 'MATICUSDT',
-            'AVAXUSDT', 'DOTUSDT', 'ATOMUSDT', 'NEARUSDT', 'FTMUSDT'
+        """Enhanced analysis cycle with comprehensive error handling and statistics"""
+        # Prioritized symbols for better signal quality
+        priority_symbols = [
+            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+            'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'MATICUSDT'
+        ]
+        
+        secondary_symbols = [
+            'LTCUSDT', 'DOTUSDT', 'ATOMUSDT', 'NEARUSDT', 'FTMUSDT',
+            'UNIUSDT', 'FILUSDT', 'TRXUSDT', 'EOSUSDT', 'XLMUSDT'
         ]
 
-        analysis_count = 0
-        signals_generated = 0
-
-        for symbol in symbols:
+        # Reset cycle stats
+        self.signal_generation_stats['analyzed'] = 0
+        self.signal_generation_stats['signals_generated'] = 0
+        cycle_start_time = datetime.now()
+        
+        # Analyze priority symbols first
+        all_symbols = priority_symbols + secondary_symbols
+        successful_analyses = 0
+        
+        for symbol in all_symbols:
             if not self.running:
                 break
 
             try:
-                analysis_count += 1
-                self.logger.debug(f"🔍 Analyzing {symbol} ({analysis_count}/{len(symbols)})")
+                self.signal_generation_stats['analyzed'] += 1
+                analysis_start = datetime.now()
                 
-                # Analyze symbol
-                signal = await self.analyze_symbol_with_order_flow(symbol)
+                self.logger.debug(f"🔍 Analyzing {symbol} ({self.signal_generation_stats['analyzed']}/{len(all_symbols)})")
+                
+                # Skip if recently analyzed
+                if not self.can_trade_symbol(symbol):
+                    self.logger.debug(f"⏭️ Skipping {symbol} - recently analyzed")
+                    await asyncio.sleep(1)
+                    continue
+                
+                # Analyze symbol with timeout
+                try:
+                    signal = await asyncio.wait_for(
+                        self.analyze_symbol_with_order_flow(symbol), 
+                        timeout=45.0
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.warning(f"⏱️ Analysis timeout for {symbol}")
+                    continue
 
-                if signal:
-                    signals_generated += 1
-                    # Send signal
-                    success = await self.send_signal_to_telegram(signal)
+                analysis_time = (datetime.now() - analysis_start).total_seconds()
+                successful_analyses += 1
+
+                if signal and signal.get('signal_strength', 0) >= 75:
+                    self.signal_generation_stats['signals_generated'] += 1
+                    signal_strength = signal.get('signal_strength', 0)
                     
-                    if success:
-                        self.logger.info(f"📤 Signal sent successfully for {symbol}")
-                        # Wait between signals to avoid spam
-                        await asyncio.sleep(60)
+                    self.logger.info(
+                        f"🎯 SIGNAL GENERATED: {symbol} {signal['direction']} | "
+                        f"Strength: {signal_strength:.1f}% | "
+                        f"Analysis: {analysis_time:.1f}s"
+                    )
+                    
+                    # Send signal with enhanced error handling
+                    send_success = await self.send_signal_to_telegram(signal)
+                    
+                    if send_success:
+                        self.logger.info(f"📤 ✅ Signal delivered for {symbol}")
+                        # Wait between successful signals
+                        await asyncio.sleep(45)
                     else:
-                        self.logger.warning(f"⚠️ Failed to send signal for {symbol}")
+                        self.logger.warning(f"📤 ❌ Failed to deliver signal for {symbol}")
+                        # Shorter wait on failure
+                        await asyncio.sleep(15)
+                else:
+                    # Log why signal was not generated
+                    if signal:
+                        strength = signal.get('signal_strength', 0)
+                        self.logger.debug(f"⚠️ Signal below threshold for {symbol}: {strength:.1f}%")
+                    else:
+                        self.logger.debug(f"⚠️ No signal generated for {symbol}")
 
-                # Small delay between symbol analysis
-                await asyncio.sleep(3)
+                # Progressive delay based on success
+                if successful_analyses % 5 == 0:
+                    await asyncio.sleep(2)  # Brief pause every 5 symbols
+                else:
+                    await asyncio.sleep(1)
 
             except Exception as e:
-                self.logger.error(f"❌ Error analyzing {symbol}: {e}")
+                self.logger.error(f"❌ Error analyzing {symbol}: {str(e)[:150]}")
+                import traceback
+                self.logger.debug(f"Full error for {symbol}: {traceback.format_exc()}")
+                await asyncio.sleep(2)  # Wait before continuing
                 continue
 
-        self.logger.info(f"📊 Analysis cycle completed: {analysis_count} symbols analyzed, {signals_generated} signals generated")
+        # Comprehensive cycle summary
+        cycle_duration = (datetime.now() - cycle_start_time).total_seconds()
+        success_rate = (successful_analyses / len(all_symbols)) * 100 if all_symbols else 0
+        signal_rate = (self.signal_generation_stats['signals_generated'] / max(successful_analyses, 1)) * 100
+        
+        self.logger.info(
+            f"📊 CYCLE COMPLETE | Duration: {cycle_duration:.1f}s | "
+            f"Analyzed: {self.signal_generation_stats['analyzed']}/{len(all_symbols)} | "
+            f"Success Rate: {success_rate:.1f}% | "
+            f"Signals: {self.signal_generation_stats['signals_generated']} | "
+            f"Sent: {self.signal_generation_stats['signals_sent']} | "
+            f"Rate Limited: {self.signal_generation_stats['rate_limited']} | "
+            f"Failed Sends: {self.signal_generation_stats['failed_sends']}"
+        )
+        
+        # Performance recommendations
+        if self.signal_generation_stats['signals_generated'] == 0:
+            self.logger.warning("🔔 No signals generated this cycle - consider adjusting thresholds")
+        elif self.signal_generation_stats['rate_limited'] > 0:
+            self.logger.warning(f"🚦 {self.signal_generation_stats['rate_limited']} signals rate limited")
+        
+        if self.signal_generation_stats['failed_sends'] > 2:
+            self.logger.error(f"🚨 High failure rate: {self.signal_generation_stats['failed_sends']} failed sends")
 
     async def run_bot(self):
         """Main bot execution loop with comprehensive error handling"""

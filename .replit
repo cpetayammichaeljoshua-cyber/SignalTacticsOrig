@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
 
 [workflows]
-runButton = "Production Ultimate Bot"
+runButton = "Production Bot Ultimate Fixed"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -199,24 +199,6 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_production_bot.py"
-
-[[workflows.workflow]]
-name = "Production Ultimate Bot"
-author = 46820824
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_production_ultimate_bot.py"
-
-[[workflows.workflow]]
-name = "Bot Health Monitor"
-author = 46820824
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python monitor_and_fix_bot.py"
 
 [[ports]]
 localPort = 3000

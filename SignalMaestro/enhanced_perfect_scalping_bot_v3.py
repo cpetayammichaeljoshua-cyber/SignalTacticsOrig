@@ -45,167 +45,8 @@ from binance_trader import BinanceTrader
 from enhanced_cornix_integration import EnhancedCornixIntegration
 from database import Database
 from config import Config
+from ml_trade_analyzer import MLTradeAnalyzer
 
-# ML Analyzer placeholder (will be replaced with actual implementation)
-class MLTradeAnalyzer:
-    def __init__(self):
-        self.model_performance = {
-            'loss_prediction_accuracy': 82.5,
-            'signal_strength_accuracy': 87.3,
-            'entry_timing_accuracy': 79.8
-        }
-        self.logger = logging.getLogger(__name__)
-        self.telegram_trades_analyzed = 0
-        self.fibonacci_accuracy = 85.2
-        self.time_session_accuracy = 89.1
-        self.logger.info("🧠 ML Trade Analyzer initialized")
-        
-    def analyze_telegram_trade_history(self, trades_data: List[Dict]) -> Dict[str, Any]:
-        """Analyze past Telegram trades for ML learning"""
-        try:
-            if not trades_data:
-                return {'insights': [], 'accuracy': 0}
-                
-            # Analyze Fibonacci success rates
-            fib_successes = []
-            time_successes = []
-            
-            for trade in trades_data:
-                if trade.get('fibonacci_used'):
-                    success = trade.get('profit_percentage', 0) > 0
-                    fib_successes.append(success)
-                    
-                if trade.get('time_session'):
-                    success = trade.get('profit_percentage', 0) > 0
-                    time_successes.append(success)
-            
-            fib_accuracy = (sum(fib_successes) / len(fib_successes) * 100) if fib_successes else 0
-            time_accuracy = (sum(time_successes) / len(time_successes) * 100) if time_successes else 0
-            
-            # Update model performance based on Telegram data
-            if fib_accuracy > 0:
-                self.fibonacci_accuracy = fib_accuracy
-            if time_accuracy > 0:
-                self.time_session_accuracy = time_accuracy
-                
-            insights = [
-                f"Fibonacci accuracy from Telegram: {fib_accuracy:.1f}%",
-                f"Time session accuracy from Telegram: {time_accuracy:.1f}%",
-                f"Total Telegram trades analyzed: {len(trades_data)}"
-            ]
-            
-            self.telegram_trades_analyzed = len(trades_data)
-            return {'insights': insights, 'fib_accuracy': fib_accuracy, 'time_accuracy': time_accuracy}
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing Telegram trades: {e}")
-            return {'insights': [], 'accuracy': 0}
-
-    def load_models(self):
-        self.logger.info("🤖 ML models loaded successfully")
-
-    def predict_trade_outcome(self, signal_data: Dict) -> Dict:
-        """Predict trade outcome using advanced ML enhanced with Telegram trade analysis"""
-        try:
-            # Advanced prediction logic based on signal data
-            strength = signal_data.get('signal_strength', 50)
-            time_session = signal_data.get('time_session', 'UNKNOWN')
-            fib_level = signal_data.get('fibonacci_level', 0)
-            volatility = signal_data.get('volatility', 1.0)
-
-            # Base confidence enhanced with Telegram learning
-            confidence = 65
-
-            # Enhanced time session adjustments based on Telegram analysis
-            session_multipliers = {
-                'LONDON_OPEN': 1.25,  # Enhanced based on Telegram success
-                'NY_OVERLAP': 1.35,   # Best performing session
-                'NY_MAIN': 1.15,
-                'LONDON_MAIN': 1.08,
-                'ASIA_MAIN': 0.95
-            }
-
-            if time_session in session_multipliers:
-                # Apply Telegram-learned time session accuracy
-                telegram_factor = self.time_session_accuracy / 100
-                confidence *= session_multipliers[time_session] * telegram_factor
-
-            # Enhanced signal strength adjustment
-            if strength >= 92:
-                confidence += 18
-            elif strength >= 88:
-                confidence += 14
-            elif strength >= 85:
-                confidence += 10
-            elif strength >= 80:
-                confidence += 6
-
-            # Enhanced Fibonacci level analysis with Telegram data
-            if fib_level > 0:
-                fib_bonus = (self.fibonacci_accuracy / 100) * 12
-                confidence += fib_bonus
-
-            # Volatility optimization enhanced
-            if 1.0 <= volatility <= 1.3:  # Optimal volatility range
-                confidence += 7
-            elif volatility > 1.5:  # High volatility penalty
-                confidence -= 5
-
-            # Telegram trade history bonus
-            if self.telegram_trades_analyzed > 10:
-                confidence += 5
-
-            confidence = min(confidence, 98)  # Cap at 98%
-
-            prediction = 'favorable' if confidence >= 78 else 'neutral' if confidence >= 65 else 'unfavorable'
-
-            return {
-                'prediction': prediction,
-                'confidence': confidence,
-                'factors': ['enhanced_time_session', 'signal_strength', 'telegram_fibonacci', 'volatility', 'telegram_history'],
-                'recommendation': self._get_recommendation(prediction, confidence),
-                'telegram_enhanced': True,
-                'fibonacci_accuracy': self.fibonacci_accuracy,
-                'time_accuracy': self.time_session_accuracy
-            }
-
-        except Exception as e:
-            self.logger.error(f"ML prediction error: {e}")
-            return {'prediction': 'neutral', 'confidence': 50, 'error': str(e)}
-
-    def _get_recommendation(self, prediction: str, confidence: float) -> str:
-        """Get trading recommendation"""
-        if prediction == 'favorable' and confidence >= 85:
-            return "EXCELLENT - High probability scalping opportunity"
-        elif prediction == 'favorable' and confidence >= 75:
-            return "GOOD - Favorable conditions detected"
-        elif prediction == 'neutral':
-            return "CAUTION - Mixed signals, consider waiting"
-        else:
-            return "AVOID - Unfavorable market conditions"
-
-    async def record_trade(self, trade_data: Dict):
-        """Record trade for ML learning"""
-        try:
-            trade_data['recorded_at'] = datetime.now().isoformat()
-            self.logger.info(f"📊 Trade recorded for ML analysis: {trade_data.get('symbol', 'UNKNOWN')}")
-        except Exception as e:
-            self.logger.error(f"Error recording trade: {e}")
-
-    def get_learning_summary(self) -> Dict[str, Any]:
-        """Get ML learning summary"""
-        return {
-            'total_trades_analyzed': 127,
-            'win_rate': 0.79,
-            'learning_status': 'active',
-            'total_insights_generated': 43,
-            'recent_insights': [
-                {'type': 'time_optimization', 'recommendation': 'Focus on London Open and NY Overlap sessions'},
-                {'type': 'fibonacci_accuracy', 'recommendation': 'Golden ratio levels show 82% success rate'},
-                {'type': 'volatility_sweet_spot', 'recommendation': 'Optimal volatility range: 1.0-1.3x'}
-            ],
-            'model_performance': self.model_performance
-        }
 
 class EnhancedPerfectScalpingBotV3:
     """Enhanced Perfect Scalping Bot V3 with Advanced Time-Fibonacci Strategy"""
@@ -285,6 +126,9 @@ class EnhancedPerfectScalpingBotV3:
             ml_summary = self.ml_analyzer.get_learning_summary()
             self.logger.info(f"🧠 ML Status: {ml_summary['learning_status']} | Win Rate: {ml_summary['win_rate']:.1%}")
 
+            # Start real-time market data streaming
+            await self.start_real_time_monitoring()
+
             # Main trading loop
             while self.running:
                 try:
@@ -318,7 +162,7 @@ class EnhancedPerfectScalpingBotV3:
                     if asyncio.iscoroutinefunction(self.database.initialize):
                         await self.database.initialize()
                     else:
-                        self.database.initialize()
+                        await asyncio.to_thread(self.database.initialize)
                 self.logger.info("✅ Database initialized")
             except Exception as e:
                 self.logger.warning(f"⚠️ Database initialization skipped: {e}")
@@ -333,9 +177,41 @@ class EnhancedPerfectScalpingBotV3:
             self.logger.error(f"Error initializing components: {e}")
             raise
 
+    async def start_real_time_monitoring(self):
+        """Start real-time market data monitoring and position tracking"""
+        try:
+            # Initialize Binance trader for real trading
+            await self.binance_trader.initialize()
+            
+            # Start WebSocket price streaming for all monitored symbols
+            self.logger.info("🌐 Starting real-time market data streaming...")
+            await self.binance_trader.start_price_stream(
+                symbols=self.symbols,
+                callback=self._on_price_update
+            )
+            
+            self.logger.info("✅ Real-time monitoring started for enhanced trading")
+            
+        except Exception as e:
+            self.logger.error(f"Error starting real-time monitoring: {e}")
+            
+    async def _on_price_update(self, symbol: str, price: float):
+        """Callback for real-time price updates"""
+        try:
+            # This will be called for every price update
+            # Position monitoring is handled automatically in the BinanceTrader
+            pass
+            
+        except Exception as e:
+            self.logger.error(f"Error in price update callback for {symbol}: {e}")
+
     async def initialize_telegram_bot(self):
         """Initialize Telegram bot with commands"""
         try:
+            if not self.bot_token:
+                self.logger.warning("⚠️ No Telegram bot token provided, skipping bot initialization")
+                return
+                
             self.bot = Bot(token=self.bot_token)
             self.telegram_app = Application.builder().token(self.bot_token).build()
             
@@ -353,7 +229,8 @@ class EnhancedPerfectScalpingBotV3:
             await self.telegram_app.start()
             
             # Start polling in background
-            asyncio.create_task(self.telegram_app.updater.start_polling())
+            if self.telegram_app and hasattr(self.telegram_app, 'updater') and self.telegram_app.updater:
+                asyncio.create_task(self.telegram_app.updater.start_polling())
             
             self.logger.info("✅ Telegram bot initialized with commands")
             
@@ -370,7 +247,8 @@ class EnhancedPerfectScalpingBotV3:
                 return None
                 
             # Convert to DataFrame
-            df = pd.DataFrame(ohlcv_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df = pd.DataFrame(ohlcv_data)
+            df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df = df.astype({'open': float, 'high': float, 'low': float, 'close': float, 'volume': float})
             
@@ -412,7 +290,8 @@ class EnhancedPerfectScalpingBotV3:
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.08, bottom=0.15, right=0.95, top=0.88, hspace=0.3)
             
             # Save to bytes
             buffer = BytesIO()
@@ -532,7 +411,23 @@ class EnhancedPerfectScalpingBotV3:
             # Generate chart for the signal
             chart_data = await self.generate_chart(signal.symbol, signal)
             
-            # Send to Cornix for execution
+            # EXECUTE REAL TRADE instead of just sending signals
+            trade_signal_data = {
+                'symbol': signal.symbol,
+                'direction': signal.direction,
+                'entry_price': signal.entry_price,
+                'stop_loss': signal.stop_loss,
+                'tp1': signal.tp1,
+                'tp2': signal.tp2,
+                'tp3': signal.tp3,
+                'leverage': signal.leverage,
+                'action': 'LONG' if signal.direction == 'LONG' else 'SHORT'
+            }
+            
+            # Execute real trade with TP/SL management
+            trade_result = await self.binance_trader.execute_real_trade(trade_signal_data)
+            
+            # Also send to Cornix as backup (optional)
             cornix_result = await self.cornix.send_advanced_signal({
                 'symbol': signal.symbol,
                 'direction': signal.direction,
@@ -542,7 +437,8 @@ class EnhancedPerfectScalpingBotV3:
                 'leverage': signal.leverage,
                 'message': signal_message,
                 'strategy': 'Advanced Time-Fibonacci Theory',
-                'ml_enhanced': signal.ml_prediction is not None
+                'ml_enhanced': signal.ml_prediction is not None,
+                'real_trade_executed': trade_result.get('success', False)
             })
 
             # Send to Telegram channel with chart
@@ -570,10 +466,15 @@ class EnhancedPerfectScalpingBotV3:
                 except Exception as e:
                     self.logger.error(f"Error sending to Telegram: {e}")
 
-            if cornix_result.get('success'):
+            # Handle real trade execution results
+            if trade_result.get('success'):
                 self.successful_signals += 1
-                self.logger.info("✅ Advanced signal sent successfully to Cornix")
-
+                self.logger.info(f"✅ REAL TRADE EXECUTED: {signal.direction} {signal.symbol}")
+                self.logger.info(f"   Order ID: {trade_result.get('order_id')}")
+                self.logger.info(f"   Position Size: {trade_result.get('position_size')}")
+                self.logger.info(f"   Entry Price: ${trade_result.get('entry_price'):.4f}")
+                self.logger.info(f"   TP/SL Enabled: {trade_result.get('tp_sl_enabled', False)}")
+                
                 # Record trade for ML learning
                 await self._record_trade_for_ml(signal)
 
@@ -581,8 +482,54 @@ class EnhancedPerfectScalpingBotV3:
                 self.signals_sent_times.append(datetime.now())
                 self.last_signal_time[signal.symbol] = datetime.now()
 
+                # Update Telegram message to include real trade confirmation
+                enhanced_message = signal_message + f"\n\n🔥 **REAL TRADE EXECUTED** 🔥\n📋 Order ID: `{trade_result.get('order_id')}`\n💰 Position: `{trade_result.get('position_size'):.6f}`"
+                
+                # Send enhanced message to Telegram
+                if self.bot and self.channel_id:
+                    try:
+                        if chart_data:
+                            chart_bytes = base64.b64decode(chart_data)
+                            chart_buffer = BytesIO(chart_bytes)
+                            chart_buffer.name = f"{signal.symbol}_trade_executed.png"
+                            
+                            await self.bot.send_photo(
+                                chat_id=self.channel_id,
+                                photo=chart_buffer,
+                                caption=enhanced_message,
+                                parse_mode='Markdown'
+                            )
+                        else:
+                            await self.bot.send_message(
+                                chat_id=self.channel_id,
+                                text=enhanced_message,
+                                parse_mode='Markdown'
+                            )
+                        self.logger.info("📤 Real trade confirmation sent to Telegram")
+                    except Exception as e:
+                        self.logger.error(f"Error sending trade confirmation to Telegram: {e}")
+
             else:
-                self.logger.error(f"❌ Failed to send signal: {cornix_result.get('error')}")
+                self.logger.error(f"❌ FAILED TO EXECUTE REAL TRADE: {trade_result.get('error')}")
+                
+                # Still send signal to Telegram but mark as failed
+                failed_message = signal_message + f"\n\n⚠️ **TRADE EXECUTION FAILED** ⚠️\n🚫 Error: `{trade_result.get('error', 'Unknown error')}`"
+                
+                if self.bot and self.channel_id:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=self.channel_id,
+                            text=failed_message,
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Error sending failure notification: {e}")
+
+            # Log Cornix result for reference
+            if cornix_result.get('success'):
+                self.logger.info("✅ Signal also sent to Cornix as backup")
+            else:
+                self.logger.warning(f"⚠️ Cornix backup failed: {cornix_result.get('error')}")
 
         except Exception as e:
             self.logger.error(f"Error processing signal: {e}")
@@ -653,7 +600,7 @@ TP3: `${signal.tp3:.4f}` (34%)
 {ml_section}
 
 ⚖️ **Risk/Reward:** `1:{risk_reward_ratio:.2f}`
-🕒 **Optimal Entry:** `{signal.optimal_entry_time.strftime('%H:%M:%S UTC')}`
+🕒 **Optimal Entry:** `{signal.optimal_entry_time.strftime('%H:%M:%S UTC') if signal.optimal_entry_time else 'Now'}`
 
 📈 **STRATEGY:** Advanced Time-Fibonacci Theory
 🎲 **Edge:** Golden Ratio + Time Confluence
@@ -732,7 +679,8 @@ TP3: `${signal.tp3:.4f}` (34%)
 
 🎯 **Ready for profitable scalping!**
         """
-        await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(welcome_msg, parse_mode='Markdown')
 
     async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -751,7 +699,8 @@ TP3: `${signal.tp3:.4f}` (34%)
 
 🟢 **All Systems Operational**
         """
-        await update.message.reply_text(status_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(status_msg, parse_mode='Markdown')
 
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stats command"""
@@ -776,7 +725,8 @@ TP3: `${signal.tp3:.4f}` (34%)
 🌀 Fibonacci Accuracy: {getattr(self.ml_analyzer, 'fibonacci_accuracy', 85.2):.1f}%
 📱 Telegram Trades: {getattr(self.ml_analyzer, 'telegram_trades_analyzed', 0)}
         """
-        await update.message.reply_text(stats_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
     async def handle_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /test command - Send test signal to channel"""
@@ -827,13 +777,16 @@ TP3: `$49,500.00` (34%)
             # Send test message to channel
             if self.bot and self.channel_id:
                 await self.bot.send_message(chat_id=self.channel_id, text=test_signal_msg, parse_mode='Markdown')
-                await update.message.reply_text("✅ Test signal sent to channel successfully!", parse_mode='Markdown')
+                if update.message:
+                    await update.message.reply_text("✅ Test signal sent to channel successfully!", parse_mode='Markdown')
             else:
-                await update.message.reply_text("❌ Bot or channel not configured", parse_mode='Markdown')
+                if update.message:
+                    await update.message.reply_text("❌ Bot or channel not configured", parse_mode='Markdown')
                 
         except Exception as e:
             self.logger.error(f"Error sending test signal: {e}")
-            await update.message.reply_text(f"❌ Error sending test signal: {str(e)}", parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(f"❌ Error sending test signal: {str(e)}", parse_mode='Markdown')
 
     async def handle_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /balance command"""
@@ -850,7 +803,8 @@ ETH: 0.0000
 
 📊 **Portfolio Value:** ~$10,000 USDT
         """
-        await update.message.reply_text(balance_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(balance_msg, parse_mode='Markdown')
 
     async def handle_signals(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /signals command"""
@@ -871,7 +825,8 @@ ETH: 0.0000
 
 **Next Scan:** {self.scan_interval//60} minutes
         """
-        await update.message.reply_text(signals_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(signals_msg, parse_mode='Markdown')
 
     async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
@@ -899,7 +854,8 @@ Advanced Time-Fibonacci Theory combining optimal trading sessions with golden ra
 
 💎 *Professional Scalping at its finest*
         """
-        await update.message.reply_text(help_msg, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(help_msg, parse_mode='Markdown')
 
     def _get_current_session(self) -> str:
         """Get current trading session"""
@@ -931,7 +887,7 @@ Advanced Time-Fibonacci Theory combining optimal trading sessions with golden ra
             self.logger.info(f"   ML Enhanced: {ml_usage:.1f}%")
 
             # Stop Telegram bot
-            if self.telegram_app:
+            if self.telegram_app and hasattr(self.telegram_app, 'updater') and self.telegram_app.updater:
                 await self.telegram_app.updater.stop()
                 await self.telegram_app.stop()
                 await self.telegram_app.shutdown()

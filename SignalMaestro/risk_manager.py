@@ -165,10 +165,10 @@ class RiskManager:
         """Calculate optimal position size based on risk management rules"""
         try:
             # This is a simplified calculation - in a real implementation,
-            # you would fetch actual account balance
+            # you would fetch actual account balance from the exchange
             
-            # Assume account balance (this should come from the exchange)
-            account_balance = 10000  # USD - This should be fetched from Binance
+            # Use configurable capital base
+            account_balance = self.config.CAPITAL_BASE  # USD - Configurable capital base
             
             # Default risk percentage
             risk_percentage = self.config.DEFAULT_RISK_PERCENTAGE / 100
@@ -443,7 +443,7 @@ class RiskManager:
         else:
             return "Drawdown within acceptable limits - Continue normal trading"
     
-    async def get_risk_summary(self, user_id: int = None) -> Dict[str, Any]:
+    async def get_risk_summary(self, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get overall risk summary for user or system"""
         try:
             # This would typically fetch data from database

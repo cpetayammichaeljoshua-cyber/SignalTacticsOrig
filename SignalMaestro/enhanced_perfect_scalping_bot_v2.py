@@ -15,42 +15,19 @@ import asyncio
 import logging
 import json
 import aiohttp
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 import time
 
-try:
-    from config import Config
-    from enhanced_cornix_integration import EnhancedCornixIntegration
-    from binance_trader import BinanceTrader
-    from risk_manager import RiskManager
-    from signal_parser import SignalParser
-except ImportError as e:
-    print(f"Import warning: {e}")
-    # Create minimal config if imports fail
-    class Config:
-        TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-        TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-        LOG_LEVEL = 'INFO'
-    
-    # Create minimal placeholder classes
-    class EnhancedCornixIntegration:
-        async def test_connection(self): return {'success': True}
-        async def send_initial_signal(self, signal): return {'success': True}
-        async def update_stop_loss(self, symbol, sl, reason): return True
-        async def close_position(self, symbol, reason, percent): return True
-    
-    class BinanceTrader:
-        async def test_connection(self): return True
-        async def get_current_price(self, symbol): return 50000.0
-    
-    class RiskManager:
-        async def validate_signal(self, signal): return {'valid': True}
-    
-    class SignalParser:
-        def parse_signal(self, signal): return signal if isinstance(signal, dict) else {}
+from config import Config
+from enhanced_cornix_integration import EnhancedCornixIntegration
+from binance_trader import BinanceTrader
+from risk_manager import RiskManager
+from signal_parser import SignalParser
+from stop_loss_integration_module import StopLossIntegrator
 
 @dataclass
 class TradeProgress:
@@ -67,7 +44,7 @@ class TradeProgress:
     tp2_hit: bool = False
     tp3_hit: bool = False
     position_closed: bool = False
-    start_time: datetime = None
+    start_time: Optional[datetime] = None
     profit_locked: float = 0.0
     stage: str = "active"  # active, tp1_hit, tp2_hit, completed
     risk_reward_ratio: float = 3.0
@@ -102,7 +79,7 @@ class TimeTheoryAnalyzer:
     """Time-based analysis for enhanced strategy"""
     
     @staticmethod
-    def get_market_session(dt: datetime = None) -> str:
+    def get_market_session(dt: Optional[datetime] = None) -> str:
         """Determine current market session"""
         if dt is None:
             dt = datetime.utcnow()
@@ -155,6 +132,9 @@ class EnhancedPerfectScalpingBotV2:
         self.binance_trader = BinanceTrader()
         self.risk_manager = RiskManager()
         self.signal_parser = SignalParser()
+        
+        # Initialize stop loss integration
+        self.stop_loss_integrator = StopLossIntegrator(self)
         
         # Bot state management
         self.active_trades: Dict[str, TradeProgress] = {}
@@ -289,6 +269,13 @@ class EnhancedPerfectScalpingBotV2:
             
             # Store active trade
             self.active_trades[trade.symbol] = trade
+            
+            # Create stop loss manager for dynamic monitoring
+            await self.stop_loss_integrator.create_trade_stop_loss(
+                symbol=trade.symbol,
+                direction=trade.direction,
+                entry_price=trade.entry_price
+            )
             
             # Forward to Cornix
             cornix_success = await self.forward_to_cornix(enhanced_signal, trade)
@@ -473,6 +460,13 @@ class EnhancedPerfectScalpingBotV2:
                 if not current_price:
                     continue
                 
+                # Update dynamic stop loss system with current price
+                sl_actions = await self.stop_loss_integrator.update_stop_loss_price(symbol, current_price)
+                
+                # Execute any triggered stop loss actions
+                for action in sl_actions:
+                    await self.stop_loss_integrator.execute_stop_loss_action(action)
+                
                 # Check for TP/SL hits
                 await self._check_tp_sl_hits(trade, current_price)
                 
@@ -645,7 +639,7 @@ class EnhancedPerfectScalpingBotV2:
             
             completed_symbols = []
             for symbol, trade in self.active_trades.items():
-                if trade.position_closed and trade.start_time < cutoff_time:
+                if trade.position_closed and trade.start_time and trade.start_time < cutoff_time:
                     completed_symbols.append(symbol)
             
             for symbol in completed_symbols:
@@ -668,8 +662,9 @@ class EnhancedPerfectScalpingBotV2:
                 'parse_mode': 'Markdown'
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=10) as response:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload) as response:
                     if response.status == 200:
                         self.rate_limiter.record_message()
                         self.logger.info("✅ Message sent successfully")

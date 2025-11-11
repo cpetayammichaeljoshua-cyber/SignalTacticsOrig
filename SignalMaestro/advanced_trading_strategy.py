@@ -19,6 +19,9 @@ import warnings
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas_ta")
+warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
+warnings.filterwarnings('ignore', category=UserWarning, message='Glyph*')
+warnings.filterwarnings('ignore', category=UserWarning, message='This figure includes Axes*')
 
 try:
     import pandas_ta as ta
@@ -98,22 +101,50 @@ class AdvancedTradingStrategy:
 
     async def scan_markets(self) -> List[Dict[str, Any]]:
         """
-        Scan multiple markets for trading opportunities
+        Scan multiple markets for MACD ANTI trading opportunities
         """
+        from .macd_anti_strategy import MACDAntiStrategy
+
+        macd_anti = MACDAntiStrategy()
         signals = []
 
         for symbol in self.symbols:
             try:
-                signal = await self.analyze_symbol(symbol)
-                if signal and signal.get('strength', 0) >= self.min_signal_strength:
+                # Get market data for MACD ANTI analysis
+                market_data = {}
+                market_data['5m'] = await self.binance_trader.get_market_data(symbol, '5m', 100)
+                market_data['15m'] = await self.binance_trader.get_market_data(symbol, '15m', 50)
+                market_data['1h'] = await self.binance_trader.get_market_data(symbol, '1h', 30)
+
+                # Analyze with MACD ANTI strategy
+                macd_signal = await macd_anti.analyze_symbol(symbol, market_data)
+
+                if macd_signal and macd_signal.signal_strength >= self.min_signal_strength:
+                    # Convert to standard format
+                    signal = {
+                        'symbol': symbol,
+                        'action': macd_signal.direction,
+                        'strength': macd_signal.signal_strength,
+                        'entry_price': macd_signal.entry_price,
+                        'stop_loss': macd_signal.stop_loss,
+                        'take_profit_1': macd_signal.tp1,
+                        'take_profit_2': macd_signal.tp2,
+                        'take_profit_3': macd_signal.tp3,
+                        'leverage': macd_signal.leverage,
+                        'strategy': 'MACD_ANTI_AI_POWERED',
+                        'ai_confidence': macd_signal.ai_confidence_score,
+                        'anti_trend_confidence': macd_signal.anti_trend_confidence,
+                        'macd_divergence': macd_signal.macd_divergence_strength,
+                        'market_regime': macd_signal.market_regime
+                    }
                     signals.append(signal)
 
             except Exception as e:
-                self.logger.error(f"Error analyzing {symbol}: {e}")
+                self.logger.error(f"Error analyzing {symbol} with MACD ANTI: {e}")
                 continue
 
-        # Sort by signal strength
-        signals.sort(key=lambda x: x.get('strength', 0), reverse=True)
+        # Sort by AI confidence and signal strength
+        signals.sort(key=lambda x: (x.get('ai_confidence', 0) + x.get('strength', 0)) / 2, reverse=True)
 
         # Apply rate limiting
         return signals[:self.max_signals_per_hour]
@@ -491,24 +522,80 @@ class AdvancedTradingStrategy:
                 action, current_price, market_data, strongest_signal
             )
 
-            # Build final signal
-            final_signal = {
+            # Mock indicators and market context for signal generation
+            indicators = {
+                'rsi': 50,
+                'macd': 0.1,
+                'bb_width': 0.05,
+                'volatility': 0.015 # Example volatility score
+            }
+            market_context = 'neutral'
+            confluence_count = 3
+            strategy_names = [s.get('strategy') for s in active_signals]
+            dominant_strategy = strongest_signal.get('strategy')
+            timeframe = '4h'
+            reason = strongest_signal.get('reason', 'Combined signal analysis')
+            confidence_score = min(combined_strength, 100)
+            risk_reward_ratio = abs(take_profit - current_price) / abs(current_price - stop_loss) if stop_loss and current_price and current_price != stop_loss else 0
+            signal_strength = combined_strength
+            direction = action
+            take_profit_2 = take_profit * 1.05 # Example TP2
+            take_profit_3 = take_profit * 1.10 # Example TP3
+
+
+            # Calculate leverage and margin settings
+            volatility_score = indicators.get('volatility', 0.02) * 100  # Convert to percentage
+
+            # Dynamic leverage calculation based on signal strength and volatility
+            if volatility_score < 1.0:
+                auto_leverage = min(15, max(5, int(signal_strength / 6)))
+            elif volatility_score < 2.0:
+                auto_leverage = min(12, max(4, int(signal_strength / 7)))
+            elif volatility_score < 3.0:
+                auto_leverage = min(8, max(3, int(signal_strength / 8)))
+            else:
+                auto_leverage = min(5, max(2, int(signal_strength / 10)))
+
+            recommended_leverage = max(2, int(auto_leverage * 0.85))  # Conservative recommendation
+
+            # Create comprehensive signal
+            signal = {
                 'symbol': symbol,
-                'action': action,
+                'action': direction,
                 'price': current_price,
-                'strength': combined_strength,
                 'stop_loss': stop_loss,
                 'take_profit': take_profit,
-                'timestamp': datetime.now().isoformat(),
-                'strategies_used': [s.get('strategy') for s in active_signals],
-                'primary_strategy': strongest_signal.get('strategy'),
-                'reason': strongest_signal.get('reason', 'Combined signal analysis'),
-                'confidence': min(combined_strength, 100),
-                'timeframe': '4h',  # Primary timeframe
-                'risk_reward_ratio': abs(take_profit - current_price) / abs(current_price - stop_loss) if stop_loss and current_price and current_price != stop_loss else 0
+                'take_profit_2': take_profit_2,
+                'take_profit_3': take_profit_3,
+                'strength': signal_strength,
+                'confidence': confidence_score,
+                'risk_reward_ratio': risk_reward_ratio,
+                'primary_strategy': dominant_strategy,
+                'timeframe': timeframe,
+                'reason': f"{reason} with {confluence_count}/5 confluence factors",
+                'strategies_used': strategy_names,
+                'confluence_score': confluence_count,
+                'technical_indicators': indicators,
+                'market_context': market_context,
+                'timestamp': datetime.now(),
+                'chart': chart_base64 if chart_base64 else None,
+                # Leverage and margin settings
+                'recommended_leverage': recommended_leverage,
+                'auto_leverage': auto_leverage,
+                'margin_type': 'CROSS',
+                'cross_margin_enabled': True,
+                'leverage_mode': 'AUTO',
+                'volatility_score': volatility_score,
+                'margin_settings': {
+                    'type': 'CROSS',
+                    'cross_enabled': True,
+                    'isolated_enabled': False,
+                    'auto_add_margin': True,
+                    'maintenance_margin_ratio': 0.05 if auto_leverage <= 10 else 0.075
+                }
             }
 
-            return final_signal
+            return signal
 
         except Exception as e:
             self.logger.error(f"Error combining signals: {e}")
@@ -647,7 +734,8 @@ class AdvancedTradingStrategy:
             plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
             plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
 
-            plt.tight_layout()
+            # Use subplots_adjust instead of tight_layout to avoid warnings
+            plt.subplots_adjust(left=0.08, bottom=0.15, right=0.95, top=0.88, hspace=0.3)
 
             # Convert to base64 string
             buffer = BytesIO()

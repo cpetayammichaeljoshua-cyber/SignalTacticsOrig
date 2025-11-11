@@ -15,6 +15,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
+from collections import deque
 import time
 
 @dataclass
@@ -28,22 +29,34 @@ class AdvancedScalpingSignal:
     tp2: float
     tp3: float
     signal_strength: float
-    leverage: int = 35  # Default in 25x-50x range
+    leverage: int = 5  # Default leverage, will be dynamically adjusted
     time_session: str = "UNKNOWN"
     fibonacci_level: float = 0.0
     time_confluence: float = 0.0
     fibonacci_confluence: float = 0.0
-    ml_prediction: Dict[str, Any] = None
-    optimal_entry_time: datetime = None
+    ml_prediction: Optional[Dict[str, Any]] = None
+    optimal_entry_time: Optional[datetime] = None
     session_volatility: float = 1.0
     fibonacci_extension: float = 0.0
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
+    # New fields for dynamic leverage system
+    volatility_score: float = 0.0
+    recommended_leverage: int = 5
+    max_safe_leverage: int = 5
+    risk_level: str = "medium"
+    leverage_confidence: str = "medium"
 
 class AdvancedTimeFibonacciStrategy:
     """Advanced strategy combining time theory and Fibonacci analysis"""
 
-    def __init__(self):
+    def __init__(self, leverage_manager=None):
         self.logger = logging.getLogger(__name__)
+        self.leverage_manager = leverage_manager
+        
+        # Dynamic leverage integration
+        self.dynamic_leverage_enabled = leverage_manager is not None
+        if self.dynamic_leverage_enabled:
+            self.logger.info("🎯 Advanced strategy integrated with dynamic leverage management")
 
         # Time-based trading windows (UTC)
         self.trading_sessions = {
@@ -78,17 +91,34 @@ class AdvancedTimeFibonacciStrategy:
             'multiple_level_confluence': 0.15
         }
 
-        # ML enhancement parameters
-        self.ml_confidence_threshold = 0.75
-        self.min_signal_strength = 88  # Higher threshold for quality
-        self.max_trades_per_hour = 2   # Conservative approach
+        # ML enhancement parameters - Optimized for balanced signal quality vs quantity
+        self.ml_confidence_threshold = 0.68  # Lowered from 0.75 to increase signal frequency
+        self.min_signal_strength = 80  # Balanced threshold for more opportunities
+        
+        # ML Confidence-based filtering bands
+        self.ml_confidence_bands = {
+            'conservative': {'min': 0.68, 'max': 0.72, 'leverage_multiplier': 0.85, 'signal_bonus': 0},
+            'moderate': {'min': 0.72, 'max': 0.80, 'leverage_multiplier': 1.0, 'signal_bonus': 3},
+            'aggressive': {'min': 0.80, 'max': 1.0, 'leverage_multiplier': 1.15, 'signal_bonus': 8}
+        }
+        self.max_trades_per_hour = 5   # Enhanced trade frequency
         self.last_trade_times = {}
+        self.hourly_trade_counts = {}  # Track trades per hour per symbol
+
+    def _get_ml_confidence_band(self, confidence: float) -> str:
+        """Determine ML confidence band for adaptive signal processing"""
+        for band_name, band_data in self.ml_confidence_bands.items():
+            if band_data['min'] <= confidence <= band_data['max']:
+                return band_name
+        return 'conservative'  # Default to conservative for edge cases
 
     async def analyze_symbol(self, symbol: str, ohlcv_data: Dict[str, List], ml_analyzer=None) -> Optional[AdvancedScalpingSignal]:
         """Analyze symbol with advanced time and Fibonacci theory"""
         try:
-            # Rate limiting disabled - always allow trading
-            pass
+            # Check trade throttling limits
+            if not self._can_trade_symbol(symbol):
+                self.logger.debug(f"⚠️ Trade throttling active for {symbol} - skipping analysis")
+                return None
 
             # Get current time analysis
             time_analysis = self._analyze_time_confluence()
@@ -115,17 +145,27 @@ class AdvancedTimeFibonacciStrategy:
             # Calculate Fibonacci levels
             fib_analysis = await self._calculate_fibonacci_levels(primary_df, tf_data)
 
-            if not fib_analysis or fib_analysis['confluence_strength'] < 0.7:
+            if not fib_analysis or fib_analysis['confluence_strength'] < 0.65:
                 return None
 
             # Generate signal with time and Fibonacci confluence
             signal = await self._generate_advanced_signal(
-                symbol, primary_df, fib_analysis, time_analysis, ml_analyzer
+                symbol, primary_df, fib_analysis, time_analysis, ml_analyzer, ohlcv_data
             )
 
             if signal and signal.signal_strength >= self.min_signal_strength:
-                # Record trade time
-                self.last_trade_times[symbol] = datetime.now()
+                # Record trade time and update counters
+                current_time = datetime.now()
+                self.last_trade_times[symbol] = current_time
+                
+                # Add to hourly trade count
+                if symbol not in self.hourly_trade_counts:
+                    self.hourly_trade_counts[symbol] = deque()
+                self.hourly_trade_counts[symbol].append(current_time)
+                
+                # Log throttling status
+                trades_this_hour = len(self.hourly_trade_counts[symbol])
+                self.logger.info(f"✅ {symbol}: Trade #{trades_this_hour}/5 this hour, next cooldown: 10min")
                 return signal
 
             return None
@@ -135,12 +175,35 @@ class AdvancedTimeFibonacciStrategy:
             return None
 
     def _can_trade_symbol(self, symbol: str) -> bool:
-        """Check if we can trade this symbol (30-minute minimum interval)"""
-        if symbol not in self.last_trade_times:
-            return True
-
-        time_diff = (datetime.now() - self.last_trade_times[symbol]).total_seconds()
-        return time_diff >= 1800  # 30 minutes
+        """Check if we can trade this symbol (600-second cooldown + 5 trades/hour limit)"""
+        current_time = datetime.now()
+        
+        # Check 600-second (10-minute) cooldown
+        if symbol in self.last_trade_times:
+            time_diff = (current_time - self.last_trade_times[symbol]).total_seconds()
+            if time_diff < 600:
+                remaining = int(600 - time_diff)
+                self.logger.info(f"🕐 {symbol}: 10-min cooldown active, {remaining}s remaining")
+                return False
+        
+        # Initialize hourly tracking for new symbols
+        if symbol not in self.hourly_trade_counts:
+            self.hourly_trade_counts[symbol] = deque()
+        
+        # Clean old timestamps (remove entries older than 1 hour)
+        cutoff_time = current_time - timedelta(hours=1)
+        trade_times = self.hourly_trade_counts[symbol]
+        while trade_times and trade_times[0] < cutoff_time:
+            trade_times.popleft()
+        
+        # Check max trades per hour limit
+        if len(trade_times) >= self.max_trades_per_hour:
+            oldest_trade = trade_times[0]
+            wait_time = int((oldest_trade + timedelta(hours=1) - current_time).total_seconds())
+            self.logger.info(f"📊 {symbol}: Max 5 trades/hour reached, next available in {wait_time}s")
+            return False
+        
+        return True
 
     def _prepare_dataframe(self, ohlcv: List[List]) -> pd.DataFrame:
         """Prepare OHLCV dataframe"""
@@ -352,8 +415,130 @@ class AdvancedTimeFibonacciStrategy:
         except Exception:
             return 'sideways'
 
+    def _check_momentum_confirmation(self, df: pd.DataFrame, direction: str) -> Dict[str, Any]:
+        """Check momentum confirmation using multiple EMAs and momentum indicators"""
+        try:
+            if len(df) < 50:
+                return {'momentum_confirmed': False, 'momentum_strength': 0.0}
+
+            # Calculate multiple EMAs for momentum analysis
+            ema_5 = df['close'].ewm(span=5).mean()
+            ema_9 = df['close'].ewm(span=9).mean()
+            ema_13 = df['close'].ewm(span=13).mean()
+            ema_21 = df['close'].ewm(span=21).mean()
+            ema_34 = df['close'].ewm(span=34).mean()
+
+            current_price = df['close'].iloc[-1]
+            current_ema_5 = ema_5.iloc[-1]
+            current_ema_9 = ema_9.iloc[-1]
+            current_ema_13 = ema_13.iloc[-1]
+            current_ema_21 = ema_21.iloc[-1]
+            current_ema_34 = ema_34.iloc[-1]
+
+            # Calculate EMA slopes (momentum direction)
+            ema_5_slope = (ema_5.iloc[-1] - ema_5.iloc[-3]) / ema_5.iloc[-3] * 100
+            ema_9_slope = (ema_9.iloc[-1] - ema_9.iloc[-3]) / ema_9.iloc[-3] * 100
+            ema_21_slope = (ema_21.iloc[-1] - ema_21.iloc[-5]) / ema_21.iloc[-5] * 100
+
+            momentum_strength = 0.0
+            momentum_confirmed = False
+
+            if direction == 'LONG':
+                # Check for bullish momentum alignment
+                price_above_emas = (current_price > current_ema_5 > current_ema_9 > 
+                                  current_ema_13 > current_ema_21)
+                ema_slopes_bullish = (ema_5_slope > 0 and ema_9_slope > 0 and ema_21_slope > 0)
+                
+                # Calculate momentum strength
+                if price_above_emas:
+                    momentum_strength += 0.4
+                if ema_slopes_bullish:
+                    momentum_strength += 0.3
+                if current_price > current_ema_34:
+                    momentum_strength += 0.2
+                if ema_5_slope > 0.1:  # Strong recent momentum
+                    momentum_strength += 0.1
+
+                momentum_confirmed = momentum_strength >= 0.6
+
+            elif direction == 'SHORT':
+                # Check for bearish momentum alignment
+                price_below_emas = (current_price < current_ema_5 < current_ema_9 < 
+                                  current_ema_13 < current_ema_21)
+                ema_slopes_bearish = (ema_5_slope < 0 and ema_9_slope < 0 and ema_21_slope < 0)
+                
+                # Calculate momentum strength
+                if price_below_emas:
+                    momentum_strength += 0.4
+                if ema_slopes_bearish:
+                    momentum_strength += 0.3
+                if current_price < current_ema_34:
+                    momentum_strength += 0.2
+                if ema_5_slope < -0.1:  # Strong recent momentum
+                    momentum_strength += 0.1
+
+                momentum_confirmed = momentum_strength >= 0.6
+
+            return {
+                'momentum_confirmed': momentum_confirmed,
+                'momentum_strength': momentum_strength,
+                'ema_5_slope': ema_5_slope,
+                'ema_9_slope': ema_9_slope,
+                'ema_21_slope': ema_21_slope,
+                'price_ema_alignment': True if momentum_confirmed else False
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error checking momentum confirmation: {e}")
+            return {'momentum_confirmed': False, 'momentum_strength': 0.0}
+
+    def _calculate_volume_confirmation(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate volume confirmation bonus for signal strength"""
+        try:
+            if len(df) < 20:
+                return {'volume_confirmed': False, 'volume_strength': 0.0}
+
+            # Calculate volume moving averages
+            volume_sma_10 = df['volume'].rolling(window=10).mean()
+            volume_sma_20 = df['volume'].rolling(window=20).mean()
+            
+            current_volume = df['volume'].iloc[-1]
+            avg_volume_10 = volume_sma_10.iloc[-1]
+            avg_volume_20 = volume_sma_20.iloc[-1]
+            
+            # Calculate volume strength
+            volume_strength = 0.0
+            
+            # High volume vs recent average
+            if current_volume > avg_volume_10 * 1.5:
+                volume_strength += 0.4
+            elif current_volume > avg_volume_10 * 1.2:
+                volume_strength += 0.2
+                
+            # Volume trend (increasing volume)
+            if avg_volume_10 > avg_volume_20 * 1.1:
+                volume_strength += 0.3
+                
+            # Exceptional volume spike
+            if current_volume > avg_volume_20 * 2.0:
+                volume_strength += 0.3
+                
+            volume_confirmed = volume_strength >= 0.5
+            
+            return {
+                'volume_confirmed': volume_confirmed,
+                'volume_strength': volume_strength,
+                'volume_ratio_10': current_volume / avg_volume_10 if avg_volume_10 > 0 else 1.0,
+                'volume_ratio_20': current_volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating volume confirmation: {e}")
+            return {'volume_confirmed': False, 'volume_strength': 0.0}
+
     async def _generate_advanced_signal(self, symbol: str, df: pd.DataFrame, fib_analysis: Dict[str, Any], 
-                                      time_analysis: Dict[str, Any], ml_analyzer=None) -> Optional[AdvancedScalpingSignal]:
+                                      time_analysis: Dict[str, Any], ml_analyzer=None, 
+                                      ohlcv_data: Dict[str, List] = None) -> Optional[AdvancedScalpingSignal]:
         """Generate advanced signal combining time and Fibonacci analysis"""
         try:
             current_price = fib_analysis['current_price']
@@ -375,6 +560,17 @@ class AdvancedTimeFibonacciStrategy:
             if not direction:
                 return None
 
+            # Enhanced momentum confirmation
+            momentum_analysis = self._check_momentum_confirmation(df, direction)
+            if not momentum_analysis['momentum_confirmed']:
+                # Allow some signals through with reduced strength if other factors are very strong
+                if (fib_analysis['confluence_strength'] < 0.8 or 
+                    time_analysis['time_strength'] < 0.85):
+                    return None
+
+            # Volume confirmation analysis
+            volume_analysis = self._calculate_volume_confirmation(df)
+
             # ML validation if available
             ml_prediction = None
             if ml_analyzer:
@@ -389,9 +585,15 @@ class AdvancedTimeFibonacciStrategy:
                 }
                 ml_prediction = ml_analyzer.predict_trade_outcome(signal_data)
 
-                # Skip if ML confidence is too low
-                if ml_prediction.get('confidence', 0) < self.ml_confidence_threshold * 100:
+                # Skip if ML confidence is too low (now optimized at 68%)
+                ml_confidence = ml_prediction.get('confidence', 0) / 100.0  # Convert to decimal
+                if ml_confidence < self.ml_confidence_threshold:
+                    self.logger.debug(f"❌ {symbol}: ML confidence {ml_confidence*100:.1f}% below threshold {self.ml_confidence_threshold*100:.1f}%")
                     return None
+                    
+                # Determine ML confidence band for adaptive filtering
+                confidence_band = self._get_ml_confidence_band(ml_confidence)
+                self.logger.info(f"🧠 {symbol}: ML confidence {ml_confidence*100:.1f}% ({confidence_band} band)")
 
             # Calculate stop loss and take profits using Fibonacci
             atr = self._calculate_atr(df)
@@ -425,26 +627,42 @@ class AdvancedTimeFibonacciStrategy:
             # Enhanced Fibonacci confluence bonus
             base_strength += fib_analysis['confluence_strength'] * 17
 
-            # Enhanced ML prediction bonus
+            # Momentum confirmation bonus
+            if momentum_analysis['momentum_confirmed']:
+                base_strength += momentum_analysis['momentum_strength'] * 12  # Up to 12 points
+            else:
+                # Penalty for weak momentum (but still allow strong confluences)
+                base_strength -= 5
+
+            # Volume confirmation bonus
+            if volume_analysis['volume_confirmed']:
+                base_strength += volume_analysis['volume_strength'] * 8  # Up to 8 points
+                # Extra bonus for exceptional volume spikes
+                if volume_analysis.get('volume_ratio_20', 1.0) > 2.0:
+                    base_strength += 5
+            
+            # Enhanced ML prediction bonus with confidence-based weighting
             if ml_prediction and ml_prediction.get('prediction') == 'favorable':
+                # Base ML bonus
                 base_strength += 12
                 if ml_prediction.get('telegram_enhanced'):
                     base_strength += 3  # Telegram learning bonus
+                    
+                # Confidence band bonus
+                confidence_band_data = self.ml_confidence_bands[confidence_band]
+                base_strength += confidence_band_data['signal_bonus']
 
             signal_strength = min(base_strength, 100)
 
-            # Dynamic leverage based on signal strength and confluence
-            leverage = 25  # Minimum leverage
-            if signal_strength >= 90:
-                leverage = min(50, 25 + int((signal_strength - 90) * 2.5))  # Up to 50x for strongest signals
-            elif signal_strength >= 85:
-                leverage = min(45, 25 + int((signal_strength - 85) * 4))     # Up to 45x
-            elif signal_strength >= 80:
-                leverage = min(40, 25 + int((signal_strength - 80) * 3))     # Up to 40x
-            else:
-                leverage = min(35, 25 + int((signal_strength - 75) * 2))     # Up to 35x
+            # Calculate leverage using dynamic leverage manager if available
+            leverage_info = await self._calculate_dynamic_leverage(
+                symbol, signal_strength, time_analysis, fib_analysis, 
+                ml_prediction, ohlcv_data, direction
+            )
+            
+            leverage = leverage_info['recommended_leverage']
 
-            # Create advanced signal
+            # Create advanced signal with enhanced data
             signal = AdvancedScalpingSignal(
                 symbol=symbol,
                 direction=direction,
@@ -455,11 +673,27 @@ class AdvancedTimeFibonacciStrategy:
                 tp3=tp3,
                 signal_strength=signal_strength,
                 leverage=leverage,
+                volatility_score=leverage_info.get('volatility_score', 0.0),
+                recommended_leverage=leverage_info['recommended_leverage'],
+                max_safe_leverage=leverage_info.get('max_leverage', leverage),
+                risk_level=leverage_info.get('risk_level', 'medium'),
+                leverage_confidence=leverage_info.get('confidence', 'medium'),
                 time_session=time_analysis['session'],
                 fibonacci_level=closest_fib['price'] if closest_fib else 0.0,
                 time_confluence=time_analysis['time_strength'],
                 fibonacci_confluence=fib_analysis['confluence_strength'],
-                ml_prediction=ml_prediction,
+                ml_prediction={
+                    **(ml_prediction or {}),
+                    'confidence_value': ml_confidence,
+                    'confidence_band': confidence_band,
+                    'leverage_multiplier': confidence_band_data['leverage_multiplier'],
+                    'momentum_confirmed': momentum_analysis['momentum_confirmed'],
+                    'momentum_strength': momentum_analysis['momentum_strength'],
+                    'volume_confirmed': volume_analysis['volume_confirmed'],
+                    'volume_strength': volume_analysis['volume_strength'],
+                    'ema_5_slope': momentum_analysis.get('ema_5_slope', 0),
+                    'volume_ratio_20': volume_analysis.get('volume_ratio_20', 1.0)
+                },
                 optimal_entry_time=datetime.now(),
                 session_volatility=time_analysis['volatility_factor'],
                 fibonacci_extension=tp3,
@@ -501,8 +735,158 @@ class AdvancedTimeFibonacciStrategy:
             self.logger.error(f"Error calculating ATR: {e}")
             return df['high'].iloc[-1] - df['low'].iloc[-1]
 
+    async def _calculate_dynamic_leverage(self, symbol: str, signal_strength: float,
+                                        time_analysis: Dict[str, Any], fib_analysis: Dict[str, Any],
+                                        ml_prediction: Optional[Dict[str, Any]], 
+                                        ohlcv_data: Dict[str, List],
+                                        direction: str) -> Dict[str, Any]:
+        """
+        Calculate dynamic leverage using the leverage manager or fallback to signal-based calculation
+        
+        Args:
+            symbol: Trading symbol
+            signal_strength: Calculated signal strength
+            time_analysis: Time-based analysis results
+            fib_analysis: Fibonacci analysis results
+            ml_prediction: ML prediction results
+            ohlcv_data: OHLCV data for volatility calculation
+            direction: Trade direction ('LONG' or 'SHORT')
+            
+        Returns:
+            Dictionary with leverage recommendation and analysis
+        """
+        try:
+            # Use dynamic leverage manager if available
+            if self.leverage_manager and ohlcv_data:
+                # Calculate trade size for leverage optimization (based on $10 capital base)
+                capital_base = 10.0  # $10 capital base
+                risk_percentage = 5.0  # 5% risk management
+                trade_size_usdt = capital_base * (risk_percentage / 100)
+                
+                leverage_analysis = await self.leverage_manager.get_optimal_leverage_for_trade(
+                    symbol, direction, trade_size_usdt, ohlcv_data
+                )
+                
+                # Apply signal strength adjustments to recommended leverage
+                recommended_leverage = leverage_analysis['recommended_leverage']
+                
+                # Boost leverage for very strong signals
+                if signal_strength >= 95:
+                    recommended_leverage = min(10, int(recommended_leverage * 1.2))
+                elif signal_strength >= 90:
+                    recommended_leverage = min(9, int(recommended_leverage * 1.1))
+                elif signal_strength < 80:
+                    # Reduce leverage for weaker signals
+                    recommended_leverage = max(2, int(recommended_leverage * 0.9))
+                
+                # Apply ML confidence adjustments
+                if ml_prediction:
+                    ml_confidence = ml_prediction.get('confidence', 0) / 100.0
+                    if ml_confidence > 0.85:
+                        recommended_leverage = min(10, int(recommended_leverage * 1.1))
+                    elif ml_confidence < 0.70:
+                        recommended_leverage = max(2, int(recommended_leverage * 0.8))
+                
+                # Apply time and Fibonacci confluence adjustments
+                confluence_multiplier = 1.0
+                if (time_analysis['time_strength'] > 0.9 and 
+                    fib_analysis['confluence_strength'] > 0.85):
+                    confluence_multiplier = 1.15  # Premium confluence bonus
+                elif (time_analysis['time_strength'] > 0.8 and 
+                      fib_analysis['confluence_strength'] > 0.75):
+                    confluence_multiplier = 1.05  # Good confluence bonus
+                
+                recommended_leverage = min(10, max(2, int(recommended_leverage * confluence_multiplier)))
+                
+                return {
+                    'recommended_leverage': recommended_leverage,
+                    'max_leverage': leverage_analysis.get('max_leverage', recommended_leverage),
+                    'volatility_score': leverage_analysis.get('volatility_score', 'N/A'),
+                    'risk_level': leverage_analysis.get('risk_level', 'medium'),
+                    'confidence': leverage_analysis.get('confidence', 'medium'),
+                    'risk_factors': leverage_analysis.get('risk_factors', []),
+                    'analysis_source': 'dynamic_volatility_manager',
+                    'signal_strength_adjustment': f"Signal: {signal_strength:.1f}%",
+                    'confluence_adjustment': f"Confluence: {confluence_multiplier:.2f}x"
+                }
+            
+            # Fallback to signal-based leverage calculation
+            else:
+                # Legacy calculation for backward compatibility
+                base_leverage = 5  # Conservative default
+                
+                # Signal strength adjustment
+                if signal_strength >= 95:
+                    base_leverage = 8
+                elif signal_strength >= 90:
+                    base_leverage = 7
+                elif signal_strength >= 85:
+                    base_leverage = 6
+                elif signal_strength >= 80:
+                    base_leverage = 5
+                else:
+                    base_leverage = 3
+                
+                # Time session adjustment
+                session_multiplier = 1.0
+                current_session = time_analysis.get('session', 'UNKNOWN')
+                if current_session in ['NY_OVERLAP', 'LONDON_OPEN']:
+                    session_multiplier = 1.2  # Higher leverage during peak sessions
+                elif current_session in ['LONDON_MAIN', 'NY_MAIN']:
+                    session_multiplier = 1.1
+                
+                # Fibonacci confluence adjustment
+                fib_multiplier = 1.0
+                fib_strength = fib_analysis.get('confluence_strength', 0)
+                if fib_strength > 0.85:
+                    fib_multiplier = 1.15
+                elif fib_strength > 0.75:
+                    fib_multiplier = 1.05
+                
+                # ML prediction adjustment
+                ml_multiplier = 1.0
+                if ml_prediction and ml_prediction.get('prediction') == 'favorable':
+                    ml_confidence = ml_prediction.get('confidence', 0) / 100.0
+                    if ml_confidence > 0.80:
+                        ml_multiplier = 1.1
+                    elif ml_confidence < 0.70:
+                        ml_multiplier = 0.9
+                
+                # Calculate final leverage
+                final_leverage = int(base_leverage * session_multiplier * fib_multiplier * ml_multiplier)
+                final_leverage = max(2, min(10, final_leverage))
+                
+                return {
+                    'recommended_leverage': final_leverage,
+                    'max_leverage': final_leverage,
+                    'volatility_score': 'N/A (calculated from signal)',
+                    'risk_level': 'signal_based',
+                    'confidence': 'medium',
+                    'risk_factors': ['Using signal-based calculation'],
+                    'analysis_source': 'signal_based_fallback',
+                    'signal_strength_adjustment': f"Signal: {signal_strength:.1f}%",
+                    'confluence_adjustment': f"Combined: {session_multiplier * fib_multiplier * ml_multiplier:.2f}x"
+                }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating dynamic leverage for {symbol}: {e}")
+            # Safe fallback
+            return {
+                'recommended_leverage': 5,
+                'max_leverage': 5,
+                'volatility_score': 'Error in calculation',
+                'risk_level': 'safe_fallback',
+                'confidence': 'low',
+                'risk_factors': [f'Error: {e}'],
+                'analysis_source': 'error_fallback',
+                'signal_strength_adjustment': 'Error',
+                'confluence_adjustment': 'Error'
+            }
+
     def get_signal_summary(self, signal: AdvancedScalpingSignal) -> Dict[str, Any]:
-        """Get comprehensive signal summary"""
+        """Get comprehensive signal summary with enhanced metrics"""
+        ml_data = signal.ml_prediction or {}
+        
         return {
             'symbol': signal.symbol,
             'direction': signal.direction,
@@ -515,8 +899,14 @@ class AdvancedTimeFibonacciStrategy:
             'fibonacci_level': signal.fibonacci_level,
             'time_confluence': f"{signal.time_confluence:.1f}%",
             'fibonacci_confluence': f"{signal.fibonacci_confluence:.1f}%",
-            'ml_confidence': signal.ml_prediction.get('confidence', 0) if signal.ml_prediction else 0,
+            'momentum_confirmed': ml_data.get('momentum_confirmed', False),
+            'momentum_strength': f"{ml_data.get('momentum_strength', 0):.1f}%",
+            'volume_confirmed': ml_data.get('volume_confirmed', False),
+            'volume_strength': f"{ml_data.get('volume_strength', 0):.1f}%",
+            'ema_5_slope': f"{ml_data.get('ema_5_slope', 0):.3f}%",
+            'volume_ratio_20': f"{ml_data.get('volume_ratio_20', 1.0):.2f}x",
+            'ml_confidence': ml_data.get('confidence', 0),
             'session_volatility': signal.session_volatility,
             'optimal_entry': signal.optimal_entry_time.strftime('%H:%M:%S UTC'),
-            'strategy': 'Advanced Time-Fibonacci Theory'
+            'strategy': 'Enhanced Time-Fibonacci w/ Momentum & Volume'
         }

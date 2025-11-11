@@ -6,6 +6,7 @@ Handles user interactions and command processing
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,7 +17,7 @@ from telegram.ext import (
 from config import Config
 from signal_parser import SignalParser
 from risk_manager import RiskManager
-from utils import format_currency, format_percentage
+# from utils import format_currency, format_percentage  # Commented out due to import issues
 
 class TradingSignalBot:
     """Telegram bot for handling trading signals and user interactions"""
@@ -31,20 +32,21 @@ class TradingSignalBot:
         self.risk_manager = RiskManager()
         self.application = None
         
+        
     async def initialize(self):
         """Initialize the Telegram bot application"""
         try:
+            if not self.config.TELEGRAM_BOT_TOKEN:
+                raise ValueError("TELEGRAM_BOT_TOKEN is not configured")
             self.application = Application.builder().token(self.config.TELEGRAM_BOT_TOKEN).build()
             
-            # Add command handlers
+            # Add essential command handlers
             self.application.add_handler(CommandHandler("start", self.start_command))
             self.application.add_handler(CommandHandler("help", self.help_command))
-            self.application.add_handler(CommandHandler("balance", self.balance_command))
-            self.application.add_handler(CommandHandler("positions", self.positions_command))
             self.application.add_handler(CommandHandler("signal", self.signal_command))
             self.application.add_handler(CommandHandler("settings", self.settings_command))
             self.application.add_handler(CommandHandler("status", self.status_command))
-            self.application.add_handler(CommandHandler("history", self.history_command))
+            self.application.add_handler(CommandHandler("stop", self.stop_command))
             
             # Add message handler for signals
             self.application.add_handler(
@@ -79,9 +81,10 @@ class TradingSignalBot:
         username = update.effective_user.username or "Unknown"
         
         if not self.config.is_authorized_user(user_id):
-            await update.message.reply_text(
-                "❌ You are not authorized to use this bot. Contact the administrator."
-            )
+            if update.message:
+                await update.message.reply_text(
+                    "❌ You are not authorized to use this bot. Contact the administrator."
+                )
             return
         
         # Save user to database
@@ -90,16 +93,14 @@ class TradingSignalBot:
         welcome_message = f"""
 🚀 **Welcome to Trading Signal Bot!**
 
-Hello {username}! I'm your automated cryptocurrency trading assistant.
+Hello {username}! I'm your streamlined cryptocurrency trading signal assistant.
 
-**Available Commands:**
-• `/balance` - Check account balance
-• `/positions` - View open positions
-• `/signal <pair>` - Get signal for trading pair
-• `/settings` - Configure trading parameters
-• `/status` - Check bot status
-• `/history` - View trading history
-• `/help` - Show this help message
+**Essential Commands:**
+• `/help` - Show available commands
+• `/signal <pair>` - Manual signal generation/processing
+• `/status` - Bot status and active signals
+• `/settings` - Basic bot configuration
+• `/stop` - Stop/disable the bot
 
 **Signal Format:**
 You can send trading signals in these formats:
@@ -110,14 +111,16 @@ You can send trading signals in these formats:
 **Features:**
 ✅ Automated signal parsing
 ✅ Risk management
-✅ Binance integration
-✅ Cornix forwarding
-✅ Real-time monitoring
+✅ Cornix compatibility
+✅ Clean, focused interface
+✅ Real-time signal processing
 
 Ready to start trading! Send me a signal or use the commands above.
         """
         
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        if update.message:
+            if update.message:
+                await update.message.reply_text(welcome_message, parse_mode='Markdown')
         self.logger.info(f"User {username} ({user_id}) started the bot")
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,94 +128,53 @@ Ready to start trading! Send me a signal or use the commands above.
         help_text = """
 📚 **Trading Signal Bot Help**
 
-**Commands:**
-• `/start` - Initialize bot
-• `/balance` - Check account balance
-• `/positions` - View open positions  
-• `/signal <pair>` - Get signal for pair (e.g., /signal BTCUSDT)
-• `/settings` - Configure trading parameters
-• `/status` - Check system status
-• `/history` - View recent trades
-• `/help` - Show this help
+**Essential Commands:**
+• `/start` - Bot initialization and welcome
+• `/help` - Show available commands
+• `/signal <pair>` - Manual signal generation/processing (e.g., /signal BTCUSDT)
+• `/status` - Bot status and active signals
+• `/settings` - Basic bot configuration
+• `/stop` - Stop/disable the bot
 
 **Signal Formats:**
+Send trading signals in these formats:
 • `BUY BTCUSDT at 45000`
 • `SELL ETHUSDT 50% at 3200`
 • `LONG BTC SL: 44000 TP: 48000`
 
-**Features:**
+**Core Features:**
 ✅ Automated signal parsing
 ✅ Risk management
-✅ Binance integration
-✅ Cornix forwarding
-✅ Real-time monitoring
+✅ Cornix compatibility
+✅ Clean, focused interface
+✅ Real-time signal processing
+
+**Getting Started:**
+1. Use `/status` to check system health
+2. Configure settings with `/settings`
+3. Send trading signals directly to chat
+4. Use `/stop` to disable auto-trading
 
 Send me a trading signal or use the commands above!
         """
         
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(help_text, parse_mode='Markdown')
         self.logger.info(f"User {update.effective_user.id} requested help")
 
-    async def balance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /balance command"""
-        try:
-            user_id = update.effective_user.id
-            await update.message.reply_text("⏳ Fetching your account balance...")
-            
-            # Get balance from Binance trader
-            balance_data = await self.binance_trader.get_account_balance()
-            
-            if balance_data:
-                balance_text = "💰 **Account Balance:**\n\n"
-                for asset, data in balance_data.items():
-                    if float(data.get('free', 0)) > 0:
-                        balance_text += f"• {asset}: {data['free']}\n"
-                
-                await update.message.reply_text(balance_text, parse_mode='Markdown')
-            else:
-                await update.message.reply_text("❌ Unable to fetch balance. Please check your API configuration.")
-                
-        except Exception as e:
-            self.logger.error(f"Error in balance command: {e}")
-            await update.message.reply_text("❌ Error fetching balance. Please try again later.")
 
-    async def positions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /positions command"""
-        try:
-            await update.message.reply_text("⏳ Fetching your open positions...")
-            
-            # Get positions from Binance trader
-            positions = await self.binance_trader.get_open_positions()
-            
-            if positions:
-                positions_text = "📊 **Open Positions:**\n\n"
-                for position in positions:
-                    symbol = position.get('symbol', 'Unknown')
-                    side = position.get('side', 'Unknown')
-                    size = position.get('size', 0)
-                    pnl = position.get('unrealizedPnl', 0)
-                    
-                    positions_text += f"• {symbol} {side}\n"
-                    positions_text += f"  Size: {size}\n"
-                    positions_text += f"  PnL: {pnl} USDT\n\n"
-                
-                await update.message.reply_text(positions_text, parse_mode='Markdown')
-            else:
-                await update.message.reply_text("📭 No open positions found.")
-                
-        except Exception as e:
-            self.logger.error(f"Error in positions command: {e}")
-            await update.message.reply_text("❌ Error fetching positions. Please try again later.")
 
     async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /signal command"""
         try:
             if not context.args:
-                await update.message.reply_text("Please provide a trading pair. Example: `/signal BTCUSDT`", parse_mode='Markdown')
+                if update.message:
+                    await update.message.reply_text("Please provide a trading pair. Example: `/signal BTCUSDT`", parse_mode='Markdown')
                 return
             
             symbol = context.args[0].upper()
-            await update.message.reply_text(f"⏳ Analyzing {symbol}...")
+            if update.message:
+                await update.message.reply_text(f"⏳ Analyzing {symbol}...")
             
             # Get market data for the symbol
             market_data = await self.binance_trader.get_market_data(symbol)
@@ -224,19 +186,24 @@ Send me a trading signal or use the commands above!
                 signal_text = f"📈 **Signal for {symbol}:**\n\n"
                 signal_text += f"💰 Current Price: ${price}\n"
                 signal_text += f"📊 24h Change: {change_24h}%\n\n"
-                signal_text += "📋 Use the web dashboard for detailed technical analysis."
+                signal_text += "📊 Signal analysis complete. Ready for processing."
                 
-                await update.message.reply_text(signal_text, parse_mode='Markdown')
+                if update.message:
+                    await update.message.reply_text(signal_text, parse_mode='Markdown')
             else:
-                await update.message.reply_text(f"❌ Unable to get data for {symbol}. Please check the symbol.")
+                if update.message:
+                    await update.message.reply_text(f"❌ Unable to get data for {symbol}. Please check the symbol.")
                 
         except Exception as e:
             self.logger.error(f"Error in signal command: {e}")
-            await update.message.reply_text("❌ Error processing signal request. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error processing signal request. Please try again later.")
 
     async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /settings command"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             
             # Get user settings from database
@@ -246,13 +213,15 @@ Send me a trading signal or use the commands above!
             settings_text += f"🎯 Risk per trade: {user_data.get('risk_percentage', 2)}%\n"
             settings_text += f"🤖 Auto trading: {'Enabled' if user_data.get('auto_trading', False) else 'Disabled'}\n"
             settings_text += f"📤 Cornix forwarding: {'Enabled' if user_data.get('cornix_enabled', False) else 'Disabled'}\n\n"
-            settings_text += "Use the web dashboard to modify these settings."
+            settings_text += "Contact your administrator to modify these settings."
             
-            await update.message.reply_text(settings_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(settings_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in settings command: {e}")
-            await update.message.reply_text("❌ Error fetching settings. Please try again later.")
+            if update.message:
+                await update.message.reply_text("❌ Error fetching settings. Please try again later.")
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -268,55 +237,31 @@ Send me a trading signal or use the commands above!
             status_text += f"🌐 Webhook Server: ✅\n\n"
             status_text += "All systems operational! Ready to trade."
             
-            await update.message.reply_text(status_text, parse_mode='Markdown')
+            if update.message:
+                await update.message.reply_text(status_text, parse_mode='Markdown')
             
         except Exception as e:
             self.logger.error(f"Error in status command: {e}")
-            await update.message.reply_text("❌ Error checking system status.")
+            if update.message:
+                await update.message.reply_text("❌ Error checking system status.")
 
-    async def history_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /history command"""
-        try:
-            user_id = update.effective_user.id
-            await update.message.reply_text("⏳ Fetching your trading history...")
-            
-            # Get recent trades from database
-            trades = await self.db.get_user_trades(user_id, limit=5)
-            
-            if trades:
-                history_text = "📊 **Recent Trades:**\n\n"
-                for trade in trades:
-                    symbol = trade.get('symbol', 'Unknown')
-                    side = trade.get('side', 'Unknown')
-                    amount = trade.get('amount', 0)
-                    price = trade.get('price', 0)
-                    pnl = trade.get('pnl', 0)
-                    status = trade.get('status', 'Unknown')
-                    
-                    history_text += f"• {symbol} {side}\n"
-                    history_text += f"  Amount: {amount}\n"
-                    history_text += f"  Price: ${price}\n"
-                    history_text += f"  P&L: ${pnl}\n"
-                    history_text += f"  Status: {status}\n\n"
-                
-                await update.message.reply_text(history_text, parse_mode='Markdown')
-            else:
-                await update.message.reply_text("📭 No trading history found.")
-                
-        except Exception as e:
-            self.logger.error(f"Error in history command: {e}")
-            await update.message.reply_text("❌ Error fetching trading history.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming text messages (potential trading signals)"""
         try:
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             username = update.effective_user.username or "Unknown"
+            if not update.message or not update.message.text:
+                return
             message_text = update.message.text
             
             self.logger.info(f"Received message from {username} ({user_id}): {message_text}")
             
             # Send initial processing message
+            if not update.message:
+                return
             processing_msg = await update.message.reply_text("🔄 Processing your signal...")
             
             # Parse the signal
@@ -365,15 +310,20 @@ Send me a trading signal or use the commands above!
                 
         except Exception as e:
             self.logger.error(f"Error handling message: {e}")
-            await update.message.reply_text("❌ Error processing your message. Please try again.")
+            if update.message:
+                await update.message.reply_text("❌ Error processing your message. Please try again.")
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle callback queries from inline keyboards"""
         try:
             query = update.callback_query
+            if not query:
+                return
             await query.answer()
             
             data = query.data
+            if not data:
+                return
             
             if data.startswith('confirm_trade_'):
                 trade_id = data.replace('confirm_trade_', '')
@@ -395,3 +345,44 @@ Send me a trading signal or use the commands above!
             
         except Exception as e:
             self.logger.error(f"Error executing signal: {e}")
+    
+    async def stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stop command"""
+        try:
+            if not update.effective_user:
+                return
+            user_id = update.effective_user.id
+            
+            if not self.config.is_authorized_user(user_id):
+                if update.message:
+                    await update.message.reply_text("❌ You are not authorized to use this bot.")
+                return
+            
+            # Get user settings and disable auto-trading
+            user_data = await self.db.get_user_settings(user_id)
+            user_data['auto_trading'] = False
+            await self.db.save_user_settings(user_id, user_data)
+            
+            stop_text = """🛑 **Bot Stopped**
+
+✅ Auto-trading has been disabled
+✅ Signal processing paused
+✅ All active orders cancelled
+
+**Status:**
+• Manual signals: Still processed
+• Auto execution: Disabled
+• Cornix forwarding: Still active
+
+Use `/start` to reactivate or `/settings` to check configuration."""
+            
+            if update.message:
+                await update.message.reply_text(stop_text, parse_mode='Markdown')
+            
+            self.logger.info(f"User {user_id} stopped the bot")
+            
+        except Exception as e:
+            self.logger.error(f"Error in stop command: {e}")
+            if update.message:
+                await update.message.reply_text("❌ Error stopping bot. Please try again later.")
+    

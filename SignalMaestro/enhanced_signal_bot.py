@@ -223,6 +223,12 @@ class EnhancedSignalBot:
         risk_reward = signal.get('risk_reward_ratio', 0)
         strategy = signal.get('primary_strategy', '').replace('_', ' ').title()
         reason = signal.get('reason', 'Advanced technical analysis')
+        
+        # Leverage and margin details
+        recommended_leverage = signal.get('recommended_leverage', 5)
+        auto_leverage = signal.get('auto_leverage', recommended_leverage)
+        margin_type = signal.get('margin_type', 'CROSS')
+        cross_margin = signal.get('cross_margin_enabled', True)
 
         # Direction styling
         if action in ['BUY', 'LONG']:
@@ -247,6 +253,7 @@ class EnhancedSignalBot:
 
         # Format timestamp
         timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S UTC')
+        margin_emoji = "🔗" if cross_margin else "🔒"
 
         # Build professional message
         formatted = f"""
@@ -264,6 +271,12 @@ class EnhancedSignalBot:
 🎯 **Confidence:** `{confidence:.1f}%`
 ⏱️ **Timeframe:** `{signal.get('timeframe', '4h')}`
 
+⚡ **LEVERAGE & MARGIN:**
+🔧 **Recommended:** `{recommended_leverage}x`
+🤖 **Auto Leverage:** `{auto_leverage}x`
+{margin_emoji} **Margin Type:** `{margin_type}`
+🔗 **Cross Margin:** `{'✅ Enabled' if cross_margin else '❌ Disabled'}`
+
 💡 **Analysis:**
 {reason}
 
@@ -276,7 +289,7 @@ class EnhancedSignalBot:
 ---
 *🤖 Automated Signal by Enhanced Trading Bot*
 *📱 Admin: {self.admin_name}*
-*⚡ Real-time Market Analysis*
+*⚡ Cross Margin & Auto Leverage Active*
         """
 
         return formatted

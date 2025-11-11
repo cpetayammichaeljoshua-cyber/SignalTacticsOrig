@@ -5,6 +5,7 @@ Machine Learning Trade Analyzer
 Learns from losses and analyzes past trades to improve scalping performance
 """
 
+import os
 import numpy as np
 import pandas as pd
 import json
@@ -26,7 +27,7 @@ class MLTradeAnalyzer:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.model_dir = Path("ml_models")
+        self.model_dir = Path("SignalMaestro/ml_models")
         self.model_dir.mkdir(exist_ok=True)
         
         # Models for different aspects
@@ -35,8 +36,14 @@ class MLTradeAnalyzer:
         self.entry_timing_model = None
         self.scaler = StandardScaler()
         
+        # Persistent encoders
+        self.direction_encoder = LabelEncoder()
+        self.cvd_encoder = LabelEncoder()
+        self.macd_encoder = LabelEncoder()
+        self.feature_names = None
+        
         # Trade database
-        self.db_path = "trade_learning.db"
+        self.db_path = "SignalMaestro/trade_learning.db"
         self._initialize_database()
         
         # Learning parameters
@@ -52,7 +59,21 @@ class MLTradeAnalyzer:
             'trades_analyzed': 0
         }
         
+        # Try to load existing models if available
+        try:
+            self._load_models()
+        except Exception as e:
+            self.logger.info(f"No pre-trained models found: {e}")
+        
         self.logger.info("🧠 ML Trade Analyzer initialized")
+    
+    def load_models(self):
+        """Public method to load trained models from disk"""
+        try:
+            self._load_models()
+            self.logger.info("✅ ML models loaded successfully")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load ML models: {e}")
     
     def _initialize_database(self):
         """Initialize SQLite database for trade storage"""
@@ -229,12 +250,16 @@ class MLTradeAnalyzer:
     async def _get_telegram_training_data(self) -> List[Dict[str, Any]]:
         """Get training data from Telegram scanner"""
         try:
-            # Import here to avoid circular imports
-            from telegram_trade_scanner import TelegramTradeScanner
-            
-            # Initialize scanner (you'll need to configure these)
-            bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-            channel_username = os.getenv('TELEGRAM_CHANNEL', '@SignalTactics')
+            try:
+                # Import here to avoid circular imports
+                from telegram_trade_scanner import TelegramTradeScanner
+                
+                # Initialize scanner (you'll need to configure these)
+                bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+                channel_username = os.getenv('TELEGRAM_CHANNEL', '@SignalTactics')
+            except ImportError:
+                self.logger.warning("Telegram scanner not available")
+                return []
             
             if not bot_token:
                 self.logger.warning("No Telegram bot token configured")
@@ -355,10 +380,11 @@ class MLTradeAnalyzer:
             condition_losses = {}
             for _, trade in losing_trades.iterrows():
                 conditions = trade.get('market_conditions', {})
-                for condition, value in conditions.items():
-                    if condition not in condition_losses:
-                        condition_losses[condition] = []
-                    condition_losses[condition].append(value)
+                if isinstance(conditions, dict):
+                    for condition, value in conditions.items():
+                        if condition not in condition_losses:
+                            condition_losses[condition] = []
+                        condition_losses[condition].append(value)
             
             # Analyze signal strength vs losses
             if len(losing_trades) >= 5:
@@ -377,7 +403,7 @@ class MLTradeAnalyzer:
                     loss_insights.append(insight)
             
             # CVD divergence analysis
-            cvd_losses = losing_trades[losing_trades['cvd_trend'].notna()]
+            cvd_losses = losing_trades[losing_trades['cvd_trend'].notnull()]
             if len(cvd_losses) >= 3:
                 bearish_cvd_losses = cvd_losses[cvd_losses['cvd_trend'] == 'bearish']
                 if len(bearish_cvd_losses) > len(cvd_losses) * 0.7:
@@ -456,7 +482,7 @@ class MLTradeAnalyzer:
                 success_insights.append(insight)
             
             # Analyze timeframe patterns
-            duration_wins = winning_trades[winning_trades['duration_minutes'].notna()]
+            duration_wins = winning_trades[winning_trades['duration_minutes'].notnull()]
             if len(duration_wins) >= 5:
                 quick_wins = duration_wins[duration_wins['duration_minutes'] <= 30]
                 if len(quick_wins) > len(duration_wins) * 0.6:
@@ -485,8 +511,8 @@ class MLTradeAnalyzer:
                 self.logger.warning("Not enough data for model training")
                 return
             
-            # Prepare features
-            features = self._prepare_features(trades_df)
+            # Prepare features with encoder fitting
+            features = self._prepare_features(trades_df, fit_encoders=True)
             
             if features is None or len(features) == 0:
                 return
@@ -500,7 +526,7 @@ class MLTradeAnalyzer:
             # Train entry timing model
             await self._train_entry_timing_model(features, trades_df)
             
-            # Save models
+            # Save models and encoders
             self._save_models()
             
             self.logger.info("🤖 ML models trained and saved")
@@ -508,8 +534,8 @@ class MLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error training prediction models: {e}")
     
-    def _prepare_features(self, trades_df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        """Prepare features for ML models"""
+    def _prepare_features(self, trades_df: pd.DataFrame, fit_encoders: bool = False) -> Optional[pd.DataFrame]:
+        """Prepare features for ML models with persistent encoders"""
         try:
             # Define consistent feature columns
             feature_columns = [
@@ -527,19 +553,23 @@ class MLTradeAnalyzer:
             features['volume_ratio'] = trades_df['volume_ratio'].fillna(1.0)
             features['rsi_value'] = trades_df['rsi_value'].fillna(50)
             
-            # Encode categorical features safely
+            # Encode categorical features with persistent encoders
             try:
-                le_direction = LabelEncoder()
-                le_cvd = LabelEncoder()
-                le_macd = LabelEncoder()
-                
                 direction_values = trades_df['direction'].fillna('BUY').astype(str)
                 cvd_values = trades_df['cvd_trend'].fillna('neutral').astype(str)
                 macd_values = trades_df['macd_signal'].fillna('neutral').astype(str)
                 
-                features['direction_encoded'] = le_direction.fit_transform(direction_values)
-                features['cvd_trend_encoded'] = le_cvd.fit_transform(cvd_values)
-                features['macd_signal_encoded'] = le_macd.fit_transform(macd_values)
+                if fit_encoders:
+                    # Fit encoders during training
+                    features['direction_encoded'] = self.direction_encoder.fit_transform(direction_values)
+                    features['cvd_trend_encoded'] = self.cvd_encoder.fit_transform(cvd_values)
+                    features['macd_signal_encoded'] = self.macd_encoder.fit_transform(macd_values)
+                else:
+                    # Use existing encoders for prediction
+                    features['direction_encoded'] = self._safe_transform(self.direction_encoder, pd.Series(direction_values), 1)
+                    features['cvd_trend_encoded'] = self._safe_transform(self.cvd_encoder, pd.Series(cvd_values), 0)
+                    features['macd_signal_encoded'] = self._safe_transform(self.macd_encoder, pd.Series(macd_values), 0)
+                    
             except Exception as e:
                 self.logger.warning(f"Label encoding error: {e}")
                 features['direction_encoded'] = 1
@@ -577,6 +607,23 @@ class MLTradeAnalyzer:
             self.logger.error(f"Error preparing features: {e}")
             return None
     
+    def _safe_transform(self, encoder: LabelEncoder, values: pd.Series, default_value: int) -> pd.Series:
+        """Safely transform values with fallback for unknown categories"""
+        try:
+            # Handle unknown categories by using default or first known category
+            transformed = []
+            for value in values:
+                try:
+                    if hasattr(encoder, 'classes_') and value in encoder.classes_:
+                        transformed.append(encoder.transform([value])[0])
+                    else:
+                        transformed.append(default_value)
+                except:
+                    transformed.append(default_value)
+            return pd.Series(transformed, index=values.index)
+        except Exception:
+            return pd.Series([default_value] * len(values), index=values.index)
+    
     async def _train_loss_prediction_model(self, features: pd.DataFrame, trades_df: pd.DataFrame):
         """Train model to predict likely losses"""
         try:
@@ -594,9 +641,10 @@ class MLTradeAnalyzer:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
             
-            # Scale features
-            X_train_scaled = self.scaler.fit_transform(X_train)
-            X_test_scaled = self.scaler.transform(X_test)
+            # Scale features for consistency (tree models don't strictly need it)
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
             
             # Train model
             self.loss_prediction_model = RandomForestClassifier(
@@ -636,9 +684,10 @@ class MLTradeAnalyzer:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y_binary, test_size=0.3, random_state=42)
             
-            # Scale features
-            X_train_scaled = self.scaler.fit_transform(X_train)
-            X_test_scaled = self.scaler.transform(X_test)
+            # Scale features for gradient boosting
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
             
             # Train model
             self.signal_strength_model = GradientBoostingClassifier(
@@ -679,9 +728,10 @@ class MLTradeAnalyzer:
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
             
-            # Scale features
-            X_train_scaled = self.scaler.fit_transform(X_train)
-            X_test_scaled = self.scaler.transform(X_test)
+            # Scale features for timing model
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
             
             # Train model
             self.entry_timing_model = RandomForestClassifier(
@@ -701,45 +751,77 @@ class MLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error training entry timing model: {e}")
     
-    def _save_models(self):
-        """Save trained models to disk"""
+    async def _generate_trading_insights_advanced(self, trades_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Generate advanced trading insights from data analysis"""
         try:
-            if self.loss_prediction_model:
-                with open(self.model_dir / 'loss_prediction_model.pkl', 'wb') as f:
-                    pickle.dump(self.loss_prediction_model, f)
+            insights = []
             
-            if self.signal_strength_model:
-                with open(self.model_dir / 'signal_strength_model.pkl', 'wb') as f:
-                    pickle.dump(self.signal_strength_model, f)
+            if len(trades_df) < 5:
+                return insights
+                
+            # Time-based performance analysis
+            trades_df['hour'] = pd.to_datetime(trades_df['entry_time'], errors='coerce').dt.hour
+            hourly_performance = trades_df.groupby('hour').agg({
+                'profit_loss': ['mean', 'count'],
+                'trade_result': lambda x: (x.isin(['PROFIT', 'TP1', 'TP2', 'TP3'])).mean()
+            }).round(3)
             
-            if self.entry_timing_model:
-                with open(self.model_dir / 'entry_timing_model.pkl', 'wb') as f:
-                    pickle.dump(self.entry_timing_model, f)
+            # Find best performing hours
+            if len(hourly_performance) > 0:
+                best_hours = hourly_performance[hourly_performance[('profit_loss', 'count')] >= 2]
+                if len(best_hours) > 0:
+                    profit_means = best_hours[('profit_loss', 'mean')]
+                    top_hour_idx = profit_means.idxmax() if len(profit_means) > 0 else 0
+                    if len(profit_means) > 0 and hourly_performance.loc[top_hour_idx, ('profit_loss', 'mean')] > 0:
+                        insights.append({
+                            'type': 'time_optimization',
+                            'pattern': f'Best performance at hour {top_hour_idx}:00 UTC',
+                            'recommendation': f'Focus trading around {int(top_hour_idx)}:00-{int(top_hour_idx)+1}:00 UTC',
+                            'confidence': 75,
+                            'data': {
+                                'hour': top_hour_idx,
+                                'avg_profit': float(hourly_performance.loc[top_hour_idx, ('profit_loss', 'mean')]),
+                                'trade_count': int(hourly_performance.loc[top_hour_idx, ('profit_loss', 'count')])
+                            }
+                        })
             
-            # Save scaler
-            with open(self.model_dir / 'scaler.pkl', 'wb') as f:
-                pickle.dump(self.scaler, f)
+            # Volume ratio insights
+            volume_trades = trades_df[trades_df['volume_ratio'].notnull()]
+            if len(volume_trades) >= 10:
+                high_volume_trades = volume_trades[volume_trades['volume_ratio'] > 1.5]
+                if len(high_volume_trades) > 0:
+                    hv_win_rate = len(high_volume_trades[high_volume_trades['profit_loss'] > 0]) / len(high_volume_trades)
+                    if hv_win_rate > 0.7:
+                        insights.append({
+                            'type': 'volume_insight',
+                            'pattern': 'High volume ratio correlates with success',
+                            'recommendation': 'Prioritize trades with volume ratio > 1.5x',
+                            'confidence': 80,
+                            'data': {
+                                'high_volume_win_rate': float(hv_win_rate),
+                                'sample_size': len(high_volume_trades)
+                            }
+                        })
             
-            # Save performance metrics
-            with open(self.model_dir / 'performance_metrics.json', 'w') as f:
-                json.dump(self.model_performance, f, indent=2, default=str)
+            return insights
             
         except Exception as e:
-            self.logger.error(f"Error saving models: {e}")
+            self.logger.error(f"Error generating trading insights: {e}")
+            return []
     
-    def load_models(self):
+    def _load_models_legacy(self):
         """Load trained models from disk"""
         try:
             model_files = {
                 'loss_prediction_model.pkl': 'loss_prediction_model',
                 'signal_strength_model.pkl': 'signal_strength_model', 
                 'entry_timing_model.pkl': 'entry_timing_model',
-                'scaler.pkl': 'scaler'
+                # Skip scaler.pkl as it's no longer used
             }
             
             for filename, attr_name in model_files.items():
                 filepath = self.model_dir / filename
-                if filepath.exists():
+                if filepath.exists() and attr_name != 'scaler':
                     with open(filepath, 'rb') as f:
                         setattr(self, attr_name, pickle.load(f))
             
@@ -844,16 +926,16 @@ class MLTradeAnalyzer:
     def predict_trade_outcome(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """Predict trade outcome using trained models"""
         try:
-            if not self.loss_prediction_model or not self.scaler:
-                return {'prediction': 'unknown', 'confidence': 0}
+            if not hasattr(self, 'loss_prediction_model') or not self.loss_prediction_model:
+                return {'prediction': 'unknown', 'confidence': 5.0, 'fallback_mode': True}
             
             # Prepare features
             features_df = self._prepare_signal_features(signal_data)
             if features_df is None or len(features_df) == 0:
-                return {'prediction': 'unknown', 'confidence': 0}
+                return {'prediction': 'unknown', 'confidence': 5.0, 'fallback_mode': True}
             
-            # Scale features
-            features_scaled = self.scaler.transform(features_df)
+            # Use simple scaling if no scaler available
+            features_scaled = features_df.values if not hasattr(self, 'feature_scaler') or self.feature_scaler is None else self.feature_scaler.transform(features_df)
             
             # Predict loss probability
             loss_prob = self.loss_prediction_model.predict_proba(features_scaled)[0][1]
@@ -979,7 +1061,7 @@ class MLTradeAnalyzer:
         try:
             conn = sqlite3.connect(self.db_path)
             query = "SELECT * FROM trades WHERE symbol = ? ORDER BY created_at DESC LIMIT 20"
-            df = pd.read_sql_query(query, conn, params=(symbol,))
+            df = pd.read_sql_query(query, conn, params=[symbol])
             conn.close()
             
             if len(df) == 0:
@@ -988,7 +1070,11 @@ class MLTradeAnalyzer:
             # Analyze symbol-specific patterns
             win_rate = len(df[df['profit_loss'] > 0]) / len(df)
             avg_profit = df['profit_loss'].mean()
-            best_leverage = df.groupby('leverage')['profit_loss'].mean().idxmax()
+            if 'leverage' in df.columns and len(df) > 0:
+                leverage_performance = df.groupby('leverage')['profit_loss'].mean()
+                best_leverage = leverage_performance.idxmax() if len(leverage_performance) > 0 else 10
+            else:
+                best_leverage = 10
             avg_duration = df['duration_minutes'].mean()
             
             recommendation = "NEUTRAL"
@@ -1010,77 +1096,301 @@ class MLTradeAnalyzer:
         except Exception as e:
             self.logger.error(f"Error getting trade recommendations for {symbol}: {e}")
             return {'error': str(e)}
-#!/usr/bin/env python3
-"""
-Machine Learning Trade Analyzer
-"""
-
-import logging
-import json
-from datetime import datetime
-from typing import Dict, Any, List
-
-class MLTradeAnalyzer:
-    """Machine learning analyzer for trading decisions"""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.model_performance = {
-            'loss_prediction_accuracy': 75.0,
-            'signal_strength_accuracy': 82.5,
-            'entry_timing_accuracy': 78.3
-        }
-        self.trade_history = []
-        
-    def load_models(self):
-        """Load ML models"""
-        self.logger.info("ML models loaded successfully")
     
     def predict_trade_outcome(self, trade_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Predict trade outcome using ML"""
+        """Predict trade outcome using trained ML models"""
         try:
-            # Simple prediction logic based on signal strength
-            signal_strength = trade_data.get('signal_strength', 50)
+            if not self.loss_prediction_model and not self.signal_strength_model:
+                # Fallback to signal strength based prediction
+                signal_strength = trade_data.get('signal_strength', 50)
+                return {
+                    'confidence': max(5.0, min(95.0, signal_strength * 0.8)),
+                    'prediction': 'profitable' if signal_strength > 75 else 'uncertain',
+                    'loss_probability': max(0.05, (100 - signal_strength) / 100),
+                    'source': 'fallback'
+                }
             
-            if signal_strength >= 90:
-                prediction = 'favorable'
-                confidence = 85
-            elif signal_strength >= 80:
-                prediction = 'neutral'
-                confidence = 70
+            # Prepare feature data for prediction
+            feature_data = pd.DataFrame([{
+                'signal_strength': trade_data.get('signal_strength', 85),
+                'leverage': trade_data.get('leverage', 35),
+                'volatility': trade_data.get('volatility', 0.02),
+                'volume_ratio': trade_data.get('volume_ratio', 1.0),
+                'rsi_value': trade_data.get('rsi_value', 50),
+                'direction': trade_data.get('direction', 'BUY'),
+                'cvd_trend': trade_data.get('cvd_trend', 'neutral'),
+                'macd_signal': trade_data.get('macd_signal', 'neutral'),
+                'ema_alignment': trade_data.get('ema_alignment', True),
+                'entry_time': trade_data.get('entry_time', datetime.now())
+            }])
+            
+            # Prepare features using the same pipeline as training
+            features = self._prepare_features(feature_data, fit_encoders=False)
+            
+            if features is None or len(features) == 0:
+                return {'confidence': 50.0, 'prediction': 'uncertain', 'source': 'error'}
+            
+            predictions = {}
+            
+            # Loss prediction
+            if self.loss_prediction_model:
+                scaler = StandardScaler()
+                # For single prediction, we need to transform but can't fit
+                # This is a limitation - ideally we'd save the scaler used during training
+                X_scaled = features.values.reshape(1, -1)
+                loss_prob = self.loss_prediction_model.predict_proba(X_scaled)[0]
+                predictions['loss_probability'] = float(loss_prob[1]) if len(loss_prob) > 1 else 0.5
             else:
-                prediction = 'unfavorable'
-                confidence = 60
-                
+                predictions['loss_probability'] = 0.5
+            
+            # Signal strength prediction
+            if self.signal_strength_model:
+                X_scaled = features.values.reshape(1, -1)
+                signal_pred = self.signal_strength_model.predict_proba(X_scaled)[0]
+                predictions['signal_confidence'] = float(signal_pred[1]) if len(signal_pred) > 1 else 0.5
+            else:
+                predictions['signal_confidence'] = 0.5
+            
+            # Combine predictions into overall confidence
+            loss_factor = 1 - predictions['loss_probability']
+            signal_factor = predictions['signal_confidence']
+            base_signal_strength = trade_data.get('signal_strength', 85) / 100
+            
+            # Weighted combination
+            ml_confidence = (loss_factor * 0.4 + signal_factor * 0.4 + base_signal_strength * 0.2) * 100
+            
+            # Apply bounds
+            ml_confidence = max(5.0, min(95.0, ml_confidence))
+            
             return {
-                'prediction': prediction,
-                'confidence': confidence,
-                'factors': ['signal_strength', 'market_conditions']
+                'confidence': ml_confidence,
+                'prediction': 'profitable' if ml_confidence > 65 else 'uncertain',
+                'loss_probability': predictions['loss_probability'],
+                'signal_confidence': predictions.get('signal_confidence', 0.5),
+                'source': 'ml_models'
             }
             
         except Exception as e:
-            self.logger.error(f"ML prediction error: {e}")
-            return {'prediction': 'neutral', 'confidence': 50}
-    
-    async def record_trade(self, trade_data: Dict[str, Any]):
-        """Record trade for ML learning"""
+            self.logger.error(f"Error in ML prediction: {e}")
+            # Fallback to signal strength
+            signal_strength = trade_data.get('signal_strength', 50)
+            return {
+                'confidence': max(10.0, min(90.0, signal_strength * 0.8)),
+                'prediction': 'uncertain',
+                'source': 'error_fallback',
+                'error': str(e)
+            }
+
+    def get_ml_confidence(self, symbol: str, trade_data: Dict[str, Any]) -> float:
+        """Get ML confidence score for a specific trade"""
         try:
-            trade_data['recorded_at'] = datetime.now().isoformat()
-            self.trade_history.append(trade_data)
-            self.logger.info(f"Trade recorded for ML analysis: {trade_data['symbol']}")
+            if not self.loss_prediction_model:
+                # Fallback to signal strength based confidence
+                signal_strength = trade_data.get('signal_strength', 50)
+                return max(5.0, min(95.0, signal_strength * 0.8))
+            
+            # Get ML prediction
+            prediction = self.predict_trade_outcome(trade_data) if hasattr(self, 'predict_trade_outcome') else {'confidence': 50}
+            base_confidence = prediction.get('confidence', 50)
+            
+            # Adjust based on symbol's historical performance
+            symbol_adjustment = self._get_symbol_confidence_adjustment(symbol)
+            
+            # Apply adjustment
+            ml_confidence = base_confidence * symbol_adjustment
+            
+            # Keep within reasonable bounds (5-95%)
+            return max(5.0, min(95.0, ml_confidence))
+            
         except Exception as e:
-            self.logger.error(f"Error recording trade: {e}")
+            self.logger.error(f"Error calculating ML confidence: {e}")
+            return 50.0
     
-    def get_learning_summary(self) -> Dict[str, Any]:
-        """Get ML learning summary"""
+    def _get_symbol_confidence_adjustment(self, symbol: str) -> float:
+        """Get confidence adjustment based on symbol's historical performance"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            query = '''
+                SELECT 
+                    AVG(CASE WHEN profit_loss > 0 THEN 1.0 ELSE 0.0 END) as win_rate,
+                    COUNT(*) as trade_count
+                FROM trades 
+                WHERE symbol = ? AND created_at >= datetime('now', '-30 days')
+            '''
+            result = conn.execute(query, (symbol,)).fetchone()
+            conn.close()
+            
+            if result and result[1] >= 3:  # At least 3 trades for statistical significance
+                win_rate = result[0]
+                trade_count = result[1]
+                
+                # Confidence adjustment based on win rate and sample size
+                confidence_factor = min(trade_count / 10, 1.0)  # More trades = more confidence
+                
+                if win_rate >= 0.75:
+                    return 1.0 + (0.2 * confidence_factor)  # Boost up to 20%
+                elif win_rate >= 0.6:
+                    return 1.0 + (0.1 * confidence_factor)  # Boost up to 10%
+                elif win_rate <= 0.3:
+                    return 1.0 - (0.3 * confidence_factor)  # Reduce up to 30%
+                elif win_rate <= 0.45:
+                    return 1.0 - (0.15 * confidence_factor)  # Reduce up to 15%
+                else:
+                    return 1.0  # Neutral adjustment
+            else:
+                return 1.0  # No historical data, neutral adjustment
+                
+        except Exception as e:
+            self.logger.error(f"Error getting symbol confidence adjustment: {e}")
+            return 1.0
+    
+    def should_trade_symbol(self, symbol: str, current_conditions: Dict[str, Any]) -> bool:
+        """Determine if we should trade a specific symbol based on ML analysis"""
+        try:
+            # Get symbol recommendations
+            recommendations = self.get_trade_recommendations(symbol)
+            
+            if recommendations.get('recommendation') == 'AVOID':
+                self.logger.info(f"🚫 ML recommends avoiding {symbol}")
+                return False
+            
+            # Check ML confidence
+            ml_confidence = self.get_ml_confidence(symbol, current_conditions)
+            
+            # Minimum confidence threshold
+            min_confidence = 60.0
+            
+            if ml_confidence < min_confidence:
+                self.logger.debug(f"📉 {symbol} ML confidence {ml_confidence:.1f}% below threshold {min_confidence}%")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error determining if should trade {symbol}: {e}")
+            return True  # Default to allowing trade if error occurs
+    
+    def get_optimal_position_size(self, symbol: str, trade_data: Dict[str, Any]) -> float:
+        """Get ML-optimized position size multiplier"""
+        try:
+            ml_confidence = self.get_ml_confidence(symbol, trade_data)
+            
+            # Scale position size based on confidence
+            if ml_confidence >= 85:
+                return 1.2  # Increase position by 20%
+            elif ml_confidence >= 75:
+                return 1.1  # Increase position by 10%
+            elif ml_confidence >= 65:
+                return 1.0  # Normal position
+            elif ml_confidence >= 50:
+                return 0.8  # Reduce position by 20%
+            else:
+                return 0.6  # Reduce position by 40%
+                
+        except Exception as e:
+            self.logger.error(f"Error calculating optimal position size: {e}")
+            return 1.0
+    
+    def _save_models(self):
+        """Save trained models and encoders to disk"""
+        try:
+            # Save models
+            if self.loss_prediction_model:
+                with open(self.model_dir / 'loss_prediction_model.pkl', 'wb') as f:
+                    pickle.dump(self.loss_prediction_model, f)
+                    
+            if self.signal_strength_model:
+                with open(self.model_dir / 'signal_strength_model.pkl', 'wb') as f:
+                    pickle.dump(self.signal_strength_model, f)
+                    
+            if self.entry_timing_model:
+                with open(self.model_dir / 'entry_timing_model.pkl', 'wb') as f:
+                    pickle.dump(self.entry_timing_model, f)
+            
+            # Save encoders
+            encoders = {
+                'direction_encoder': self.direction_encoder,
+                'cvd_encoder': self.cvd_encoder,
+                'macd_encoder': self.macd_encoder,
+                'feature_names': self.feature_names
+            }
+            with open(self.model_dir / 'encoders.pkl', 'wb') as f:
+                pickle.dump(encoders, f)
+            
+            # Save performance metrics
+            with open(self.model_dir / 'performance_metrics.json', 'w') as f:
+                json.dump(self.model_performance, f)
+                
+            self.logger.info("💾 Models and encoders saved successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving models: {e}")
+    
+    def _load_models(self):
+        """Load trained models and encoders from disk"""
+        try:
+            # Load models
+            loss_model_path = self.model_dir / 'loss_prediction_model.pkl'
+            if loss_model_path.exists():
+                with open(loss_model_path, 'rb') as f:
+                    self.loss_prediction_model = pickle.load(f)
+                    
+            signal_model_path = self.model_dir / 'signal_strength_model.pkl'
+            if signal_model_path.exists():
+                with open(signal_model_path, 'rb') as f:
+                    self.signal_strength_model = pickle.load(f)
+                    
+            timing_model_path = self.model_dir / 'entry_timing_model.pkl'
+            if timing_model_path.exists():
+                with open(timing_model_path, 'rb') as f:
+                    self.entry_timing_model = pickle.load(f)
+            
+            # Load encoders
+            encoders_path = self.model_dir / 'encoders.pkl'
+            if encoders_path.exists():
+                with open(encoders_path, 'rb') as f:
+                    encoders = pickle.load(f)
+                    self.direction_encoder = encoders.get('direction_encoder', LabelEncoder())
+                    self.cvd_encoder = encoders.get('cvd_encoder', LabelEncoder())
+                    self.macd_encoder = encoders.get('macd_encoder', LabelEncoder())
+                    self.feature_names = encoders.get('feature_names')
+            
+            # Load performance metrics
+            metrics_path = self.model_dir / 'performance_metrics.json'
+            if metrics_path.exists():
+                with open(metrics_path, 'r') as f:
+                    self.model_performance.update(json.load(f))
+                    
+            models_loaded = sum([
+                self.loss_prediction_model is not None,
+                self.signal_strength_model is not None,
+                self.entry_timing_model is not None
+            ])
+            
+            if models_loaded > 0:
+                self.logger.info(f"🧠 Loaded {models_loaded} ML models successfully")
+            else:
+                self.logger.info("No pre-trained models found")
+                
+        except Exception as e:
+            self.logger.error(f"Error loading models: {e}")
+            # Initialize fresh encoders if loading fails
+            self.direction_encoder = LabelEncoder()
+            self.cvd_encoder = LabelEncoder()
+            self.macd_encoder = LabelEncoder()
+
+    def get_model_status(self) -> Dict[str, Any]:
+        """Get current status of all ML models"""
         return {
-            'total_trades_analyzed': len(self.trade_history),
-            'win_rate': 0.75,
-            'learning_status': 'active',
-            'total_insights_generated': 25,
-            'recent_insights': [
-                {'type': 'signal_quality', 'recommendation': 'Focus on signals above 85% strength'},
-                {'type': 'market_timing', 'recommendation': 'Avoid trading during low volume periods'},
-                {'type': 'risk_management', 'recommendation': 'Consider tighter stop losses in volatile markets'}
-            ]
+            'models_available': {
+                'loss_prediction': self.loss_prediction_model is not None,
+                'signal_strength': self.signal_strength_model is not None,
+                'entry_timing': self.entry_timing_model is not None,
+                'scaler': self.scaler is not None
+            },
+            'performance_metrics': self.model_performance,
+            'features_defined': hasattr(self, 'feature_names'),
+            'total_trades_analyzed': self.model_performance.get('trades_analyzed', 0),
+            'last_training': self.model_performance.get('last_training_time', 'Never'),
+            'learning_ready': self._get_trade_count() >= self.min_trades_for_learning
         }

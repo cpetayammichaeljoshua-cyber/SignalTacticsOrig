@@ -99,7 +99,7 @@ class MLTradePredictor:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.model_dir = Path("ml_models")
+        self.model_dir = Path("SignalMaestro/ml_models")
         self.model_dir.mkdir(exist_ok=True)
 
         # ML Models for different predictions
@@ -111,7 +111,7 @@ class MLTradePredictor:
         self.scaler = StandardScaler() # Initialize scaler here
 
         # Trade database
-        self.db_path = "ml_trade_learning.db"
+        self.db_path = "SignalMaestro/ml_trade_learning.db"
         self._initialize_database()
 
         # Learning parameters
@@ -127,6 +127,7 @@ class MLTradePredictor:
             'tp3_accuracy': 0.0,
             'last_training': None
         }
+        self._previous_win_rate = 0.5 # Initialize previous win rate for incremental tracking
 
         self.logger.info("🧠 ML Trade Predictor initialized")
 
@@ -349,7 +350,7 @@ class MLTradePredictor:
                 df['market_conditions'] = df['market_conditions'].apply(
                     lambda x: json.loads(x) if x else {}
                 )
-            
+
             # Ensure timestamp is parsed correctly
             if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
@@ -635,7 +636,7 @@ class MLTradePredictor:
         """Prepare features for prediction"""
         try:
             entry_price = signal_data.get('entry_price', signal_data.get('current_price', 0))
-            
+
             # Ensure all required features are present and in the correct order
             features = [
                 entry_price,
@@ -824,7 +825,7 @@ class MLEnhancedTradingBot:
             'cooldown_blocks': 0
         }
 
-        # Advanced risk management with adaptive algorithms
+        # Adaptive risk management with adaptive algorithms
         self.risk_config = {
             'base_risk_percentage': 2.0,  # 2% base risk
             'max_risk_percentage': 5.0,   # 5% maximum risk
@@ -1453,14 +1454,32 @@ class MLEnhancedTradingBot:
         except Exception as e:
             return 50
 
-    async def generate_ml_enhanced_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Generate signal with ML-enhanced SL/TP levels"""
+    async def generate_macd_anti_signal(self, symbol: str, indicators: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Generate MACD ANTI signal with AI-enhanced SL/TP levels using Replit's high-power model"""
         try:
+            from .macd_anti_strategy import MACDAntiStrategy
+            
             # Check cooldown first
             if not self.cooldown_manager.can_send_signal(symbol):
                 cooldown_status = self.cooldown_manager.get_cooldown_status(symbol)
                 self.logger.info(f"⏰ Signal blocked by cooldown for {symbol}. Remaining: {cooldown_status.get('symbol_cooldown_remaining', 0):.0f}s")
                 self.performance_stats['cooldown_blocks'] += 1
+                return None
+            
+            # Initialize MACD ANTI strategy with AI power
+            macd_anti = MACDAntiStrategy()
+            
+            # Prepare market data for MACD ANTI analysis
+            market_data = {
+                '5m': indicators.get('5m_data', []),
+                '15m': indicators.get('15m_data', []),
+                '1h': indicators.get('1h_data', [])
+            }
+            
+            # Generate MACD ANTI signal
+            macd_signal = await macd_anti.analyze_symbol(symbol, market_data)
+            
+            if not macd_signal:
                 return None
 
             # Basic signal strength calculation

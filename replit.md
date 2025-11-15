@@ -10,6 +10,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### November 15, 2025 - MAJOR ENHANCEMENT: Freqtrade Integration
+- **Freqtrade-Inspired Architecture**: Integrated advanced Freqtrade-style trading infrastructure including backtesting, hyperparameter optimization, and dynamic stop-loss management.
+- **Hybrid Strategy System**: Created `freqtrade_integration.py` with comprehensive indicator calculations, entry/exit signal generation, and custom stoploss functions.
+- **Enhanced Trading Bridge**: Developed `enhanced_signalmaestro_freqtrade_bridge.py` combining SignalMaestro's AI capabilities with Freqtrade methodologies for hybrid trading strategies.
+- **Advanced Backtesting**: Implemented comprehensive backtesting framework with performance metrics including Sharpe ratio, profit factor, win rate, and expectancy calculations.
+- **Multi-Strategy Analysis**: Created comparative analysis system supporting IchimokuFreqHybrid, ScalpingFreqHybrid, and MomentumFreqHybrid strategies.
+- **Comprehensive System Launcher**: Built `run_enhanced_trading_system.py` orchestrating error fixing, health checks, Freqtrade integration, and bot startup in automated sequence.
+- **Enhanced Workflows**: Configured continuous bot operation with "Trading Bot" workflow for 24/7 automated trading.
+- **System Health Verification**: All health checks passing (6/6) - Binance API, Telegram, AI processor, modules, and environment variables fully operational.
+
 ### October 1, 2025
 - **Fixed Critical Syntax Error**: Resolved syntax error in `advanced_time_fibonacci_strategy.py` that prevented AdvancedTimeFibonacciStrategy from registering. Changed invalid dictionary unpacking from `**ml_prediction if ml_prediction else {}` to `**(ml_prediction or {})`. Strategy now registers successfully (9 strategies total).
 - **Fixed Import Errors**: Resolved missing imports in `fxsusdt_telegram_bot.py` and `ai_sentiment_analyzer.py` (time, feedparser, asyncio_throttle, BeautifulSoup).
@@ -23,22 +33,39 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Bot Architecture
 
-The system follows a modular architecture with multiple specialized bot implementations:
+The system follows a modular architecture with multiple specialized bot implementations, now enhanced with Freqtrade-inspired infrastructure:
 
 - **Signal Processing Layer**: Multiple signal parsers handle various trading signal formats from text messages using regex patterns
-- **Strategy Layer**: Advanced trading strategies including Time-Fibonacci theory, ML-enhanced analysis, and multi-timeframe confluence
+- **Strategy Layer**: Advanced trading strategies including Time-Fibonacci theory, ML-enhanced analysis, multi-timeframe confluence, and Freqtrade-style hybrid strategies
+- **Freqtrade Integration Layer**: Comprehensive backtesting, hyperparameter optimization, ROI management, and dynamic trailing stop-loss
 - **Execution Layer**: Integration with Binance and Kraken exchanges for live trading and market data
 - **Communication Layer**: Telegram bot integration for receiving signals and sending formatted responses
-- **Persistence Layer**: SQLite database for trade history, user settings, and ML training data
+- **Persistence Layer**: SQLite database for trade history, user settings, ML training data, and backtest results
 
 ### Trading Strategy Components
 
-The bot implements several sophisticated trading strategies:
+The bot implements several sophisticated trading strategies, now enhanced with Freqtrade methodologies:
 
 1. **Perfect Scalping Strategy**: Uses technical indicators across 3m-4h timeframes with 1:3 risk-reward ratios
 2. **Time-Fibonacci Strategy**: Combines market session analysis with Fibonacci retracements for optimal entry timing
 3. **ML-Enhanced Strategy**: Machine learning models that learn from past trades to improve future signal quality
 4. **Ultimate Scalping Strategy**: Multi-indicator confluence system with dynamic stop-loss management
+5. **IchimokuFreqHybrid**: Freqtrade-style strategy combining Ichimoku cloud analysis with advanced indicator confluence
+6. **ScalpingFreqHybrid**: High-frequency trading strategy with Freqtrade's dynamic trailing stop-loss (5m timeframe)
+7. **MomentumFreqHybrid**: Momentum-based strategy with custom ROI tables and exit signals (15m timeframe)
+
+### Freqtrade Integration Features
+
+Advanced trading infrastructure inspired by Freqtrade:
+
+- **Comprehensive Backtesting**: Full simulation with realistic slippage, commissions, and trade execution
+- **Performance Metrics**: Sharpe ratio, Sortino ratio, profit factor, expectancy, max drawdown calculations
+- **Hyperparameter Optimization**: Grid search and optimization for RSI periods, EMA pairs, and stop-loss levels
+- **Dynamic Stop-Loss**: Custom stop-loss functions that adjust based on profit levels and trade duration
+- **ROI Management**: Minimal ROI tables for progressive profit-taking at different time intervals
+- **Entry/Exit Signals**: Multi-indicator confluence for long and short positions with volume confirmation
+- **Technical Indicators**: RSI, MACD, EMA, Bollinger Bands, ATR, OBV calculated with pandas-ta
+- **Strategy Comparison**: Automated comparison and ranking of multiple strategies by performance
 
 ### Process Management
 

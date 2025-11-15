@@ -8,7 +8,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk"]
 
 [workflows]
-runButton = "FXSUSDT Comprehensive Fixed"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -163,6 +163,10 @@ author = "agent"
 task = "workflow.run"
 args = "Trading Bot Console"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Trading Bot"
+
 [[workflows.workflow]]
 name = "Trading Bot Console"
 author = "agent"
@@ -253,6 +257,17 @@ mode = "parallel"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_fxsusdt_bot_comprehensive_fixed.py"
+
+[[workflows.workflow]]
+name = "Trading Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_fxsusdt_bot_comprehensive_fixed.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[ports]]
 localPort = 3000

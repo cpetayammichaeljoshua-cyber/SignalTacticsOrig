@@ -260,7 +260,7 @@ class FreqtradeIntegration:
         return strategy.stoploss
     
     async def run_backtest(self, strategy: FreqtradeStrategy, 
-                          symbol: str = "FXSUSDT", 
+                          symbol: str = "FXS/USDT", 
                           days: int = 30) -> BacktestResult:
         """
         Comprehensive Freqtrade-style backtesting
@@ -277,9 +277,32 @@ class FreqtradeIntegration:
                 'options': {'defaultType': 'future'}
             })
             
+            # Load markets to verify symbol exists
+            if asyncio.iscoroutinefunction(exchange.load_markets):
+                await exchange.load_markets()
+            else:
+                exchange.load_markets()
+            
+            # Verify symbol exists
+            if symbol not in exchange.markets:
+                self.logger.warning(f"Symbol {symbol} not found, trying common alternatives...")
+                # Try common alternatives
+                alternatives = [symbol, symbol.replace('/', ''), f"{symbol}:USDT"]
+                for alt in alternatives:
+                    if alt in exchange.markets:
+                        symbol = alt
+                        self.logger.info(f"Using alternative symbol: {symbol}")
+                        break
+                else:
+                    self.logger.error(f"Symbol {symbol} not available on exchange")
+                    return BacktestResult()
+            
             # Fetch historical data
             since = exchange.parse8601((datetime.now() - timedelta(days=days)).isoformat())
-            ohlcv = exchange.fetch_ohlcv(symbol, strategy.timeframe, since)
+            if asyncio.iscoroutinefunction(exchange.fetch_ohlcv):
+                ohlcv = await exchange.fetch_ohlcv(symbol, strategy.timeframe, since)
+            else:
+                ohlcv = exchange.fetch_ohlcv(symbol, strategy.timeframe, since)
             
             # Create dataframe
             df = pd.DataFrame(ohlcv)
@@ -400,7 +423,7 @@ class FreqtradeIntegration:
         return result
     
     def optimize_hyperparameters(self, strategy: FreqtradeStrategy, 
-                                symbol: str = "FXSUSDT") -> Dict[str, Any]:
+                                symbol: str = "FXS/USDT") -> Dict[str, Any]:
         """
         Freqtrade-style hyperparameter optimization
         Uses grid search to find optimal parameters

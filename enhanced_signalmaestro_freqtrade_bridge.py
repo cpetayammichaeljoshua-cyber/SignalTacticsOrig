@@ -95,7 +95,7 @@ class EnhancedTradingBridge:
         
         return strategy
     
-    async def run_comprehensive_analysis(self, symbol: str = "FXSUSDT"):
+    async def run_comprehensive_analysis(self, symbol: str = "FXS/USDT"):
         """
         Run comprehensive multi-strategy analysis
         Combines Freqtrade backtesting with SignalMaestro AI

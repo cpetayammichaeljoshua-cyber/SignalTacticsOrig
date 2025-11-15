@@ -21,7 +21,7 @@ class FreqtradeStrategy:
     """Freqtrade-style strategy configuration"""
     name: str
     timeframe: str = "30m"
-    minimal_roi: Dict[str, float] = None
+    minimal_roi: Optional[Dict[str, float]] = None
     stoploss: float = -0.02
     trailing_stop: bool = True
     trailing_stop_positive: float = 0.01
@@ -189,32 +189,30 @@ class FreqtradeIntegration:
         Advanced multi-indicator confluence system
         """
         # Long Entry Conditions
-        dataframe.loc[
-            (
-                # RSI oversold bounce
-                (dataframe['rsi'] > 30) & (dataframe['rsi'] < 70) &
-                # MACD bullish crossover
-                (dataframe['macd'] > dataframe['macdsignal']) &
-                # Price above EMA
-                (dataframe['close'] > dataframe['ema_fast']) &
-                # Volume confirmation
-                (dataframe['volume'] > dataframe['volume_ma'])
-            ),
-            'enter_long'] = 1
+        long_condition = (
+            # RSI oversold bounce
+            (dataframe['rsi'] > 30) & (dataframe['rsi'] < 70) &
+            # MACD bullish crossover
+            (dataframe['macd'] > dataframe['macdsignal']) &
+            # Price above EMA
+            (dataframe['close'] > dataframe['ema_fast']) &
+            # Volume confirmation
+            (dataframe['volume'] > dataframe['volume_ma'])
+        )
+        dataframe.loc[long_condition, 'enter_long'] = 1
         
         # Short Entry Conditions
-        dataframe.loc[
-            (
-                # RSI overbought rejection
-                (dataframe['rsi'] < 70) & (dataframe['rsi'] > 30) &
-                # MACD bearish crossover
-                (dataframe['macd'] < dataframe['macdsignal']) &
-                # Price below EMA
-                (dataframe['close'] < dataframe['ema_fast']) &
-                # Volume confirmation
-                (dataframe['volume'] > dataframe['volume_ma'])
-            ),
-            'enter_short'] = 1
+        short_condition = (
+            # RSI overbought rejection
+            (dataframe['rsi'] < 70) & (dataframe['rsi'] > 30) &
+            # MACD bearish crossover
+            (dataframe['macd'] < dataframe['macdsignal']) &
+            # Price below EMA
+            (dataframe['close'] < dataframe['ema_fast']) &
+            # Volume confirmation
+            (dataframe['volume'] > dataframe['volume_ma'])
+        )
+        dataframe.loc[short_condition, 'enter_short'] = 1
         
         return dataframe
     
@@ -284,7 +282,8 @@ class FreqtradeIntegration:
             ohlcv = exchange.fetch_ohlcv(symbol, strategy.timeframe, since)
             
             # Create dataframe
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df = pd.DataFrame(ohlcv)
+            df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             
             # Calculate indicators
@@ -378,7 +377,7 @@ class FreqtradeIntegration:
             losing_trades=len(losing_trades),
             win_rate=len(winning_trades) / len(trades) if trades else 0,
             total_profit=sum(profits),
-            avg_profit=np.mean(profits) if profits else 0,
+            avg_profit=float(np.mean(profits)) if profits else 0.0,
             best_trade=max(profits) if profits else 0,
             worst_trade=min(profits) if profits else 0,
             avg_duration=str(timedelta(seconds=int(np.mean([t['duration'] for t in trades]))))
@@ -388,7 +387,7 @@ class FreqtradeIntegration:
         if profits:
             # Sharpe Ratio
             returns = np.array(profits)
-            result.sharpe_ratio = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
+            result.sharpe_ratio = float(np.mean(returns) / np.std(returns)) if np.std(returns) > 0 else 0.0
             
             # Profit Factor
             gross_profit = sum(winning_trades) if winning_trades else 0

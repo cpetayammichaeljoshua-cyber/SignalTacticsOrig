@@ -176,7 +176,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_console_bot.py --config trading_bot_config.json"
+args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py"
 
 [[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"

@@ -2,6 +2,7 @@
 """
 FXSUSDT.P Telegram Signal Bot
 Sends Ichimoku Sniper signals to @SignalTactics channel with Cornix compatibility
+Enhanced with comprehensive Freqtrade command integration
 """
 
 import asyncio
@@ -16,6 +17,7 @@ import numpy as np
 
 from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
 from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
+from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
     """Telegram bot for FXSUSDT.P signals"""
@@ -35,6 +37,9 @@ class FXSUSDTTelegramBot:
         self.strategy = IchimokuSniperStrategy()
         self.trader = FXSUSDTTrader() # Assuming this is your Binance API wrapper
 
+        # Initialize Freqtrade commands integration
+        self.freqtrade_commands = FreqtradeTelegramCommands(self)
+        
         # Initialize AI processor as None (fallback mode)
         self.ai_processor = None
 
@@ -51,7 +56,7 @@ class FXSUSDTTelegramBot:
         # Telegram API
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
-        # Command system
+        # Command system - merge existing commands with Freqtrade commands
         self.commands = {
             '/start': self.cmd_start,
             '/help': self.cmd_help,
@@ -82,6 +87,12 @@ class FXSUSDTTelegramBot:
             '/dynamic_sltp': self.cmd_dynamic_sltp,
             '/dashboard': self.cmd_market_dashboard
         }
+        
+        # Add all Freqtrade commands
+        freqtrade_cmds = self.freqtrade_commands.get_all_commands()
+        self.commands.update(freqtrade_cmds)
+        
+        self.logger.info(f"✅ Loaded {len(freqtrade_cmds)} Freqtrade commands")
 
         # Bot statistics and timing
         self.signal_count = 0
@@ -550,9 +561,77 @@ Use `/alerts` to manage your alerts."""
     async def cmd_help(self, update, context):
         """Handle /help command"""
         chat_id = str(update.effective_chat.id)
-        help_text = "📚 **Available Commands:**\n\n"
-        for cmd in sorted(self.commands.keys()):
-            help_text += f"`{cmd}` - {self.commands[cmd].__doc__.strip() if self.commands[cmd].__doc__ else 'No description'}\n"
+        
+        help_text = """📚 **FXSUSDT.P Bot - Complete Command Reference**
+
+**🎯 CORE BOT COMMANDS:**
+• `/start` - Initialize bot
+• `/help` - Show this help
+• `/status` - Bot status & uptime
+• `/price` - Current FXSUSDT.P price
+• `/balance` - Account balance
+• `/position` - Open positions
+
+**🤖 FREQTRADE BOT CONTROL:**
+• `/stop` - Stop trading bot
+• `/reload_config` - Reload configuration
+• `/show_config` - Display current config
+
+**💰 PROFIT & PERFORMANCE:**
+• `/profit [days]` - Profit summary
+• `/performance` - Performance by pair
+• `/daily [days]` - Daily profit breakdown
+• `/weekly` - Weekly profit summary
+• `/monthly` - Monthly profit summary
+
+**📊 TRADE MANAGEMENT:**
+• `/count` - Trade count statistics
+• `/forcebuy <pair> [rate]` - Force buy a pair
+• `/forcesell <trade_id|all>` - Force sell trades
+• `/delete <trade_id>` - Delete trade from DB
+• `/trades [limit]` - Show recent trades
+
+**🎯 WHITELIST/BLACKLIST:**
+• `/whitelist` - Show trading pairs whitelist
+• `/blacklist [pair]` - Show/add to blacklist
+• `/locks` - Show trade locks
+• `/unlock <pair|all>` - Unlock trading pairs
+
+**⚡ STRATEGY COMMANDS:**
+• `/edge` - Edge positioning analysis
+• `/stopbuy` - Stop buying new trades
+• `/scan` - Manual market scan
+• `/backtest [days] [tf]` - Run backtest
+• `/optimize` - Optimize strategy
+
+**📈 MARKET ANALYSIS:**
+• `/market [symbol]` - Market overview
+• `/dashboard` - Market dashboard
+• `/dynamic_sltp LONG/SHORT` - Smart SL/TP
+• `/leverage [symbol] [amount]` - Set leverage
+• `/risk [account] [%]` - Calculate risk
+
+**📡 FUTURES INFO:**
+• `/futures` - Contract information
+• `/contract` - Contract specifications
+• `/funding` - Funding rate
+• `/oi` - Open interest
+• `/volume` - Volume analysis
+
+**🔔 ALERTS & ADMIN:**
+• `/alerts` - Manage price alerts
+• `/admin` - Admin panel
+• `/settings` - Bot settings
+
+**💡 Examples:**
+• `/profit 7` - Profit last 7 days
+• `/forcebuy FXS/USDT` - Force buy FXS
+• `/leverage FXSUSDT 10` - Set 10x leverage
+• `/backtest 30 1h` - Backtest 30 days on 1h
+
+**🎯 Type any command for detailed usage**
+        """
+        
         await self.send_message(chat_id, help_text)
         self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
 
@@ -2593,7 +2672,29 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             application.add_handler(CommandHandler("backtest", backtest_handler))
             application.add_handler(CommandHandler("optimize", optimize_handler))
 
-            self.logger.info("✅ All command handlers registered successfully")
+            # Register all Freqtrade commands dynamically
+            freqtrade_cmds = self.freqtrade_commands.get_all_commands()
+            for cmd_name, cmd_func in freqtrade_cmds.items():
+                # Remove leading slash for handler registration
+                cmd_key = cmd_name.lstrip('/')
+                
+                # Create async wrapper for Freqtrade commands
+                async def freqtrade_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, func=cmd_func):
+                    try:
+                        chat_id = update.effective_chat.id
+                        args = context.args or []
+                        result = await func(chat_id, args)
+                        if result:
+                            await self.send_message(str(chat_id), result)
+                    except Exception as e:
+                        self.logger.error(f"Freqtrade command error: {e}")
+                        if update.message:
+                            await update.message.reply_text(f"❌ Error: {str(e)}")
+                
+                application.add_handler(CommandHandler(cmd_key, freqtrade_handler))
+                self.logger.debug(f"Registered Freqtrade command: {cmd_name}")
+
+            self.logger.info(f"✅ All command handlers registered successfully ({len(application.handlers[0])} total)")
 
             # Store application reference
             self.telegram_app = application

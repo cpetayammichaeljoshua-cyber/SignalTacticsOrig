@@ -314,4 +314,4 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["sh", "-c", "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_fxsusdt_bot_comprehensive_fixed.py"]
+run = ["sh", "-c", "bash railway_start.sh"]

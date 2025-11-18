@@ -83,7 +83,7 @@ task = "shell.exec"
 args = "python start_daemon.py"
 
 [[workflows.workflow]]
-name = "Ultimate Trading Bot"
+name = "Gg Trading Bot"
 author = 34160275
 mode = "sequential"
 
@@ -98,7 +98,15 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_ultimate_comprehensive_bot.py"
+args = "python dynamic_comprehensive_error_fixer.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python bot_health_check.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_ultimate_fxsusdt_unified.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

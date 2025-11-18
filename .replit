@@ -283,6 +283,14 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
+args = "python dynamic_comprehensive_error_fixer.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python bot_health_check.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
 args = "python start_ultimate_fxsusdt_unified.py"
 
 [[ports]]

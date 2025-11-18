@@ -301,6 +301,23 @@ args = "python bot_health_check.py"
 task = "shell.exec"
 args = "python start_ultimate_fxsusdt_unified.py"
 
+[[workflows.workflow]]
+name = "Fix All Errors"
+author = 49879202
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python ultimate_comprehensive_error_fixer.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python bot_health_check.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_ultimate_fxsusdt_unified.py"
+
 [[ports]]
 localPort = 3000
 externalPort = 80

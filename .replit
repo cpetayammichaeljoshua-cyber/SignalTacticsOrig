@@ -8,7 +8,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds", "docker_28"]
 
 [workflows]
-runButton = "FXSUSDT Comprehensive Fixed"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -163,6 +163,10 @@ author = "agent"
 task = "workflow.run"
 args = "Trading Bot Console"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Comprehensive FXSUSDT Bot"
+
 [[workflows.workflow]]
 name = "Trading Bot Console"
 author = "agent"
@@ -172,7 +176,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_console_bot.py --config trading_bot_config.json"
+args = "python dynamic_comprehensive_error_fixer.py && python start_fxsusdt_bot_comprehensive_fixed.py"
 
 [[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"
@@ -252,11 +256,11 @@ mode = "parallel"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_fxsusdt_bot_comprehensive_fixed.py"
+args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python keep_alive.py"
+args = "python start_fxsusdt_bot_comprehensive_fixed.py"
 
 [[workflows.workflow]]
 name = "Auto-Train ML Bot"
@@ -266,6 +270,17 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_auto_train_ml_bot.py && python start_ultimate_bot.py"
+
+[[workflows.workflow]]
+name = "Comprehensive FXSUSDT Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_comprehensive_fxsusdt_bot.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[ports]]
 localPort = 3000

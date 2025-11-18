@@ -4,11 +4,30 @@
 
 This repository contains a comprehensive cryptocurrency trading automation system that processes and forwards trading signals via Telegram. The bot combines multiple trading strategies, machine learning-enhanced analysis, and automated signal forwarding capabilities. It's designed for continuous operation with advanced restart management, health monitoring, and external uptime services integration.
 
+**NEW: Comprehensive FXSUSDT Intelligence System** - Advanced multi-analyzer trading system integrating liquidity analysis, order flow (CVD), volume profiles, fractals, and intermarket correlations.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+
+### November 18, 2025
+- **NEW: Comprehensive FXSUSDT Trading Intelligence System**: Built advanced multi-analyzer system with 5 specialized analysis modules:
+  - **Liquidity Analysis**: POV liquidity grab/swept detection, stop hunt identification, smart money flow tracking
+  - **Order Flow Analysis**: CVD (Cumulative Volume Delta) tracking, bid/ask imbalance, buying/selling pressure
+  - **Volume Profile & Footprint Charts**: Point of Control, Value Area, HVN/LVN, footprint analysis
+  - **Fractals Analysis**: Williams Fractals, market structure (HH/HL/LH/LL), swing points, trend confirmation
+  - **Intermarket Correlations**: BTC/ETH correlation, risk-on/off sentiment, divergence detection
+- **Market Intelligence Engine**: Central orchestrator that runs all analyzers in parallel, produces unified intelligence snapshots with consensus bias and scoring
+- **Signal Fusion Engine**: Combines Ichimoku Sniper signals with market intelligence to produce high-confidence fused signals
+- **Async Data Fetcher**: Efficient market data fetching with 10-second cache TTL to prevent redundant API calls
+- **Comprehensive Dashboard**: Real-time visualization and formatting for all indicators
+- **Standardized Data Contracts**: `MarketSnapshot`, `AnalysisResult`, `MarketIntelSnapshot`, `FusedSignal`
+- **Weighted Consensus System**: Each analyzer contributes to final decision with configurable weights
+- **Veto System**: Any analyzer can veto a trade based on unfavorable conditions
+- **New Workflow**: "Comprehensive FXSUSDT Bot" - runs complete intelligence system
+- **Documentation**: Added comprehensive README_COMPREHENSIVE_SYSTEM.md
 
 ### October 1, 2025
 - **Fixed Critical Syntax Error**: Resolved syntax error in `advanced_time_fibonacci_strategy.py` that prevented AdvancedTimeFibonacciStrategy from registering. Changed invalid dictionary unpacking from `**ml_prediction if ml_prediction else {}` to `**(ml_prediction or {})`. Strategy now registers successfully (9 strategies total).

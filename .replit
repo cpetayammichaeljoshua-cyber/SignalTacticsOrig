@@ -8,7 +8,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds", "docker_28"]
 
 [workflows]
-runButton = "Comprehensive All Futures Bot"
+runButton = "Ultimate Error Fix + Bot"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -290,6 +290,19 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python dynamic_comprehensive_error_fixer_enhanced.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_comprehensive_all_futures_bot.py"
+
+[[workflows.workflow]]
+name = "Ultimate Error Fix + Bot"
+author = 49879202
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python ultimate_comprehensive_error_fixer.py"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"

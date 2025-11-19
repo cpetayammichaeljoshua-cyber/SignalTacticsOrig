@@ -21,15 +21,35 @@ def apply_all_console_fixes():
     os.environ['PYTHONWARNINGS'] = 'ignore'
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     
-    # 2. Fix pandas warnings
+    # 2. Fix pandas warnings and deprecations
     try:
         import pandas as pd
         pd.set_option('mode.chained_assignment', None)
         pd.options.mode.copy_on_write = True
+        
+        # Suppress FutureWarnings
+        warnings.filterwarnings('ignore', category=FutureWarning, module='pandas')
+        
         try:
             pd.set_option('future.no_silent_downcasting', True)
         except:
             pass
+        
+        # Monkey-patch DataFrame.fillna to suppress deprecation
+        original_fillna = pd.DataFrame.fillna
+        def safe_fillna(self, *args, **kwargs):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                if 'method' in kwargs:
+                    method = kwargs.pop('method')
+                    if method == 'ffill':
+                        return self.ffill(*args, **kwargs)
+                    elif method == 'bfill':
+                        return self.bfill(*args, **kwargs)
+                return original_fillna(self, *args, **kwargs)
+        
+        pd.DataFrame.fillna = safe_fillna
+        
         print("✅ Pandas warnings suppressed")
     except ImportError:
         pass

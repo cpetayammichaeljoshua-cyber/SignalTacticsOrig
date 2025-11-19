@@ -103,7 +103,7 @@ class UltimateComprehensiveErrorFixer:
                 'matplotlib', 'websockets', 'scikit-learn', 
                 'python-telegram-bot', 'ccxt', 'requests',
                 'aiosqlite', 'python-dateutil', 'pytz',
-                'pandas-ta', 'ta', 'pybreaker==1.3.2'
+                'pandas-ta', 'ta', 'pybreaker'
             ]
             
             installed = []

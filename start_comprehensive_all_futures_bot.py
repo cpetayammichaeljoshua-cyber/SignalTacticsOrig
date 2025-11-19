@@ -50,11 +50,11 @@ class ComprehensiveAllFuturesBot:
             from pybreaker import CircuitBreaker as CB
             self.circuit_breaker = CB(
                 fail_max=5,
-                reset_timeout=60,
-                expected_exception=Exception
+                reset_timeout=60
             )
-        except ImportError:
-            # Fallback if pybreaker not available
+        except (ImportError, Exception) as e:
+            # Fallback if pybreaker not available or initialization fails
+            logger.warning(f"Circuit breaker initialization skipped: {e}")
             self.circuit_breaker = None
 
         # Import all required modules
@@ -336,17 +336,28 @@ class ComprehensiveAllFuturesBot:
         print("   ✅ AI-enhanced signal processing")
         print("="*80 + "\n")
 
-    def calculate_technical_indicators(self, df) -> object:
+    def calculate_technical_indicators(self, df):
         """Calculate comprehensive technical indicators"""
         try:
+            # Import pandas at the start
             import pandas as pd
+            import numpy as np
+            
+            # Ensure df is a DataFrame
+            if not isinstance(df, pd.DataFrame):
+                self.logger.warning("Input is not a pandas DataFrame")
+                return df
             
             try:
                 import pandas_ta as ta
             except ImportError:
                 # Fallback: use basic ta library
-                import ta as basic_ta
-                ta = None
+                try:
+                    import ta as basic_ta
+                    ta = None
+                except ImportError:
+                    ta = None
+                    basic_ta = None
 
             # Moving averages
             if ta:
@@ -409,10 +420,15 @@ class ComprehensiveAllFuturesBot:
             # Volume indicators
             df['Volume_SMA'] = df['volume'].rolling(window=20).mean()
 
+            # Fill NaN values
+            df = df.fillna(method='bfill').fillna(method='ffill')
+            
             return df
 
         except Exception as e:
             self.logger.error(f"Error calculating technical indicators: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return df
 
 

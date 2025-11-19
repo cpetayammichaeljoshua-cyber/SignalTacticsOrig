@@ -28,6 +28,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import CircuitBreaker at module level
+try:
+    from pybreaker import CircuitBreaker
+except ImportError:
+    # Create dummy CircuitBreaker if not available
+    class CircuitBreaker:
+        def __init__(self, *args, **kwargs):
+            pass
+
 class ComprehensiveAllFuturesBot:
     """Comprehensive bot for all Binance Futures USDM markets"""
 
@@ -36,13 +45,17 @@ class ComprehensiveAllFuturesBot:
         self.running = True
         self.active_markets = []
 
-        # Initialize circuit breaker for error resilience
-        self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=60,
-            timeout_duration=30,
-            expected_exception=Exception
-        )
+        # Initialize circuit breaker for error resilience (fixed parameters)
+        try:
+            from pybreaker import CircuitBreaker as CB
+            self.circuit_breaker = CB(
+                fail_max=5,
+                reset_timeout=60,
+                expected_exception=Exception
+            )
+        except ImportError:
+            # Fallback if pybreaker not available
+            self.circuit_breaker = None
 
         # Import all required modules
         self._import_modules()
@@ -323,17 +336,17 @@ class ComprehensiveAllFuturesBot:
         print("   ✅ AI-enhanced signal processing")
         print("="*80 + "\n")
 
-    def calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_technical_indicators(self, df) -> object:
         """Calculate comprehensive technical indicators"""
         try:
+            import pandas as pd
+            
             try:
                 import pandas_ta as ta
             except ImportError:
                 # Fallback: use basic ta library
                 import ta as basic_ta
                 ta = None
-            
-            import pandas as pd # Ensure pandas is imported for DataFrame operations
 
             # Moving averages
             if ta:

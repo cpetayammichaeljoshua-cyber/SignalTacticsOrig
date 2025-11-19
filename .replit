@@ -5,7 +5,7 @@ integrations = ["python_openai:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds", "docker_28"]
+packages = ["cairo", "docker_28", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds"]
 
 [workflows]
 runButton = "Ultimate Error Fix + Bot"
@@ -299,6 +299,10 @@ args = "python start_comprehensive_all_futures_bot.py"
 name = "Ultimate Error Fix + Bot"
 author = 49879202
 mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python fix_all_console_errors.py"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"

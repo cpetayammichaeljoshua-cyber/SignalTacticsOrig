@@ -8,7 +8,7 @@ channel = "stable-25_05"
 packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds", "docker_28"]
 
 [workflows]
-runButton = "Comprehensive All Futures Bot"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -83,7 +83,7 @@ task = "shell.exec"
 args = "python start_daemon.py"
 
 [[workflows.workflow]]
-name = "Ultimate Trading Bot"
+name = "Generate Trading Bot"
 author = 34160275
 mode = "sequential"
 
@@ -92,13 +92,16 @@ task = "shell.exec"
 args = "python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "ML-Enhanced Trading Bot"
-author = 34160275
+name = "Ultimate Trading Bot"
+author = "agent"
 mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_ml_enhanced_bot.py"
+args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_ultimate_fxsusdt_unified.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[workflows.workflow]]
 name = "Adaptive ML Trading Bot"
@@ -153,30 +156,6 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_ultimate_bot.py"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Trading Bot Console"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Comprehensive FXSUSDT Bot"
-
-[[workflows.workflow]]
-name = "Trading Bot Console"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py && python start_fxsusdt_bot_comprehensive_fixed.py"
 
 [[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"
@@ -272,28 +251,39 @@ task = "shell.exec"
 args = "python start_auto_train_ml_bot.py && python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "Comprehensive FXSUSDT Bot"
+name = "Project"
+mode = "parallel"
 author = "agent"
 
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer_enhanced.py && python start_comprehensive_all_futures_bot.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
+task = "workflow.run"
+args = "Ultimate Trading Bot"
 
 [[workflows.workflow]]
-name = "Comprehensive All Futures Bot"
+name = "Ultimate Comprehensive FXSUSDT Bot"
 author = 49879202
 mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer_enhanced.py"
+args = "python dynamic_comprehensive_error_fixer.py"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_comprehensive_all_futures_bot.py"
+args = "python bot_health_check.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_fxsusdt_bot_comprehensive_fixed.py"
+
+[[workflows.workflow]]
+name = "Ultimate Unified FXSUSDT Bot"
+author = 49879202
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_ultimate_fxsusdt_unified.py"
 
 [[ports]]
 localPort = 3000

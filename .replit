@@ -83,7 +83,7 @@ task = "shell.exec"
 args = "python start_daemon.py"
 
 [[workflows.workflow]]
-name = "Generate Trading Bot"
+name = "Ultimate Trading Bot"
 author = 34160275
 mode = "sequential"
 
@@ -92,16 +92,13 @@ task = "shell.exec"
 args = "python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "Ultimate Trading Bot"
-author = "agent"
+name = "ML-Enhanced Trading Bot"
+author = 34160275
 mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_ultimate_fxsusdt_unified.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
+args = "python start_ml_enhanced_bot.py"
 
 [[workflows.workflow]]
 name = "Adaptive ML Trading Bot"
@@ -156,6 +153,30 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_ultimate_bot.py"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Trading Bot Console"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Comprehensive FXSUSDT Bot"
+
+[[workflows.workflow]]
+name = "Trading Bot Console"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python dynamic_comprehensive_error_fixer.py && python start_fxsusdt_bot_comprehensive_fixed.py"
 
 [[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"
@@ -251,39 +272,15 @@ task = "shell.exec"
 args = "python start_auto_train_ml_bot.py && python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "Project"
-mode = "parallel"
+name = "Comprehensive FXSUSDT Bot"
 author = "agent"
 
 [[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Ultimate Trading Bot"
-
-[[workflows.workflow]]
-name = "Ultimate Comprehensive FXSUSDT Bot"
-author = 49879202
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py"
+args = "python start_comprehensive_fxsusdt_bot.py"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python bot_health_check.py"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_fxsusdt_bot_comprehensive_fixed.py"
-
-[[workflows.workflow]]
-name = "Ultimate Unified FXSUSDT Bot"
-author = 49879202
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_ultimate_fxsusdt_unified.py"
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[ports]]
 localPort = 3000

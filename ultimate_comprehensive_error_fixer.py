@@ -102,7 +102,8 @@ class UltimateComprehensiveErrorFixer:
                 'aiohttp', 'asyncio-throttle', 'pandas', 'numpy', 
                 'matplotlib', 'websockets', 'scikit-learn', 
                 'python-telegram-bot', 'ccxt', 'requests',
-                'aiosqlite', 'python-dateutil', 'pytz'
+                'aiosqlite', 'python-dateutil', 'pytz',
+                'pandas-ta', 'ta', 'pybreaker'
             ]
             
             installed = []

@@ -1,15 +1,14 @@
 {
-  "timestamp": "2025-11-18T20:34:06.901088",
+  "timestamp": "2025-11-18T15:21:04.217221",
   "fixes_applied": [
-    "Nix paths fixed",
-    "Python environment fixed",
-    "Asyncio imports fixed",
     "Global warning suppression",
     "Import paths fixed",
-    "Dependencies installed",
+    "Specific import errors fixed",
+    "Missing dependencies installed",
     "Directory structure created",
+    "File permissions fixed",
     "Console output cleaned"
   ],
-  "success_rate": "8/8",
+  "success_rate": "7/7",
   "status": "completed"
 }

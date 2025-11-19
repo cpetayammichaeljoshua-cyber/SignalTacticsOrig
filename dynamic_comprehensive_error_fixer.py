@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 """
 Dynamic Comprehensive Error Fixer
-Fixes all errors including import issues, console warnings, runtime problems, and Nix path issues
+Fixes all errors including import issues, console warnings, and runtime problems
 """
 
 import os
@@ -31,68 +31,10 @@ class DynamicComprehensiveErrorFixer:
         )
         self.logger = logging.getLogger(__name__)
     
-    def fix_nix_paths(self):
-        """Fix Nix store path issues"""
-        try:
-            self.logger.info("🔧 Fixing Nix paths...")
-            
-            # Add Nix paths to Python path
-            nix_paths = [
-                '/nix/store',
-                '/usr/lib/python3.11',
-                '/usr/local/lib/python3.11',
-            ]
-            
-            for nix_path in nix_paths:
-                if os.path.exists(nix_path) and nix_path not in sys.path:
-                    sys.path.insert(0, nix_path)
-            
-            # Set library paths
-            os.environ['LD_LIBRARY_PATH'] = ':'.join([
-                os.environ.get('LD_LIBRARY_PATH', ''),
-                '/nix/store/*-python3-*/lib',
-                '/usr/lib',
-                '/usr/local/lib'
-            ])
-            
-            self.fixes_applied.append("Nix paths fixed")
-            self.logger.info("✅ Nix paths configured")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Nix path fixing failed: {e}")
-            return False
-    
-    def fix_asyncio_imports(self):
-        """Fix asyncio import issues"""
-        try:
-            self.logger.info("🔧 Fixing asyncio imports...")
-            
-            # Ensure asyncio is properly imported
-            import asyncio
-            
-            # Fix event loop policy for Replit
-            if sys.platform == 'linux':
-                try:
-                    import nest_asyncio
-                    nest_asyncio.apply()
-                except ImportError:
-                    subprocess.run([sys.executable, '-m', 'pip', 'install', 'nest-asyncio'], 
-                                 capture_output=True, text=True)
-                    import nest_asyncio
-                    nest_asyncio.apply()
-            
-            self.fixes_applied.append("Asyncio imports fixed")
-            self.logger.info("✅ Asyncio configured")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Asyncio fixing failed: {e}")
-            return False
-    
     def suppress_all_warnings(self):
         """Suppress all Python warnings globally"""
         try:
+            # Global warning suppression
             warnings.filterwarnings('ignore')
             warnings.filterwarnings('ignore', category=FutureWarning)
             warnings.filterwarnings('ignore', category=UserWarning) 
@@ -100,9 +42,11 @@ class DynamicComprehensiveErrorFixer:
             warnings.filterwarnings('ignore', category=RuntimeWarning)
             warnings.filterwarnings('ignore', category=ImportWarning)
             
+            # Environment variables for suppression
             os.environ['PYTHONWARNINGS'] = 'ignore'
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
             
+            # Pandas specific fixes
             try:
                 import pandas as pd
                 pd.set_option('mode.chained_assignment', None)
@@ -114,12 +58,14 @@ class DynamicComprehensiveErrorFixer:
             except ImportError:
                 pass
             
+            # NumPy fixes
             try:
                 import numpy as np
                 np.seterr(all='ignore')
             except ImportError:
                 pass
             
+            # Matplotlib fixes
             try:
                 import matplotlib
                 matplotlib.use('Agg')
@@ -128,7 +74,7 @@ class DynamicComprehensiveErrorFixer:
                 pass
             
             self.fixes_applied.append("Global warning suppression")
-            self.logger.info("✅ All warnings suppressed")
+            self.logger.info("✅ All warnings suppressed globally")
             return True
             
         except Exception as e:
@@ -138,6 +84,7 @@ class DynamicComprehensiveErrorFixer:
     def fix_import_paths(self):
         """Fix Python import paths and module structure"""
         try:
+            # Add current directory and SignalMaestro to Python path
             current_dir = Path(__file__).parent
             signal_maestro_path = current_dir / "SignalMaestro"
             
@@ -150,6 +97,7 @@ class DynamicComprehensiveErrorFixer:
                 if path not in sys.path:
                     sys.path.insert(0, path)
             
+            # Create __init__.py files
             init_dirs = [
                 current_dir / "SignalMaestro",
                 current_dir / "utils", 
@@ -164,40 +112,61 @@ class DynamicComprehensiveErrorFixer:
                         init_file.write_text("# Auto-generated __init__.py\n")
             
             self.fixes_applied.append("Import paths fixed")
-            self.logger.info("✅ Import paths configured")
+            self.logger.info("✅ Import paths and module structure fixed")
             return True
             
         except Exception as e:
             self.logger.error(f"Import path fixing failed: {e}")
             return False
     
-    def fix_python_environment(self):
-        """Fix Python environment variables"""
+    def fix_specific_import_errors(self):
+        """Fix specific import errors like ichimoku_sniper_strategy"""
         try:
-            self.logger.info("🔧 Fixing Python environment...")
+            # Check if ichimoku_sniper_strategy.py exists in SignalMaestro
+            ichimoku_file = Path("SignalMaestro/ichimoku_sniper_strategy.py")
             
-            # Set Python unbuffered mode
-            os.environ['PYTHONUNBUFFERED'] = '1'
+            if ichimoku_file.exists():
+                self.logger.info("✅ ichimoku_sniper_strategy.py exists")
+            else:
+                self.logger.warning("⚠️ ichimoku_sniper_strategy.py missing")
+                return False
             
-            # Disable bytecode generation
-            os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+            # Fix import statement in fxsusdt_telegram_bot.py
+            bot_file = Path("SignalMaestro/fxsusdt_telegram_bot.py")
+            if bot_file.exists():
+                content = bot_file.read_text()
+                
+                # Fix relative import
+                if "from ichimoku_sniper_strategy import" in content:
+                    content = content.replace(
+                        "from ichimoku_sniper_strategy import",
+                        "from .ichimoku_sniper_strategy import"
+                    )
+                    bot_file.write_text(content)
+                    self.logger.info("✅ Fixed ichimoku import in telegram bot")
+                
+                # Also try absolute import fix
+                content = content.replace(
+                    "from ichimoku_sniper_strategy import",
+                    "from SignalMaestro.ichimoku_sniper_strategy import"
+                )
+                content = content.replace(
+                    "from fxsusdt_trader import",
+                    "from SignalMaestro.fxsusdt_trader import"
+                )
+                bot_file.write_text(content)
             
-            # Set encoding
-            os.environ['PYTHONIOENCODING'] = 'utf-8'
-            
-            self.fixes_applied.append("Python environment fixed")
-            self.logger.info("✅ Python environment configured")
+            self.fixes_applied.append("Specific import errors fixed")
             return True
             
         except Exception as e:
-            self.logger.error(f"Environment fixing failed: {e}")
+            self.logger.error(f"Specific import fixing failed: {e}")
             return False
     
     def fix_missing_dependencies(self):
         """Install missing Python packages"""
         try:
             required_packages = [
-                'nest-asyncio',
                 'aiohttp',
                 'asyncio-throttle', 
                 'beautifulsoup4',
@@ -218,11 +187,11 @@ class DynamicComprehensiveErrorFixer:
                 except ImportError:
                     self.logger.info(f"📦 Installing {package}...")
                     subprocess.run([
-                        sys.executable, '-m', 'pip', 'install', package, '--quiet'
+                        sys.executable, '-m', 'pip', 'install', package
                     ], capture_output=True, text=True)
             
-            self.fixes_applied.append("Dependencies installed")
-            self.logger.info("✅ Dependencies checked")
+            self.fixes_applied.append("Missing dependencies installed")
+            self.logger.info("✅ All dependencies checked and installed")
             return True
             
         except Exception as e:
@@ -247,31 +216,50 @@ class DynamicComprehensiveErrorFixer:
                 Path(dir_path).mkdir(parents=True, exist_ok=True)
             
             self.fixes_applied.append("Directory structure created")
-            self.logger.info("✅ Directories created")
+            self.logger.info("✅ Directory structure created")
             return True
             
         except Exception as e:
             self.logger.error(f"Directory creation failed: {e}")
             return False
     
+    def fix_file_permissions(self):
+        """Fix file permissions for Python scripts"""
+        try:
+            python_files = list(Path(".").rglob("*.py"))
+            
+            for file_path in python_files:
+                try:
+                    os.chmod(file_path, 0o755)
+                except:
+                    pass
+            
+            self.fixes_applied.append("File permissions fixed")
+            self.logger.info("✅ File permissions fixed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Permission fixing failed: {e}")
+            return False
+    
     def configure_clean_console(self):
         """Configure clean console output"""
         try:
+            # Reduce logging verbosity for noisy modules
             noisy_loggers = [
                 'urllib3',
                 'requests', 
                 'aiohttp',
                 'telegram',
                 'httpx',
-                'websockets',
-                'asyncio'
+                'websockets'
             ]
             
             for logger_name in noisy_loggers:
                 logging.getLogger(logger_name).setLevel(logging.WARNING)
             
             self.fixes_applied.append("Console output cleaned")
-            self.logger.info("✅ Console configured")
+            self.logger.info("✅ Console output configured for clean display")
             return True
             
         except Exception as e:
@@ -284,13 +272,12 @@ class DynamicComprehensiveErrorFixer:
         self.logger.info("=" * 60)
         
         fixes = [
-            ("Fixing Nix paths", self.fix_nix_paths),
-            ("Fixing Python environment", self.fix_python_environment),
-            ("Fixing asyncio", self.fix_asyncio_imports),
             ("Suppressing warnings", self.suppress_all_warnings),
             ("Fixing import paths", self.fix_import_paths),
+            ("Fixing specific imports", self.fix_specific_import_errors),
             ("Installing dependencies", self.fix_missing_dependencies),
             ("Creating directories", self.fix_directory_structure),
+            ("Fixing permissions", self.fix_file_permissions),
             ("Configuring console", self.configure_clean_console)
         ]
         
@@ -306,10 +293,13 @@ class DynamicComprehensiveErrorFixer:
             except Exception as e:
                 self.logger.error(f"❌ {description} failed: {e}")
         
+        # Generate summary
         self.logger.info("=" * 60)
         self.logger.info(f"✅ Comprehensive error fixing completed!")
         self.logger.info(f"📊 Success rate: {successful_fixes}/{len(fixes)} fixes applied")
+        self.logger.info(f"🔧 Fixes applied: {', '.join(self.fixes_applied)}")
         
+        # Save status
         status = {
             "timestamp": datetime.now().isoformat(),
             "fixes_applied": self.fixes_applied,
@@ -326,7 +316,7 @@ def main():
     """Main function to run comprehensive error fixing"""
     print("🔧 DYNAMIC COMPREHENSIVE ERROR FIXER")
     print("=" * 60)
-    print("Fixing all errors including Nix paths, asyncio, and imports")
+    print("Fixing all errors including console warnings and import issues")
     print("=" * 60)
     
     fixer = DynamicComprehensiveErrorFixer()

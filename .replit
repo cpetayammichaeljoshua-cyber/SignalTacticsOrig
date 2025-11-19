@@ -277,7 +277,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_comprehensive_fxsusdt_bot.py"
+args = "python dynamic_comprehensive_error_fixer_enhanced.py && python start_comprehensive_all_futures_bot.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

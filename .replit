@@ -5,10 +5,10 @@ integrations = ["python_openai:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["cairo", "docker_28", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds"]
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "ta-lib", "tcl", "tk", "u-root-cmds", "docker_28"]
 
 [workflows]
-runButton = "Fixed Comprehensive Bot"
+runButton = "Comprehensive All Futures Bot"
 
 [[workflows.workflow]]
 name = "Enhanced Signal Bot"
@@ -294,32 +294,6 @@ args = "python dynamic_comprehensive_error_fixer_enhanced.py"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_comprehensive_all_futures_bot.py"
-
-[[workflows.workflow]]
-name = "Ultimate Error Fix + Bot"
-author = 49879202
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python fix_all_console_errors.py"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python ultimate_comprehensive_error_fixer.py"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_comprehensive_all_futures_bot.py"
-
-[[workflows.workflow]]
-name = "Fixed Comprehensive Bot"
-author = 49879202
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_bot_with_all_fixes.py"
 
 [[ports]]
 localPort = 3000

@@ -171,6 +171,10 @@ args = "Comprehensive FXSUSDT Bot"
 task = "workflow.run"
 args = "Unified Multi-Market Bot"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "High-Frequency Scalping Bot"
+
 [[workflows.workflow]]
 name = "Trading Bot Console"
 author = "agent"
@@ -293,6 +297,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_unified_multi_market_bot.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "High-Frequency Scalping Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_high_frequency_scalping_bot.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

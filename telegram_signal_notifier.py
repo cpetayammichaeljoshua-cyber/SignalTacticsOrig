@@ -36,8 +36,12 @@ class TelegramSignalNotifier:
             bool: Success status
         """
         try:
-            if not self.bot_token or not self.chat_id:
-                self.logger.debug("Telegram not configured, skipping notification")
+            if not self.bot_token:
+                self.logger.error("❌ TELEGRAM_BOT_TOKEN not configured in environment")
+                return False
+                
+            if not self.chat_id:
+                self.logger.error("❌ TELEGRAM_CHAT_ID not configured in environment")
                 return False
             
             # Format signal message
@@ -47,14 +51,16 @@ class TelegramSignalNotifier:
             success = await self._send_telegram_message(message)
             
             if success:
-                self.logger.info(f"📱 Telegram signal sent for {self._get_symbol(signal)}")
+                self.logger.info(f"✅ Telegram signal sent for {self._get_symbol(signal)}")
             else:
-                self.logger.warning(f"⚠️ Failed to send Telegram signal for {self._get_symbol(signal)}")
+                self.logger.error(f"❌ Failed to send Telegram signal for {self._get_symbol(signal)}")
             
             return success
             
         except Exception as e:
             self.logger.error(f"❌ Error sending Telegram signal: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False
     
     async def send_position_update(self, symbol: str, update_type: str, details: Dict[str, Any]) -> bool:
@@ -224,17 +230,26 @@ class TelegramSignalNotifier:
                 'disable_web_page_preview': True
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=10) as response:
+            self.logger.info(f"📤 Sending to Telegram chat: {self.chat_id}")
+            
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload) as response:
                     if response.status == 200:
+                        self.logger.info("✅ Telegram message sent successfully")
                         return True
                     else:
                         error_text = await response.text()
-                        self.logger.error(f"Telegram API error: {response.status} - {error_text}")
+                        self.logger.error(f"❌ Telegram API error {response.status}: {error_text}")
                         return False
             
+        except aiohttp.ClientError as e:
+            self.logger.error(f"❌ Network error sending to Telegram: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Error sending Telegram message: {e}")
+            self.logger.error(f"❌ Unexpected error sending Telegram message: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False
     
     def _get_symbol(self, signal: Any) -> str:

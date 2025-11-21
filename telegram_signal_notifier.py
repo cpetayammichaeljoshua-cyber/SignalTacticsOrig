@@ -7,6 +7,7 @@ Sends comprehensive trading signals to Telegram with rich formatting
 import os
 import logging
 import asyncio
+import json
 from datetime import datetime
 from typing import Dict, Any, Optional
 import aiohttp
@@ -20,10 +21,44 @@ class TelegramSignalNotifier:
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
         self.chat_id = os.getenv('TELEGRAM_CHAT_ID', '')
         
-        if not self.bot_token or not self.chat_id:
-            self.logger.warning("⚠️ Telegram credentials not configured")
+        if not self.bot_token:
+            self.logger.warning("⚠️ TELEGRAM_BOT_TOKEN not configured")
+            self.logger.warning("💡 Set it in Replit Secrets to enable Telegram notifications")
+        elif not self.chat_id:
+            self.logger.warning("⚠️ TELEGRAM_CHAT_ID not configured")
+            self.logger.warning("💡 Set it in Replit Secrets (your chat ID or @channelname)")
         else:
             self.logger.info("✅ Telegram notifier initialized")
+            self.logger.info(f"📱 Bot token configured: {self.bot_token[:10]}...")
+            self.logger.info(f"💬 Chat ID: {self.chat_id}")
+    
+    async def test_connection(self) -> bool:
+        """Test Telegram bot connection"""
+        try:
+            if not self.bot_token:
+                self.logger.error("❌ Cannot test - bot token not configured")
+                return False
+                
+            url = f"https://api.telegram.org/bot{self.bot_token}/getMe"
+            
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get('ok'):
+                            bot_info = data.get('result', {})
+                            bot_name = bot_info.get('username', 'Unknown')
+                            self.logger.info(f"✅ Telegram bot connected: @{bot_name}")
+                            return True
+                    else:
+                        error_text = await response.text()
+                        self.logger.error(f"❌ Bot token test failed: {error_text}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"❌ Connection test error: {e}")
+            return False
     
     async def send_signal(self, signal: Any) -> bool:
         """
@@ -38,24 +73,46 @@ class TelegramSignalNotifier:
         try:
             if not self.bot_token:
                 self.logger.error("❌ TELEGRAM_BOT_TOKEN not configured in environment")
+                self.logger.error("💡 Please set TELEGRAM_BOT_TOKEN in Replit Secrets")
                 return False
                 
             if not self.chat_id:
                 self.logger.error("❌ TELEGRAM_CHAT_ID not configured in environment")
+                self.logger.error("💡 Please set TELEGRAM_CHAT_ID in Replit Secrets (use your chat ID or @channelname)")
                 return False
             
             # Format signal message
             message = self._format_signal_message(signal)
             
-            # Send to Telegram
-            success = await self._send_telegram_message(message)
+            # Log the message being sent
+            self.logger.info(f"📤 Sending signal to Telegram chat: {self.chat_id}")
+            self.logger.debug(f"Message preview: {message[:100]}...")
             
-            if success:
-                self.logger.info(f"✅ Telegram signal sent for {self._get_symbol(signal)}")
-            else:
-                self.logger.error(f"❌ Failed to send Telegram signal for {self._get_symbol(signal)}")
+            # Send to Telegram with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    success = await self._send_telegram_message(message)
+                    
+                    if success:
+                        self.logger.info(f"✅ Telegram signal sent successfully for {self._get_symbol(signal)} (attempt {attempt + 1})")
+                        return True
+                    else:
+                        if attempt < max_retries - 1:
+                            self.logger.warning(f"⚠️ Send failed, retrying... ({attempt + 1}/{max_retries})")
+                            await asyncio.sleep(1)
+                        else:
+                            self.logger.error(f"❌ Failed to send Telegram signal after {max_retries} attempts")
+                            return False
+                            
+                except Exception as retry_error:
+                    if attempt < max_retries - 1:
+                        self.logger.warning(f"⚠️ Retry error: {retry_error}, attempting again...")
+                        await asyncio.sleep(1)
+                    else:
+                        raise
             
-            return success
+            return False
             
         except Exception as e:
             self.logger.error(f"❌ Error sending Telegram signal: {e}")
@@ -223,6 +280,10 @@ class TelegramSignalNotifier:
         try:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             
+            # Truncate message if too long (Telegram limit is 4096 characters)
+            if len(message) > 4000:
+                message = message[:3900] + "\n\n... (message truncated)"
+            
             payload = {
                 'chat_id': self.chat_id,
                 'text': message,
@@ -231,20 +292,48 @@ class TelegramSignalNotifier:
             }
             
             self.logger.info(f"📤 Sending to Telegram chat: {self.chat_id}")
+            self.logger.debug(f"URL: {url}")
+            self.logger.debug(f"Message length: {len(message)} characters")
             
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=payload) as response:
+                    response_text = await response.text()
+                    
                     if response.status == 200:
                         self.logger.info("✅ Telegram message sent successfully")
+                        self.logger.debug(f"Response: {response_text}")
                         return True
                     else:
-                        error_text = await response.text()
-                        self.logger.error(f"❌ Telegram API error {response.status}: {error_text}")
+                        self.logger.error(f"❌ Telegram API error {response.status}")
+                        self.logger.error(f"Response: {response_text}")
+                        
+                        # Parse error for better debugging
+                        try:
+                            error_json = json.loads(response_text)
+                            error_description = error_json.get('description', 'Unknown error')
+                            self.logger.error(f"Error description: {error_description}")
+                            
+                            # Specific error handling
+                            if 'chat not found' in error_description.lower():
+                                self.logger.error("💡 Chat ID is incorrect. Make sure to use your personal chat ID or @channelname")
+                            elif 'bot was blocked' in error_description.lower():
+                                self.logger.error("💡 Bot was blocked by the user. Unblock the bot in Telegram")
+                            elif 'unauthorized' in error_description.lower():
+                                self.logger.error("💡 Bot token is invalid. Check TELEGRAM_BOT_TOKEN in Replit Secrets")
+                                
+                        except:
+                            pass
+                        
                         return False
             
         except aiohttp.ClientError as e:
             self.logger.error(f"❌ Network error sending to Telegram: {e}")
+            self.logger.error("💡 Check your internet connection or try again later")
+            return False
+        except asyncio.TimeoutError:
+            self.logger.error(f"❌ Timeout sending to Telegram (30s)")
+            self.logger.error("💡 Telegram API may be slow or unavailable")
             return False
         except Exception as e:
             self.logger.error(f"❌ Unexpected error sending Telegram message: {e}")

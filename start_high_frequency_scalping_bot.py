@@ -194,7 +194,16 @@ async def main():
     # Step 5: Initialize Telegram notifier
     logger.info("📱 Step 5: Initializing Telegram signal notifier...")
     telegram_notifier = TelegramSignalNotifier()
-    logger.info("✅ Telegram notifier ready")
+    
+    # Test Telegram connection
+    logger.info("🧪 Testing Telegram bot connection...")
+    telegram_ok = await telegram_notifier.test_connection()
+    
+    if telegram_ok:
+        logger.info("✅ Telegram notifier ready and tested")
+    else:
+        logger.warning("⚠️ Telegram connection test failed - signals will not be sent")
+        logger.warning("💡 Please configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Replit Secrets")
     
     # Step 6: Initialize automatic position closer
     logger.info("🔄 Step 6: Initializing automatic position closer...")

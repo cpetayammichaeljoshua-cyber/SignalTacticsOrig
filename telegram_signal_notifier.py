@@ -51,6 +51,9 @@ class TelegramSignalNotifier:
                             bot_name = bot_info.get('username', 'Unknown')
                             self.logger.info(f"✅ Telegram bot connected: @{bot_name}")
                             return True
+                        else:
+                            self.logger.error(f"❌ Bot response not OK")
+                            return False
                     else:
                         error_text = await response.text()
                         self.logger.error(f"❌ Bot token test failed: {error_text}")
@@ -179,30 +182,34 @@ class TelegramSignalNotifier:
         sl_pct = self._calc_pct(entry_price, stop_loss, direction)
         tp_pct = self._calc_pct(entry_price, tp1, direction)
         
-        # Format timestamp
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+        # Format timestamp - exact format from image
+        timestamp = datetime.now().strftime('%Y-%m-%d\n%H:%M:%S UTC')
         
         # Direction-specific formatting
         action = "BUY" if direction == "LONG" else "SELL"
         
-        # Build professional message matching the image format
+        # Convert symbol format: ETH/USDT:USDT -> ETHUSDT.P or similar
+        # Remove slashes and colons, add .P suffix for perpetual
+        cornix_symbol = symbol.replace('/', '').replace(':USDT', '.P')
+        
+        # Build professional message matching the image format EXACTLY
         lines = [
-            f"🎯 **STRATEGY:** Ichimoku Sniper",
+            f"🎯 *STRATEGY:* Ichimoku Sniper",
             f"Multi-TF Enhanced",
-            f"• **Conversion/Base:** 4/4 periods",
-            f"• **LaggingSpan2/Displacement:** 46/20 periods",
-            f"• **EMA Filter:** 200 periods",
-            f"• **SL/TP Percent:** {sl_pct:.2f}%/{tp_pct:.2f}%",
+            f"• *Conversion/Base:* 4/4 periods",
+            f"• *LaggingSpan2/Displacement:* 46/20 periods",
+            f"• *EMA Filter:* 200 periods",
+            f"• *SL/TP Percent:* {sl_pct:.2f}%/{tp_pct:.2f}%",
             f"",
-            f"📊 **SIGNAL ANALYSIS:**",
-            f"• **Strength:** {signal_strength:.1f}%",
-            f"• **Confidence:** {consensus_confidence:.1f}%",
-            f"• **Risk/Reward:** 1:{risk_reward:.2f}",
-            f"• **ATR Value:** {atr_value:.6f}",
-            f"• **Scan Mode:** Multi-Timeframe Enhanced",
+            f"📊 *SIGNAL ANALYSIS:*",
+            f"• *Strength:* {signal_strength:.1f}%",
+            f"• *Confidence:* {consensus_confidence:.1f}%",
+            f"• *Risk/Reward:* 1:{risk_reward:.2f}",
+            f"• *ATR Value:* {atr_value:.6f}",
+            f"• *Scan Mode:* Multi-Timeframe Enhanced",
             f"",
-            f"🎯 **CORNIX COMPATIBLE FORMAT:**",
-            f"{symbol} {action}",
+            f"🎯 *CORNIX COMPATIBLE FORMAT:*",
+            f"*{cornix_symbol} {action}*",
             f"Entry: {entry_price:.5f}",
             f"SL: {stop_loss:.5f}",
             f"TP: {tp1:.5f}",
@@ -218,11 +225,11 @@ class TelegramSignalNotifier:
             f"Leverage: {leverage}x",
             f"Margin: CROSS",
             f"",
-            f"🕐 **Signal Time:** {timestamp}",
-            f"🤖 **Bot:** Pine Script Ichimoku Sniper v6",
+            f"🕐 *Signal Time:* {timestamp}",
+            f"🤖 *Bot:* Pine Script Ichimoku Sniper v6",
             f"",
-            f"**Cross Margin & Auto Leverage**",
-            f"**- Comprehensive Risk Management**"
+            f"*Cross Margin & Auto Leverage*",
+            f"*- Comprehensive Risk Management*"
         ])
         
         return "\n".join(lines)

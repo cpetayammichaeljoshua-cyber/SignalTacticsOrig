@@ -61,7 +61,7 @@ class HighFrequencyScalpingOrchestrator:
     Combines signals from all strategies with intelligent weighting
     """
     
-    def __init__(self):
+    def __init__(self, telegram_notifier=None, position_closer=None, atas_integration=None):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         
@@ -100,6 +100,11 @@ class HighFrequencyScalpingOrchestrator:
         self.last_signal_time = {}
         self.signals_generated = 0
         self.signals_executed = 0
+        
+        # Integrations
+        self.telegram_notifier = telegram_notifier
+        self.position_closer = position_closer
+        self.atas_integration = atas_integration
         
     async def initialize_strategies(self):
         """Load and initialize all scalping strategies"""
@@ -506,6 +511,23 @@ class HighFrequencyScalpingOrchestrator:
                     self.logger.info(f"   R/R Ratio: 1:{signal.risk_reward_ratio:.2f}")
                     self.logger.info(f"   Consensus: {signal.consensus_confidence:.1f}% ({signal.strategies_agree}/{signal.total_strategies})")
                     self.logger.info(f"   Strength: {signal.signal_strength:.1f}%")
+                    
+                    # Send to Telegram
+                    if self.telegram_notifier:
+                        asyncio.create_task(self.telegram_notifier.send_signal(signal))
+                    
+                    # Export to ATAS platform
+                    if self.atas_integration:
+                        asyncio.create_task(self.atas_integration.export_signal(signal))
+                    
+                    # Add to position closer for monitoring (if in live mode)
+                    if self.position_closer:
+                        order_info = {
+                            'entry_price': signal.entry_price,
+                            'position_size': signal.position_size_usdt,
+                            'quantity': signal.position_size_usdt / signal.entry_price
+                        }
+                        asyncio.create_task(self.position_closer.add_position(signal, order_info))
                 
                 return signal
             

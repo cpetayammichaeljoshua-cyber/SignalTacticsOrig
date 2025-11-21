@@ -36,6 +36,9 @@ from high_frequency_scalping_orchestrator import HighFrequencyScalpingOrchestrat
 from dynamic_multi_market_position_manager import DynamicMultiMarketPositionManager
 from dynamic_comprehensive_error_fixer import DynamicComprehensiveErrorFixer
 from bot_health_check import check_bot_health
+from telegram_signal_notifier import TelegramSignalNotifier
+from automatic_position_closer import AutomaticPositionCloser
+from atas_platform_integration import ATASPlatformIntegration
 
 # Configure logging
 logging.basicConfig(
@@ -188,14 +191,36 @@ async def main():
         top_n=20  # Monitor top 20 for high-frequency
     )
     
-    # Step 5: Initialize position manager
-    logger.info("💎 Step 5: Initializing dynamic position manager...")
+    # Step 5: Initialize Telegram notifier
+    logger.info("📱 Step 5: Initializing Telegram signal notifier...")
+    telegram_notifier = TelegramSignalNotifier()
+    logger.info("✅ Telegram notifier ready")
+    
+    # Step 6: Initialize automatic position closer
+    logger.info("🔄 Step 6: Initializing automatic position closer...")
+    position_closer = AutomaticPositionCloser(
+        exchange=exchange,
+        telegram_notifier=telegram_notifier
+    )
+    logger.info("✅ Position closer ready")
+    
+    # Step 7: Initialize ATAS platform integration
+    logger.info("🔌 Step 7: Initializing ATAS platform integration...")
+    atas_integration = ATASPlatformIntegration(host='0.0.0.0', port=8888)
+    logger.info("✅ ATAS integration ready on http://0.0.0.0:8888")
+    
+    # Step 8: Initialize position manager
+    logger.info("💎 Step 8: Initializing dynamic position manager...")
     position_manager = DynamicMultiMarketPositionManager(exchange=exchange)
     logger.info("✅ Position manager ready")
     
-    # Step 6: Initialize high-frequency orchestrator
-    logger.info("⚡ Step 6: Initializing high-frequency scalping orchestrator...")
-    orchestrator = HighFrequencyScalpingOrchestrator()
+    # Step 9: Initialize high-frequency orchestrator with all integrations
+    logger.info("⚡ Step 9: Initializing high-frequency scalping orchestrator...")
+    orchestrator = HighFrequencyScalpingOrchestrator(
+        telegram_notifier=telegram_notifier,
+        position_closer=position_closer,
+        atas_integration=atas_integration
+    )
     
     # Load all strategies
     success = await orchestrator.initialize_strategies()
@@ -221,21 +246,47 @@ async def main():
     logger.info(f"   Stop Loss: {orchestrator.tight_stop_loss_pct}%")
     logger.info(f"   Profit Targets: {orchestrator.quick_profit_targets}")
     logger.info("="*80)
+    logger.info("🔗 INTEGRATIONS ACTIVE:")
+    logger.info("   ✓ Telegram Signal Notifications")
+    logger.info("   ✓ Automatic Position Closing")
+    logger.info("   ✓ ATAS Platform API (http://0.0.0.0:8888)")
+    logger.info("="*80)
     
-    # Step 7: Start high-frequency scanning
-    logger.info("🚀 Step 7: Starting HIGH-FREQUENCY market scanner...")
+    # Step 10: Start background tasks
+    logger.info("🚀 Step 10: Starting background tasks...")
+    
+    # Start position monitoring
+    position_monitor_task = asyncio.create_task(position_closer.monitor_positions())
+    logger.info("✅ Position monitoring started")
+    
+    # Start ATAS API server
+    atas_server_task = asyncio.create_task(atas_integration.start_server())
+    logger.info("✅ ATAS API server started")
+    
+    # Step 11: Start high-frequency scanning
+    logger.info("🚀 Step 11: Starting HIGH-FREQUENCY market scanner...")
     logger.info(f"⏱️  Scanning {len(markets)} markets every {orchestrator.scan_interval} seconds")
     logger.info(f"📊 Using timeframes: {', '.join(orchestrator.fast_timeframes)}")
     logger.info("")
     
     try:
-        await orchestrator.scan_markets_high_frequency(
-            exchange=exchange,
-            symbols=markets,
-            position_manager=position_manager
+        # Run scanner in parallel with background tasks
+        scanner_task = asyncio.create_task(
+            orchestrator.scan_markets_high_frequency(
+                exchange=exchange,
+                symbols=markets,
+                position_manager=position_manager
+            )
         )
+        
+        # Wait for scanner (other tasks run in background)
+        await scanner_task
+        
     except KeyboardInterrupt:
         logger.info("\n⏹️  Shutting down gracefully...")
+        # Cancel background tasks
+        position_monitor_task.cancel()
+        atas_server_task.cancel()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
         raise

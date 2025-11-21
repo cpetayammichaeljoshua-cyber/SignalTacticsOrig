@@ -154,7 +154,7 @@ class TelegramSignalNotifier:
             return False
     
     def _format_signal_message(self, signal: Any) -> str:
-        """Format signal as rich Telegram message"""
+        """Format signal as rich Telegram message matching professional format"""
         
         # Extract signal data (supports both object and dict)
         symbol = self._get_symbol(signal)
@@ -164,7 +164,7 @@ class TelegramSignalNotifier:
         tp1 = self._get_attr(signal, 'take_profit_1', 0)
         tp2 = self._get_attr(signal, 'take_profit_2', 0)
         tp3 = self._get_attr(signal, 'take_profit_3', 0)
-        leverage = self._get_attr(signal, 'leverage', 0)
+        leverage = self._get_attr(signal, 'leverage', 20)
         signal_strength = self._get_attr(signal, 'signal_strength', 0)
         consensus_confidence = self._get_attr(signal, 'consensus_confidence', 0)
         strategies_agree = self._get_attr(signal, 'strategies_agree', 0)
@@ -172,44 +172,58 @@ class TelegramSignalNotifier:
         risk_reward = self._get_attr(signal, 'risk_reward_ratio', 0)
         timeframe = self._get_attr(signal, 'timeframe', '1m')
         
-        # Emoji for direction
-        direction_emoji = "🟢" if direction == "LONG" else "🔴"
+        # Calculate ATR value (approximate from stop loss distance)
+        atr_value = abs(entry_price - stop_loss) if entry_price and stop_loss else 0
         
-        # Build message
+        # Calculate SL/TP percentages
+        sl_pct = self._calc_pct(entry_price, stop_loss, direction)
+        tp_pct = self._calc_pct(entry_price, tp1, direction)
+        
+        # Format timestamp
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+        
+        # Direction-specific formatting
+        action = "BUY" if direction == "LONG" else "SELL"
+        
+        # Build professional message matching the image format
         lines = [
-            f"{'='*40}",
-            f"{direction_emoji} **HIGH-FREQUENCY SCALPING SIGNAL** {direction_emoji}",
-            f"{'='*40}",
+            f"🎯 **STRATEGY:** Ichimoku Sniper",
+            f"Multi-TF Enhanced",
+            f"• **Conversion/Base:** 4/4 periods",
+            f"• **LaggingSpan2/Displacement:** 46/20 periods",
+            f"• **EMA Filter:** 200 periods",
+            f"• **SL/TP Percent:** {sl_pct:.2f}%/{tp_pct:.2f}%",
             f"",
-            f"📊 **Market:** `{symbol}`",
-            f"📈 **Direction:** **{direction}**",
-            f"⏱️ **Timeframe:** {timeframe}",
+            f"📊 **SIGNAL ANALYSIS:**",
+            f"• **Strength:** {signal_strength:.1f}%",
+            f"• **Confidence:** {consensus_confidence:.1f}%",
+            f"• **Risk/Reward:** 1:{risk_reward:.2f}",
+            f"• **ATR Value:** {atr_value:.6f}",
+            f"• **Scan Mode:** Multi-Timeframe Enhanced",
             f"",
-            f"💰 **ENTRY ZONE**",
-            f"└─ Entry: `${entry_price:.4f}`",
-            f"",
-            f"🎯 **TAKE PROFIT TARGETS**",
-            f"└─ TP1: `${tp1:.4f}` ({self._calc_pct(entry_price, tp1, direction):.2f}%)",
-            f"└─ TP2: `${tp2:.4f}` ({self._calc_pct(entry_price, tp2, direction):.2f}%)",
-            f"└─ TP3: `${tp3:.4f}` ({self._calc_pct(entry_price, tp3, direction):.2f}%)",
-            f"",
-            f"🛑 **STOP LOSS**",
-            f"└─ SL: `${stop_loss:.4f}` ({self._calc_pct(entry_price, stop_loss, direction):.2f}%)",
-            f"",
-            f"⚡ **POSITION PARAMETERS**",
-            f"└─ Leverage: **{leverage}x**",
-            f"└─ Risk/Reward: **1:{risk_reward:.2f}**",
-            f"",
-            f"📊 **SIGNAL QUALITY**",
-            f"└─ Strength: **{signal_strength:.1f}%**",
-            f"└─ Consensus: **{consensus_confidence:.1f}%** ({strategies_agree}/{total_strategies} strategies)",
-            f"",
-            f"⏰ **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}",
-            f"",
-            f"{'='*40}",
-            f"🤖 **High-Frequency Scalping System**",
-            f"{'='*40}"
+            f"🎯 **CORNIX COMPATIBLE FORMAT:**",
+            f"{symbol} {action}",
+            f"Entry: {entry_price:.5f}",
+            f"SL: {stop_loss:.5f}",
+            f"TP: {tp1:.5f}",
         ]
+        
+        # Add additional TPs if available
+        if tp2 > 0:
+            lines.append(f"TP: {tp2:.5f}")
+        if tp3 > 0:
+            lines.append(f"TP: {tp3:.5f}")
+        
+        lines.extend([
+            f"Leverage: {leverage}x",
+            f"Margin: CROSS",
+            f"",
+            f"🕐 **Signal Time:** {timestamp}",
+            f"🤖 **Bot:** Pine Script Ichimoku Sniper v6",
+            f"",
+            f"**Cross Margin & Auto Leverage**",
+            f"**- Comprehensive Risk Management**"
+        ])
         
         return "\n".join(lines)
     
@@ -365,6 +379,33 @@ class TelegramSignalNotifier:
             pct = -pct
         
         return abs(pct)
+    
+    def _format_cornix_signal(self, signal: Any) -> str:
+        """Format signal in Cornix-compatible format"""
+        symbol = self._get_symbol(signal)
+        direction = self._get_attr(signal, 'direction', 'UNKNOWN')
+        entry_price = self._get_attr(signal, 'entry_price', 0)
+        stop_loss = self._get_attr(signal, 'stop_loss', 0)
+        tp1 = self._get_attr(signal, 'take_profit_1', 0)
+        tp2 = self._get_attr(signal, 'take_profit_2', 0)
+        tp3 = self._get_attr(signal, 'take_profit_3', 0)
+        leverage = self._get_attr(signal, 'leverage', 20)
+        
+        action = "BUY" if direction == "LONG" else "SELL"
+        
+        # Cornix format
+        cornix_lines = [
+            f"{symbol} {action}",
+            f"Entry: {entry_price:.5f}",
+            f"SL: {stop_loss:.5f}",
+            f"TP1: {tp1:.5f}",
+            f"TP2: {tp2:.5f}",
+            f"TP3: {tp3:.5f}",
+            f"Leverage: {leverage}x",
+            f"Margin: CROSS"
+        ]
+        
+        return "\n".join(cornix_lines)
 
 
 async def test_telegram_notifier():

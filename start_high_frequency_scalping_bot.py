@@ -36,6 +36,7 @@ from high_frequency_scalping_orchestrator import HighFrequencyScalpingOrchestrat
 from dynamic_multi_market_position_manager import DynamicMultiMarketPositionManager
 from dynamic_comprehensive_error_fixer import DynamicComprehensiveErrorFixer
 from bot_health_check import check_bot_health
+from high_frequency_telegram_pusher import HighFrequencyTelegramPusher
 
 # Configure logging
 logging.basicConfig(
@@ -193,9 +194,26 @@ async def main():
     position_manager = DynamicMultiMarketPositionManager(exchange=exchange)
     logger.info("✅ Position manager ready")
     
-    # Step 6: Initialize high-frequency orchestrator
-    logger.info("⚡ Step 6: Initializing high-frequency scalping orchestrator...")
-    orchestrator = HighFrequencyScalpingOrchestrator()
+    # Step 6: Initialize Telegram pusher first
+    logger.info("📡 Step 6: Initializing Telegram signal pusher...")
+    telegram_pusher = HighFrequencyTelegramPusher()
+    
+    # Step 6.5: Initialize high-frequency orchestrator with Telegram callback
+    logger.info("⚡ Step 6.5: Initializing high-frequency scalping orchestrator...")
+    orchestrator = HighFrequencyScalpingOrchestrator(
+        signal_callback=telegram_pusher.push_signal_to_telegram
+    )
+    
+    # Send startup notification
+    await telegram_pusher.send_status_update(
+        f"🚀 HIGH-FREQUENCY SCALPING BOT STARTED\n\n"
+        f"⚡ **Active Strategies:** 6+ Multi-Strategy Engine\n"
+        f"📊 **Markets:** {len(markets)} high-volume pairs\n"
+        f"⏱️ **Scan Interval:** {orchestrator.scan_interval}s\n"
+        f"🎯 **Min Consensus:** {orchestrator.min_consensus_confidence}%\n"
+        f"📈 **Telegram:** Auto-push enabled\n"
+        f"🔥 **Ready for ultra-fast trading!**"
+    )
     
     # Load all strategies
     success = await orchestrator.initialize_strategies()

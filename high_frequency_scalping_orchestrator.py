@@ -80,10 +80,10 @@ class HighFrequencyScalpingOrchestrator:
             'market_intelligence': 0.10     # Market context
         }
 
-        # Consensus requirements
-        self.min_strategies_agree = 2  # At least 2 strategies must agree
-        self.min_consensus_confidence = 60.0  # 60% agreement minimum
-        self.min_signal_strength = 70.0  # Minimum weighted strength
+        # Consensus requirements (ULTRA-RELAXED FOR MORE SIGNALS)
+        self.min_strategies_agree = 1  # Even 1 strong strategy can generate signal
+        self.min_consensus_confidence = 10.0  # 10% agreement minimum (allows 1 out of 6 strategies)
+        self.min_signal_strength = 50.0  # Minimum weighted strength (lowered for more opportunities)
 
         # Risk management for high-frequency
         self.max_risk_per_trade = 1.0  # 1% per trade

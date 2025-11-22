@@ -113,7 +113,6 @@ class MarketIntelligenceEngine:
             self.logger.info(f"✅ Intelligence snapshot produced in {processing_time:.0f}ms")
             self.logger.info(f"   Consensus: {intel_snapshot.consensus_bias.value} ({intel_snapshot.consensus_confidence:.1f}%)")
             self.logger.info(f"   Overall Score: {intel_snapshot.overall_score:.1f}/100")
-            self.logger.info(f"   Should Trade: {intel_snapshot.should_trade()}")
             
             return intel_snapshot
             

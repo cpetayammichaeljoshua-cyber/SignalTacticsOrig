@@ -145,11 +145,11 @@ class MarketIntelSnapshot:
     analyzers_failed: int = 0
     
     def should_trade(self) -> bool:
-        """Determine if conditions are favorable for trading"""
+        """Determine if conditions are favorable for trading (RELAXED FOR MORE SIGNALS)"""
         return (
             self.total_veto_count == 0 and
-            self.consensus_confidence >= 65 and
-            self.overall_score >= 60
+            self.consensus_confidence >= 30 and
+            self.overall_score >= 50
         )
     
     def get_signal_strength(self) -> SignalStrength:

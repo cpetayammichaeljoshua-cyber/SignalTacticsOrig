@@ -140,7 +140,7 @@ class HighFrequencyScalpingOrchestrator:
             return False
 
     async def fetch_fast_ohlcv(self, exchange, symbol: str) -> Dict[str, List]:
-        """Fetch OHLCV data for fast timeframes"""
+        """Fetch OHLCV data for fast timeframes with error handling"""
         ohlcv_data = {}
 
         try:
@@ -153,14 +153,27 @@ class HighFrequencyScalpingOrchestrator:
                         timeframe=timeframe,
                         limit=100
                     )
-                    ohlcv_data[timeframe] = candles
+                    
+                    # Validate candle data
+                    if candles and len(candles) > 0:
+                        ohlcv_data[timeframe] = candles
+                    else:
+                        self.logger.debug(f"No data received for {timeframe} {symbol}")
+                        
                 except Exception as e:
-                    self.logger.debug(f"Failed to fetch {timeframe} data for {symbol}: {e}")
+                    self.logger.debug(f"Failed to fetch {timeframe} data for {symbol}: {str(e)[:100]}")
+                    # Continue with other timeframes if one fails
+                    continue
 
-            return ohlcv_data
+            # Return data if we got at least one timeframe
+            if ohlcv_data:
+                return ohlcv_data
+            else:
+                self.logger.warning(f"⚠️ No OHLCV data available for {symbol}")
+                return {}
 
         except Exception as e:
-            self.logger.error(f"Error fetching OHLCV for {symbol}: {e}")
+            self.logger.error(f"❌ Error fetching OHLCV for {symbol}: {str(e)[:100]}")
             return {}
 
     async def analyze_symbol_parallel(self, symbol: str, ohlcv_data: Dict[str, List]) -> Optional[HighFrequencySignal]:
@@ -399,6 +412,71 @@ class HighFrequencyScalpingOrchestrator:
 
         return fused_signal
 
+    def _normalize_symbol(self, symbol: str) -> str:
+        """Normalize symbol format for consistency across all strategies"""
+        try:
+            # Handle various formats: ETH/USDT:USDT, ETHUSDT, ETH/USDT -> ETH/USDT:USDT
+            if ':' in symbol:
+                return symbol  # Already normalized
+            elif '/' in symbol:
+                # ETH/USDT -> ETH/USDT:USDT
+                if not symbol.endswith(':USDT'):
+                    return symbol + ':USDT'
+            else:
+                # ETHUSDT -> ETH/USDT:USDT
+                if symbol.endswith('USDT'):
+                    base = symbol[:-4]
+                    return f"{base}/USDT:USDT"
+            return symbol
+        except Exception as e:
+            self.logger.error(f"Symbol normalization error: {e}")
+            return symbol
+
+    def _validate_signal(self, signal: HighFrequencySignal) -> bool:
+        """Validate signal data before sending to Telegram/Cornix"""
+        try:
+            # Check required fields
+            if not signal.symbol or not signal.direction:
+                self.logger.error("❌ Signal missing symbol or direction")
+                return False
+            
+            # Check prices
+            if signal.entry_price <= 0 or signal.stop_loss <= 0:
+                self.logger.error("❌ Signal has invalid prices")
+                return False
+            
+            # Check at least one TP
+            if signal.take_profit_1 <= 0 and signal.take_profit_2 <= 0 and signal.take_profit_3 <= 0:
+                self.logger.error("❌ Signal has no valid take profit levels")
+                return False
+            
+            # Validate SL/TP logic
+            if signal.direction == 'LONG':
+                if signal.stop_loss >= signal.entry_price:
+                    self.logger.error(f"❌ LONG: SL ({signal.stop_loss}) must be below entry ({signal.entry_price})")
+                    return False
+                if signal.take_profit_1 <= signal.entry_price:
+                    self.logger.error(f"❌ LONG: TP must be above entry")
+                    return False
+            else:  # SHORT
+                if signal.stop_loss <= signal.entry_price:
+                    self.logger.error(f"❌ SHORT: SL ({signal.stop_loss}) must be above entry ({signal.entry_price})")
+                    return False
+                if signal.take_profit_1 >= signal.entry_price:
+                    self.logger.error(f"❌ SHORT: TP must be below entry")
+                    return False
+            
+            # Check leverage
+            if signal.leverage < 1 or signal.leverage > 125:
+                self.logger.error(f"❌ Invalid leverage: {signal.leverage}")
+                return False
+            
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"❌ Signal validation error: {e}")
+            return False
+
     def _calculate_dynamic_leverage(self, strength: float, confidence: float) -> int:
         """Calculate leverage based on signal quality"""
         # Base leverage
@@ -463,14 +541,17 @@ class HighFrequencyScalpingOrchestrator:
     async def _scan_single_symbol(self, exchange, symbol: str, position_manager) -> Optional[HighFrequencySignal]:
         """Scan single symbol for trading opportunities"""
         try:
+            # Normalize symbol format for consistency
+            normalized_symbol = self._normalize_symbol(symbol)
+            
             # Fetch fast timeframe data
-            ohlcv_data = await self.fetch_fast_ohlcv(exchange, symbol)
+            ohlcv_data = await self.fetch_fast_ohlcv(exchange, normalized_symbol)
 
             if not ohlcv_data:
                 return None
 
             # Analyze with all strategies in parallel
-            signal = await self.analyze_symbol_parallel(symbol, ohlcv_data)
+            signal = await self.analyze_symbol_parallel(normalized_symbol, ohlcv_data)
 
             if signal:
                 # Calculate position parameters
@@ -512,12 +593,24 @@ class HighFrequencyScalpingOrchestrator:
                     self.logger.info(f"   Consensus: {signal.consensus_confidence:.1f}% ({signal.strategies_agree}/{signal.total_strategies})")
                     self.logger.info(f"   Strength: {signal.signal_strength:.1f}%")
 
-                    # Send signal to Telegram
+                    # Send signal to Telegram with TRADE ✅ confirmation
                     if self.telegram_notifier:
                         self.logger.info(f"📤 Attempting to send {symbol} signal to Telegram...")
-                        telegram_success = await self.telegram_notifier.send_signal(signal)
-                        if not telegram_success:
-                            self.logger.warning(f"⚠️ Telegram notification failed for {symbol}")
+                        try:
+                            # Validate signal data before sending
+                            if not self._validate_signal(signal):
+                                self.logger.error(f"❌ Signal validation failed for {symbol}")
+                                return None
+                            
+                            # Send signal
+                            telegram_success = await self.telegram_notifier.send_signal(signal)
+                            
+                            if telegram_success:
+                                self.logger.info(f"✅ TRADE ✅ - Signal sent successfully to Telegram for {symbol}")
+                            else:
+                                self.logger.warning(f"⚠️ Telegram notification failed for {symbol}")
+                        except Exception as e:
+                            self.logger.error(f"❌ Error sending signal: {e}")
                     else:
                         self.logger.warning("⚠️ Telegram notifier not initialized")
 

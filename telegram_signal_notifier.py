@@ -65,7 +65,7 @@ class TelegramSignalNotifier:
     
     async def send_signal(self, signal: Any) -> bool:
         """
-        Send trading signal to Telegram
+        Send trading signal to Telegram with Cornix compatibility
         
         Args:
             signal: HighFrequencySignal object or dict
@@ -84,12 +84,23 @@ class TelegramSignalNotifier:
                 self.logger.error("💡 Please set TELEGRAM_CHAT_ID in Replit Secrets (use your chat ID or @channelname)")
                 return False
             
-            # Format signal message
+            # Format signal message for strict Cornix compatibility
             message = self._format_signal_message(signal)
             
-            # Log the message being sent
-            self.logger.info(f"📤 Sending signal to Telegram chat: {self.chat_id}")
-            self.logger.debug(f"Message preview: {message[:100]}...")
+            # Validate message format before sending
+            if not message or len(message) < 100:
+                self.logger.error(f"❌ Signal format validation failed - message too short")
+                return False
+            
+            # Check for required Cornix format markers
+            if "CORNIX SIGNAL:" not in message:
+                self.logger.error(f"❌ Missing Cornix format header")
+                return False
+            
+            symbol = self._get_symbol(signal)
+            self.logger.info(f"📤 Sending CORNIX SIGNAL for {symbol}")
+            self.logger.info(f"   Format: {self._get_attr(signal, 'direction', 'UNKNOWN')} signal")
+            self.logger.info(f"   Telegram Chat: {self.chat_id}")
             
             # Send to Telegram with retry logic
             max_retries = 3
@@ -98,19 +109,20 @@ class TelegramSignalNotifier:
                     success = await self._send_telegram_message(message)
                     
                     if success:
-                        self.logger.info(f"✅ Telegram signal sent successfully for {self._get_symbol(signal)} (attempt {attempt + 1})")
+                        self.logger.info(f"✅ TRADE ✅ - Cornix signal sent successfully for {symbol}")
+                        self.logger.info(f"   Status: Ready for Cornix parsing and execution")
                         return True
                     else:
                         if attempt < max_retries - 1:
-                            self.logger.warning(f"⚠️ Send failed, retrying... ({attempt + 1}/{max_retries})")
+                            self.logger.warning(f"⚠️ Send attempt {attempt + 1} failed, retrying...")
                             await asyncio.sleep(1)
                         else:
-                            self.logger.error(f"❌ Failed to send Telegram signal after {max_retries} attempts")
+                            self.logger.error(f"❌ Failed to send signal after {max_retries} attempts")
                             return False
                             
                 except Exception as retry_error:
+                    self.logger.error(f"❌ Attempt {attempt + 1} error: {retry_error}")
                     if attempt < max_retries - 1:
-                        self.logger.warning(f"⚠️ Retry error: {retry_error}, attempting again...")
                         await asyncio.sleep(1)
                     else:
                         raise
@@ -118,7 +130,7 @@ class TelegramSignalNotifier:
             return False
             
         except Exception as e:
-            self.logger.error(f"❌ Error sending Telegram signal: {e}")
+            self.logger.error(f"❌ Error sending Cornix signal: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False
@@ -324,13 +336,20 @@ class TelegramSignalNotifier:
         return "\n".join(lines)
     
     async def _send_telegram_message(self, message: str) -> bool:
-        """Send message via Telegram Bot API"""
+        """Send message via Telegram Bot API with comprehensive error handling"""
         try:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             
+            # Validate message
+            if not message or len(message) < 50:
+                self.logger.error(f"❌ Message too short: {len(message)} chars")
+                return False
+            
             # Truncate message if too long (Telegram limit is 4096 characters)
+            original_length = len(message)
             if len(message) > 4000:
                 message = message[:3900] + "\n\n... (message truncated)"
+                self.logger.warning(f"⚠️ Message truncated from {original_length} to {len(message)} chars")
             
             payload = {
                 'chat_id': self.chat_id,
@@ -339,9 +358,7 @@ class TelegramSignalNotifier:
                 'disable_web_page_preview': True
             }
             
-            self.logger.info(f"📤 Sending to Telegram chat: {self.chat_id}")
-            self.logger.debug(f"URL: {url}")
-            self.logger.debug(f"Message length: {len(message)} characters")
+            self.logger.info(f"📤 Sending Telegram message ({len(message)} chars) to {self.chat_id}")
             
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -350,43 +367,37 @@ class TelegramSignalNotifier:
                     
                     if response.status == 200:
                         self.logger.info("✅ Telegram message sent successfully")
-                        self.logger.debug(f"Response: {response_text}")
                         return True
                     else:
                         self.logger.error(f"❌ Telegram API error {response.status}")
-                        self.logger.error(f"Response: {response_text}")
                         
                         # Parse error for better debugging
                         try:
                             error_json = json.loads(response_text)
                             error_description = error_json.get('description', 'Unknown error')
-                            self.logger.error(f"Error description: {error_description}")
+                            self.logger.error(f"Error: {error_description}")
                             
                             # Specific error handling
                             if 'chat not found' in error_description.lower():
-                                self.logger.error("💡 Chat ID is incorrect. Make sure to use your personal chat ID or @channelname")
+                                self.logger.error("💡 Chat ID incorrect - use personal ID or @channelname")
                             elif 'bot was blocked' in error_description.lower():
-                                self.logger.error("💡 Bot was blocked by the user. Unblock the bot in Telegram")
+                                self.logger.error("💡 Unblock bot in Telegram")
                             elif 'unauthorized' in error_description.lower():
-                                self.logger.error("💡 Bot token is invalid. Check TELEGRAM_BOT_TOKEN in Replit Secrets")
+                                self.logger.error("💡 Invalid bot token")
                                 
                         except:
-                            pass
+                            self.logger.error(f"Response: {response_text[:200]}")
                         
                         return False
             
         except aiohttp.ClientError as e:
-            self.logger.error(f"❌ Network error sending to Telegram: {e}")
-            self.logger.error("💡 Check your internet connection or try again later")
+            self.logger.error(f"❌ Network error: {str(e)[:100]}")
             return False
         except asyncio.TimeoutError:
-            self.logger.error(f"❌ Timeout sending to Telegram (30s)")
-            self.logger.error("💡 Telegram API may be slow or unavailable")
+            self.logger.error(f"❌ Telegram timeout (30s)")
             return False
         except Exception as e:
-            self.logger.error(f"❌ Unexpected error sending Telegram message: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
+            self.logger.error(f"❌ Error: {str(e)[:100]}")
             return False
     
     def _get_symbol(self, signal: Any) -> str:

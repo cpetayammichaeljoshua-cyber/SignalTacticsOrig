@@ -264,21 +264,26 @@ async def main():
     # Step 10: Start background tasks
     logger.info("🚀 Step 10: Starting background tasks...")
     
-    # Start position monitoring
-    position_monitor_task = asyncio.create_task(position_closer.monitor_positions())
-    logger.info("✅ Position monitoring started")
-    
-    # Start ATAS API server
-    atas_server_task = asyncio.create_task(atas_integration.start_server())
-    logger.info("✅ ATAS API server started")
-    
-    # Step 11: Start high-frequency scanning
-    logger.info("🚀 Step 11: Starting HIGH-FREQUENCY market scanner...")
-    logger.info(f"⏱️  Scanning {len(markets)} markets every {orchestrator.scan_interval} seconds")
-    logger.info(f"📊 Using timeframes: {', '.join(orchestrator.fast_timeframes)}")
-    logger.info("")
+    # Initialize all tasks (may be None if error occurs)
+    position_monitor_task = None
+    atas_server_task = None
+    scanner_task = None
     
     try:
+        # Start position monitoring
+        position_monitor_task = asyncio.create_task(position_closer.monitor_positions())
+        logger.info("✅ Position monitoring started")
+        
+        # Start ATAS API server
+        atas_server_task = asyncio.create_task(atas_integration.start_server())
+        logger.info("✅ ATAS API server started")
+        
+        # Step 11: Start high-frequency scanning
+        logger.info("🚀 Step 11: Starting HIGH-FREQUENCY market scanner...")
+        logger.info(f"⏱️  Scanning {len(markets)} markets every {orchestrator.scan_interval} seconds")
+        logger.info(f"📊 Using timeframes: {', '.join(orchestrator.fast_timeframes)}")
+        logger.info("")
+        
         # Run scanner in parallel with background tasks
         scanner_task = asyncio.create_task(
             orchestrator.scan_markets_high_frequency(
@@ -293,11 +298,31 @@ async def main():
         
     except KeyboardInterrupt:
         logger.info("\n⏹️  Shutting down gracefully...")
-        # Cancel background tasks
-        position_monitor_task.cancel()
-        atas_server_task.cancel()
+        # Cancel background tasks gracefully
+        try:
+            if position_monitor_task:
+                position_monitor_task.cancel()
+            if atas_server_task:
+                atas_server_task.cancel()
+            if scanner_task:
+                scanner_task.cancel()
+            # Wait for cancellation
+            await asyncio.sleep(0.5)
+        except Exception as cancel_error:
+            logger.debug(f"Cancellation error: {cancel_error}")
+        logger.info("✅ Shutdown complete")
+    except asyncio.CancelledError:
+        logger.info("🛑 Tasks cancelled")
     except Exception as e:
-        logger.error(f"❌ Fatal error: {e}")
+        logger.error(f"❌ Fatal error: {str(e)[:200]}")
+        # Graceful shutdown on error
+        try:
+            if position_monitor_task:
+                position_monitor_task.cancel()
+            if atas_server_task:
+                atas_server_task.cancel()
+        except Exception as cancel_error:
+            logger.debug(f"Error during cleanup: {cancel_error}")
         raise
 
 

@@ -65,12 +65,8 @@ class BinanceMarketFetcher:
         try:
             self.logger.info("🔍 Fetching Binance USDⓈ-M futures markets...")
             
-            # Load markets with error handling
-            try:
-                markets = self.exchange.load_markets()
-            except Exception as e:
-                self.logger.error(f"Failed to load markets: {e}")
-                raise
+            # Load markets
+            markets = self.exchange.load_markets()
             
             # Filter for USDⓈ-M perpetual futures
             perpetual_markets = [
@@ -87,7 +83,6 @@ class BinanceMarketFetcher:
             self.logger.info(f"📊 Checking volume for {len(perpetual_markets)} markets...")
             
             volume_data = []
-            failed_count = 0
             for i, symbol in enumerate(perpetual_markets, 1):
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
@@ -103,17 +98,12 @@ class BinanceMarketFetcher:
                     if i % 100 == 0:
                         self.logger.info(f"   Checked {i}/{len(perpetual_markets)} markets...")
                     
-                    # Rate limiting - more conservative
-                    if i % 20 == 0:
-                        await asyncio.sleep(0.5)
+                    # Rate limiting
+                    if i % 50 == 0:
+                        await asyncio.sleep(1)
                 
                 except Exception as e:
-                    failed_count += 1
                     self.logger.debug(f"Skipping {symbol}: {e}")
-                    if failed_count % 10 == 0:
-                        self.logger.warning(f"⚠️ Failed to fetch {failed_count} markets")
-                    # Add delay on errors to avoid rate limiting
-                    await asyncio.sleep(0.1)
             
             self.logger.info(f"✅ Found {len(volume_data)} high-volume markets total")
             
@@ -195,23 +185,13 @@ async def main():
     
     # Step 4: Get high-volume markets
     logger.info("🌐 Step 4: Fetching high-volume markets...")
-    try:
-        market_fetcher = BinanceMarketFetcher(exchange)
-        markets = await market_fetcher.get_high_volume_markets(
-            min_volume_usdt=5_000_000,
-            top_n=20  # Monitor top 20 for high-frequency
-        )
-    except Exception as e:
-        logger.error(f"❌ Error fetching markets: {e}")
-        logger.info("⚠️ Using fallback market list...")
-        markets = [
-            'BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT',
-            'XRP/USDT:USDT', 'DOGE/USDT:USDT', 'BNB/USDT:USDT',
-            'ADA/USDT:USDT', 'AVAX/USDT:USDT', 'MATIC/USDT:USDT',
-            'LINK/USDT:USDT'
-        ]
+    market_fetcher = BinanceMarketFetcher(exchange)
+    markets = await market_fetcher.get_high_volume_markets(
+        min_volume_usdt=5_000_000,
+        top_n=20  # Monitor top 20 for high-frequency
+    )
     
-    # Step 5: Initialize Telegram notifier with enhanced configuration
+    # Step 5: Initialize Telegram notifier
     logger.info("📱 Step 5: Initializing Telegram signal notifier...")
     telegram_notifier = TelegramSignalNotifier()
     
@@ -221,27 +201,6 @@ async def main():
     
     if telegram_ok:
         logger.info("✅ Telegram notifier ready and tested")
-        # Send startup notification to channel
-        startup_msg = """🚀 **HIGH-FREQUENCY SCALPING BOT ONLINE**
-
-✅ Multi-Strategy System Active
-📊 Monitoring 20+ High-Volume Markets
-⚡ 5-Second Scan Intervals
-🎯 6 Advanced Strategies Running
-📈 Multi-Timeframe Analysis (1m, 3m, 5m, 30m)
-
-**Active Strategies:**
-• Ultimate Scalping (22% weight)
-• Lightning Scalping (20% weight)
-• Momentum Scalping (18% weight)
-• Volume Breakout (15% weight)
-• Ichimoku Sniper (15% weight)
-• Market Intelligence (10% weight)
-
-🔔 Ready to send premium trading signals!"""
-        
-        await telegram_notifier._send_telegram_message(startup_msg)
-        logger.info("📢 Startup notification sent to Telegram channel")
     else:
         logger.warning("⚠️ Telegram connection test failed - signals will not be sent")
         logger.warning("💡 Please configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Replit Secrets")
@@ -335,17 +294,10 @@ async def main():
     except KeyboardInterrupt:
         logger.info("\n⏹️  Shutting down gracefully...")
         # Cancel background tasks
-        try:
-            position_monitor_task.cancel()
-            atas_server_task.cancel()
-            await asyncio.gather(position_monitor_task, atas_server_task, return_exceptions=True)
-        except Exception as e:
-            logger.debug(f"Task cancellation error: {e}")
-        logger.info("✅ Shutdown complete")
+        position_monitor_task.cancel()
+        atas_server_task.cancel()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         raise
 
 

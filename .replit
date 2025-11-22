@@ -312,15 +312,6 @@ outputType = "console"
 task = "shell.exec"
 args = "python start_high_frequency_scalping_bot.py"
 
-[[workflows.workflow]]
-name = "High-Frequency Scalping with Telegram"
-author = 50030880
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py && python start_high_frequency_scalping_bot.py"
-
 [[ports]]
 localPort = 3000
 externalPort = 80

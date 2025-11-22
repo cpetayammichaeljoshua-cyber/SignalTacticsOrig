@@ -111,64 +111,32 @@ class HighFrequencyScalpingOrchestrator:
         try:
             self.logger.info("🔄 Loading all scalping strategies...")
 
-            # Import all strategies with error handling
-            loaded_strategies = {}
-            
-            try:
-                from SignalMaestro.ultimate_scalping_strategy import UltimateScalpingStrategy
-                loaded_strategies['ultimate_scalping'] = UltimateScalpingStrategy()
-                self.logger.info("   ✓ Ultimate Scalping Strategy loaded")
-            except Exception as e:
-                self.logger.warning(f"   ⚠️ Ultimate Scalping Strategy failed: {e}")
-            
-            try:
-                from SignalMaestro.lightning_scalping_strategy import LightningScalpingStrategy
-                loaded_strategies['lightning_scalping'] = LightningScalpingStrategy()
-                self.logger.info("   ✓ Lightning Scalping Strategy loaded")
-            except Exception as e:
-                self.logger.warning(f"   ⚠️ Lightning Scalping Strategy failed: {e}")
-            
-            try:
-                from SignalMaestro.momentum_scalping_strategy import MomentumScalpingStrategy
-                loaded_strategies['momentum_scalping'] = MomentumScalpingStrategy()
-                self.logger.info("   ✓ Momentum Scalping Strategy loaded")
-            except Exception as e:
-                self.logger.warning(f"   ⚠️ Momentum Scalping Strategy failed: {e}")
-            
-            try:
-                from SignalMaestro.volume_breakout_scalping_strategy import VolumeBreakoutScalpingStrategy
-                loaded_strategies['volume_breakout'] = VolumeBreakoutScalpingStrategy()
-                self.logger.info("   ✓ Volume Breakout Strategy loaded")
-            except Exception as e:
-                self.logger.warning(f"   ⚠️ Volume Breakout Strategy failed: {e}")
-            
-            try:
-                from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy
-                loaded_strategies['ichimoku_sniper'] = IchimokuSniperStrategy()
-                self.logger.info("   ✓ Ichimoku Sniper Strategy loaded")
-            except Exception as e:
-                self.logger.warning(f"   ⚠️ Ichimoku Sniper Strategy failed: {e}")
-            
-            try:
-                from SignalMaestro.market_intelligence_engine import MarketIntelligenceEngine
-                loaded_strategies['market_intelligence'] = MarketIntelligenceEngine()
-                self.logger.info("   ✓ Market Intelligence Engine loaded")
-            except Exception as e:
-                self.logger.warning(f"   ⚠️ Market Intelligence Engine failed: {e}")
+            # Import all strategies
+            from SignalMaestro.ultimate_scalping_strategy import UltimateScalpingStrategy
+            from SignalMaestro.lightning_scalping_strategy import LightningScalpingStrategy
+            from SignalMaestro.momentum_scalping_strategy import MomentumScalpingStrategy
+            from SignalMaestro.volume_breakout_scalping_strategy import VolumeBreakoutScalpingStrategy
+            from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy
+            from SignalMaestro.market_intelligence_engine import MarketIntelligenceEngine
 
-            if len(loaded_strategies) == 0:
-                self.logger.error("❌ No strategies could be loaded!")
-                return False
+            # Initialize strategies
+            self.strategies = {
+                'ultimate_scalping': UltimateScalpingStrategy(),
+                'lightning_scalping': LightningScalpingStrategy(),
+                'momentum_scalping': MomentumScalpingStrategy(),
+                'volume_breakout': VolumeBreakoutScalpingStrategy(),
+                'ichimoku_sniper': IchimokuSniperStrategy(),
+                'market_intelligence': MarketIntelligenceEngine()
+            }
 
-            self.strategies = loaded_strategies
             self.logger.info(f"✅ Loaded {len(self.strategies)} scalping strategies")
+            for strategy_name in self.strategies.keys():
+                self.logger.info(f"   ✓ {strategy_name}")
 
             return True
 
         except Exception as e:
             self.logger.error(f"❌ Failed to load strategies: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
             return False
 
     async def fetch_fast_ohlcv(self, exchange, symbol: str) -> Dict[str, List]:
@@ -218,15 +186,8 @@ class HighFrequencyScalpingOrchestrator:
                 tasks.append(task)
                 strategy_names.append(strategy_name)
 
-            # Execute all analyses in parallel with timeout
-            try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=30.0  # 30 second timeout for all strategies
-                )
-            except asyncio.TimeoutError:
-                self.logger.warning(f"⚠️ Strategy analysis timeout for {symbol}")
-                return None
+            # Execute all analyses in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Collect valid signals
             strategy_signals = {}
@@ -453,29 +414,6 @@ class HighFrequencyScalpingOrchestrator:
         else:
             return base_leverage
 
-    async def _send_status_update(self, scan_count: int, symbols: List[str]):
-        """Send periodic status update to Telegram"""
-        if not self.telegram_notifier:
-            self.logger.warning("Telegram notifier not initialized. Skipping status update.")
-            return
-
-        status_message = (
-            f"🚀 High-Frequency Scalping Bot Status Update:\n"
-            f"--------------------------------------------\n"
-            f"Scan Cycles Completed: {scan_count}\n"
-            f"Symbols Scanned: {len(symbols)}\n"
-            f"Scan Interval: {self.scan_interval}s\n"
-            f"Total Signals Generated: {self.signals_generated}\n"
-            f"Active Positions: {len(self.active_positions)}\n"
-            f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        self.logger.info("📤 Sending hourly status update to Telegram...")
-        try:
-            await self.telegram_notifier.send_message(status_message)
-        except Exception as e:
-            self.logger.error(f"Failed to send status update: {e}")
-
-
     async def scan_markets_high_frequency(
         self,
         exchange,
@@ -485,39 +423,42 @@ class HighFrequencyScalpingOrchestrator:
         """Scan markets at high frequency for scalping opportunities"""
 
         scan_count = 0
-        last_status_update = datetime.now()
-        status_update_interval = 3600  # Send status update every hour
 
         while True:
             try:
                 scan_count += 1
-                self.logger.info(f"🔍 Starting scan cycle #{scan_count}")
+                scan_start = time.time()
 
-                # Scan all symbols in parallel
-                scan_tasks = []
+                self.logger.info(f"\n{'='*80}")
+                self.logger.info(f"⚡ HIGH-FREQUENCY SCAN #{scan_count} - {datetime.now().strftime('%H:%M:%S')}")
+                self.logger.info(f"{'='*80}")
+
+                # Scan all symbols in parallel for maximum speed
+                tasks = []
                 for symbol in symbols:
-                    task = asyncio.create_task(
-                        self._scan_single_symbol(exchange, symbol, position_manager)
-                    )
-                    scan_tasks.append(task)
+                    task = self._scan_single_symbol(exchange, symbol, position_manager)
+                    tasks.append(task)
 
-                # Wait for all scans to complete
-                await asyncio.gather(*scan_tasks, return_exceptions=True)
+                # Execute all scans concurrently
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Send periodic status updates
-                now = datetime.now()
-                if (now - last_status_update).total_seconds() >= status_update_interval:
-                    await self._send_status_update(scan_count, symbols)
-                    last_status_update = now
+                # Count signals
+                signals_found = sum(1 for r in results if r and not isinstance(r, Exception))
 
-                # Wait before next scan
-                self.logger.info(f"⏱️ Waiting {self.scan_interval} seconds before next scan...")
+                scan_duration = time.time() - scan_start
+
+                self.logger.info(
+                    f"✅ Scan completed in {scan_duration:.2f}s | "
+                    f"Signals: {signals_found}/{len(symbols)} | "
+                    f"Total generated: {self.signals_generated}"
+                )
+
+                # High-frequency interval
                 await asyncio.sleep(self.scan_interval)
 
             except Exception as e:
                 self.logger.error(f"Scan error: {e}")
                 await asyncio.sleep(self.scan_interval)
-
 
     async def _scan_single_symbol(self, exchange, symbol: str, position_manager) -> Optional[HighFrequencySignal]:
         """Scan single symbol for trading opportunities"""

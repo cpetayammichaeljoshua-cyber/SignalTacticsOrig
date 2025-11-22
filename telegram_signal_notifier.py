@@ -119,6 +119,14 @@ class TelegramSignalNotifier:
             self.logger.error(traceback.format_exc())
             return False
 
+    async def send_message(self, message: str) -> bool:
+        """Send generic message to Telegram channel"""
+        try:
+            return await self._send_telegram_message(message)
+        except Exception as e:
+            self.logger.error(f"Error sending message: {e}")
+            return False
+
     async def send_status_update(self, status_message: str) -> bool:
         """Send status update to Telegram channel"""
         try:

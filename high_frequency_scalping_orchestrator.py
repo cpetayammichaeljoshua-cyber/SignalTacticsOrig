@@ -111,32 +111,64 @@ class HighFrequencyScalpingOrchestrator:
         try:
             self.logger.info("🔄 Loading all scalping strategies...")
 
-            # Import all strategies
-            from SignalMaestro.ultimate_scalping_strategy import UltimateScalpingStrategy
-            from SignalMaestro.lightning_scalping_strategy import LightningScalpingStrategy
-            from SignalMaestro.momentum_scalping_strategy import MomentumScalpingStrategy
-            from SignalMaestro.volume_breakout_scalping_strategy import VolumeBreakoutScalpingStrategy
-            from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy
-            from SignalMaestro.market_intelligence_engine import MarketIntelligenceEngine
+            # Import all strategies with error handling
+            loaded_strategies = {}
+            
+            try:
+                from SignalMaestro.ultimate_scalping_strategy import UltimateScalpingStrategy
+                loaded_strategies['ultimate_scalping'] = UltimateScalpingStrategy()
+                self.logger.info("   ✓ Ultimate Scalping Strategy loaded")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Ultimate Scalping Strategy failed: {e}")
+            
+            try:
+                from SignalMaestro.lightning_scalping_strategy import LightningScalpingStrategy
+                loaded_strategies['lightning_scalping'] = LightningScalpingStrategy()
+                self.logger.info("   ✓ Lightning Scalping Strategy loaded")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Lightning Scalping Strategy failed: {e}")
+            
+            try:
+                from SignalMaestro.momentum_scalping_strategy import MomentumScalpingStrategy
+                loaded_strategies['momentum_scalping'] = MomentumScalpingStrategy()
+                self.logger.info("   ✓ Momentum Scalping Strategy loaded")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Momentum Scalping Strategy failed: {e}")
+            
+            try:
+                from SignalMaestro.volume_breakout_scalping_strategy import VolumeBreakoutScalpingStrategy
+                loaded_strategies['volume_breakout'] = VolumeBreakoutScalpingStrategy()
+                self.logger.info("   ✓ Volume Breakout Strategy loaded")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Volume Breakout Strategy failed: {e}")
+            
+            try:
+                from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy
+                loaded_strategies['ichimoku_sniper'] = IchimokuSniperStrategy()
+                self.logger.info("   ✓ Ichimoku Sniper Strategy loaded")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Ichimoku Sniper Strategy failed: {e}")
+            
+            try:
+                from SignalMaestro.market_intelligence_engine import MarketIntelligenceEngine
+                loaded_strategies['market_intelligence'] = MarketIntelligenceEngine()
+                self.logger.info("   ✓ Market Intelligence Engine loaded")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Market Intelligence Engine failed: {e}")
 
-            # Initialize strategies
-            self.strategies = {
-                'ultimate_scalping': UltimateScalpingStrategy(),
-                'lightning_scalping': LightningScalpingStrategy(),
-                'momentum_scalping': MomentumScalpingStrategy(),
-                'volume_breakout': VolumeBreakoutScalpingStrategy(),
-                'ichimoku_sniper': IchimokuSniperStrategy(),
-                'market_intelligence': MarketIntelligenceEngine()
-            }
+            if len(loaded_strategies) == 0:
+                self.logger.error("❌ No strategies could be loaded!")
+                return False
 
+            self.strategies = loaded_strategies
             self.logger.info(f"✅ Loaded {len(self.strategies)} scalping strategies")
-            for strategy_name in self.strategies.keys():
-                self.logger.info(f"   ✓ {strategy_name}")
 
             return True
 
         except Exception as e:
             self.logger.error(f"❌ Failed to load strategies: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False
 
     async def fetch_fast_ohlcv(self, exchange, symbol: str) -> Dict[str, List]:
@@ -186,8 +218,15 @@ class HighFrequencyScalpingOrchestrator:
                 tasks.append(task)
                 strategy_names.append(strategy_name)
 
-            # Execute all analyses in parallel
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Execute all analyses in parallel with timeout
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=30.0  # 30 second timeout for all strategies
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning(f"⚠️ Strategy analysis timeout for {symbol}")
+                return None
 
             # Collect valid signals
             strategy_signals = {}
@@ -431,7 +470,10 @@ class HighFrequencyScalpingOrchestrator:
             f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         self.logger.info("📤 Sending hourly status update to Telegram...")
-        await self.telegram_notifier.send_message(status_message)
+        try:
+            await self.telegram_notifier.send_message(status_message)
+        except Exception as e:
+            self.logger.error(f"Failed to send status update: {e}")
 
 
     async def scan_markets_high_frequency(

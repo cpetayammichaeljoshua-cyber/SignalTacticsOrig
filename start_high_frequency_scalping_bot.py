@@ -65,8 +65,12 @@ class BinanceMarketFetcher:
         try:
             self.logger.info("🔍 Fetching Binance USDⓈ-M futures markets...")
             
-            # Load markets
-            markets = self.exchange.load_markets()
+            # Load markets with error handling
+            try:
+                markets = self.exchange.load_markets()
+            except Exception as e:
+                self.logger.error(f"Failed to load markets: {e}")
+                raise
             
             # Filter for USDⓈ-M perpetual futures
             perpetual_markets = [
@@ -83,6 +87,7 @@ class BinanceMarketFetcher:
             self.logger.info(f"📊 Checking volume for {len(perpetual_markets)} markets...")
             
             volume_data = []
+            failed_count = 0
             for i, symbol in enumerate(perpetual_markets, 1):
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
@@ -98,12 +103,17 @@ class BinanceMarketFetcher:
                     if i % 100 == 0:
                         self.logger.info(f"   Checked {i}/{len(perpetual_markets)} markets...")
                     
-                    # Rate limiting
-                    if i % 50 == 0:
-                        await asyncio.sleep(1)
+                    # Rate limiting - more conservative
+                    if i % 20 == 0:
+                        await asyncio.sleep(0.5)
                 
                 except Exception as e:
+                    failed_count += 1
                     self.logger.debug(f"Skipping {symbol}: {e}")
+                    if failed_count % 10 == 0:
+                        self.logger.warning(f"⚠️ Failed to fetch {failed_count} markets")
+                    # Add delay on errors to avoid rate limiting
+                    await asyncio.sleep(0.1)
             
             self.logger.info(f"✅ Found {len(volume_data)} high-volume markets total")
             
@@ -185,11 +195,21 @@ async def main():
     
     # Step 4: Get high-volume markets
     logger.info("🌐 Step 4: Fetching high-volume markets...")
-    market_fetcher = BinanceMarketFetcher(exchange)
-    markets = await market_fetcher.get_high_volume_markets(
-        min_volume_usdt=5_000_000,
-        top_n=20  # Monitor top 20 for high-frequency
-    )
+    try:
+        market_fetcher = BinanceMarketFetcher(exchange)
+        markets = await market_fetcher.get_high_volume_markets(
+            min_volume_usdt=5_000_000,
+            top_n=20  # Monitor top 20 for high-frequency
+        )
+    except Exception as e:
+        logger.error(f"❌ Error fetching markets: {e}")
+        logger.info("⚠️ Using fallback market list...")
+        markets = [
+            'BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT',
+            'XRP/USDT:USDT', 'DOGE/USDT:USDT', 'BNB/USDT:USDT',
+            'ADA/USDT:USDT', 'AVAX/USDT:USDT', 'MATIC/USDT:USDT',
+            'LINK/USDT:USDT'
+        ]
     
     # Step 5: Initialize Telegram notifier with enhanced configuration
     logger.info("📱 Step 5: Initializing Telegram signal notifier...")
@@ -220,7 +240,7 @@ async def main():
 
 🔔 Ready to send premium trading signals!"""
         
-        await telegram_notifier.send_message(startup_msg)
+        await telegram_notifier._send_telegram_message(startup_msg)
         logger.info("📢 Startup notification sent to Telegram channel")
     else:
         logger.warning("⚠️ Telegram connection test failed - signals will not be sent")
@@ -315,10 +335,17 @@ async def main():
     except KeyboardInterrupt:
         logger.info("\n⏹️  Shutting down gracefully...")
         # Cancel background tasks
-        position_monitor_task.cancel()
-        atas_server_task.cancel()
+        try:
+            position_monitor_task.cancel()
+            atas_server_task.cancel()
+            await asyncio.gather(position_monitor_task, atas_server_task, return_exceptions=True)
+        except Exception as e:
+            logger.debug(f"Task cancellation error: {e}")
+        logger.info("✅ Shutdown complete")
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise
 
 

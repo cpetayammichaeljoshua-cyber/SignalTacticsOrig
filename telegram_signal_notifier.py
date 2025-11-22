@@ -15,12 +15,12 @@ import aiohttp
 
 class TelegramSignalNotifier:
     """Send formatted trading signals to Telegram"""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
         self.chat_id = os.getenv('TELEGRAM_CHAT_ID', '')
-        
+
         if not self.bot_token:
             self.logger.warning("⚠️ TELEGRAM_BOT_TOKEN not configured")
             self.logger.warning("💡 Set it in Replit Secrets to enable Telegram notifications")
@@ -31,16 +31,16 @@ class TelegramSignalNotifier:
             self.logger.info("✅ Telegram notifier initialized")
             self.logger.info(f"📱 Bot token configured: {self.bot_token[:10]}...")
             self.logger.info(f"💬 Chat ID: {self.chat_id}")
-    
+
     async def test_connection(self) -> bool:
         """Test Telegram bot connection"""
         try:
             if not self.bot_token:
                 self.logger.error("❌ Cannot test - bot token not configured")
                 return False
-                
+
             url = f"https://api.telegram.org/bot{self.bot_token}/getMe"
-            
+
             timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
@@ -58,47 +58,43 @@ class TelegramSignalNotifier:
                         error_text = await response.text()
                         self.logger.error(f"❌ Bot token test failed: {error_text}")
                         return False
-                        
+
         except Exception as e:
             self.logger.error(f"❌ Connection test error: {e}")
             return False
-    
+
     async def send_signal(self, signal: Any) -> bool:
         """
-        Send trading signal to Telegram
-        
-        Args:
-            signal: HighFrequencySignal object or dict
-            
-        Returns:
-            bool: Success status
+        Send trading signal to Telegram channel with enhanced formatting
         """
         try:
             if not self.bot_token:
                 self.logger.error("❌ TELEGRAM_BOT_TOKEN not configured in environment")
                 self.logger.error("💡 Please set TELEGRAM_BOT_TOKEN in Replit Secrets")
                 return False
-                
+
             if not self.chat_id:
                 self.logger.error("❌ TELEGRAM_CHAT_ID not configured in environment")
                 self.logger.error("💡 Please set TELEGRAM_CHAT_ID in Replit Secrets (use your chat ID or @channelname)")
                 return False
-            
+
             # Format signal message
             message = self._format_signal_message(signal)
-            
+
             # Log the message being sent
             self.logger.info(f"📤 Sending signal to Telegram chat: {self.chat_id}")
             self.logger.debug(f"Message preview: {message[:100]}...")
-            
+
             # Send to Telegram with retry logic
             max_retries = 3
             for attempt in range(max_retries):
                 try:
                     success = await self._send_telegram_message(message)
-                    
+
                     if success:
                         self.logger.info(f"✅ Telegram signal sent successfully for {self._get_symbol(signal)} (attempt {attempt + 1})")
+                        # Log signal details for tracking
+                        self.logger.info(f"📊 Signal Details: Entry={self._get_attr(signal, 'entry_price')}, SL={self._get_attr(signal, 'stop_loss')}, TPs={self._get_attr(signal, 'take_profit_1')}, {self._get_attr(signal, 'take_profit_2')}, {self._get_attr(signal, 'take_profit_3')}")
                         return True
                     else:
                         if attempt < max_retries - 1:
@@ -107,26 +103,34 @@ class TelegramSignalNotifier:
                         else:
                             self.logger.error(f"❌ Failed to send Telegram signal after {max_retries} attempts")
                             return False
-                            
+
                 except Exception as retry_error:
                     if attempt < max_retries - 1:
                         self.logger.warning(f"⚠️ Retry error: {retry_error}, attempting again...")
                         await asyncio.sleep(1)
                     else:
                         raise
-            
+
             return False
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error sending Telegram signal: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False
-    
+
+    async def send_status_update(self, status_message: str) -> bool:
+        """Send status update to Telegram channel"""
+        try:
+            return await self._send_telegram_message(f"ℹ️ **Status Update**\n\n{status_message}")
+        except Exception as e:
+            self.logger.error(f"Error sending status update: {e}")
+            return False
+
     async def send_position_update(self, symbol: str, update_type: str, details: Dict[str, Any]) -> bool:
         """
         Send position update notification
-        
+
         Args:
             symbol: Trading pair
             update_type: 'OPENED', 'CLOSED', 'TP_HIT', 'SL_HIT', 'MODIFIED'
@@ -135,30 +139,30 @@ class TelegramSignalNotifier:
         try:
             if not self.bot_token or not self.chat_id:
                 return False
-            
+
             message = self._format_position_update(symbol, update_type, details)
             return await self._send_telegram_message(message)
-            
+
         except Exception as e:
             self.logger.error(f"Error sending position update: {e}")
             return False
-    
+
     async def send_performance_summary(self, summary: Dict[str, Any]) -> bool:
         """Send daily/session performance summary"""
         try:
             if not self.bot_token or not self.chat_id:
                 return False
-            
+
             message = self._format_performance_summary(summary)
             return await self._send_telegram_message(message)
-            
+
         except Exception as e:
             self.logger.error(f"Error sending performance summary: {e}")
             return False
-    
+
     def _format_signal_message(self, signal: Any) -> str:
         """Format signal as rich Telegram message matching professional format"""
-        
+
         # Extract signal data (supports both object and dict)
         symbol = self._get_symbol(signal)
         direction = self._get_attr(signal, 'direction', 'UNKNOWN')
@@ -174,33 +178,39 @@ class TelegramSignalNotifier:
         total_strategies = self._get_attr(signal, 'total_strategies', 0)
         risk_reward = self._get_attr(signal, 'risk_reward_ratio', 0)
         timeframe = self._get_attr(signal, 'timeframe', '1m')
-        
+
         # Get strategy breakdown
         strategy_votes = self._get_attr(signal, 'strategy_votes', {})
         strategy_scores = self._get_attr(signal, 'strategy_scores', {})
-        
+
         # Determine dominant strategy (highest scoring strategy that agrees with direction)
         dominant_strategy = self._get_dominant_strategy(strategy_votes, strategy_scores, direction)
-        
+
         # Calculate ATR value (approximate from stop loss distance)
         atr_value = abs(entry_price - stop_loss) if entry_price and stop_loss else 0
-        
+
         # Calculate SL/TP percentages
         sl_pct = self._calc_pct(entry_price, stop_loss, direction)
         tp_pct = self._calc_pct(entry_price, tp1, direction)
-        
+
         # Format timestamp - exact format from image
         timestamp = datetime.now().strftime('%Y-%m-%d\n%H:%M:%S UTC')
-        
-        # Direction-specific formatting
-        action = "BUY" if direction == "LONG" else "SELL"
-        
-        # Convert symbol format: ETH/USDT:USDT -> FXSUSDT.P SELL
-        # Remove slashes and colons for Cornix format
-        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol.replace(':USDT', '')
-        cornix_symbol = f"{base_symbol}USDT.P"
-        
-        # Build STRICTLY FORMATTED message - CORNIX section FIRST with zero markdown
+
+        # Direction-specific formatting - OFFICIAL CORNIX FORMAT
+        action = "Long" if direction == "LONG" else "Short"
+
+        # Convert symbol format: ETH/USDT:USDT -> ETH/USDT (OFFICIAL CORNIX FORMAT)
+        # Cornix expects "BTC/USDT", "ETH/USDT", etc. NOT .P suffix
+        if '/' in symbol:
+            # Extract base and quote: ETH/USDT:USDT -> ETH/USDT
+            parts = symbol.split(':')
+            cornix_symbol = parts[0] if parts else symbol
+        else:
+            # Construct from symbol
+            base_symbol = symbol.replace('USDT', '').replace(':',  '')
+            cornix_symbol = f"{base_symbol}/USDT"
+
+        # Build STRICTLY FORMATTED message matching OFFICIAL CORNIX SPECIFICATION
         # Strategy details section (with formatting for readability)
         strategy_section = [
             f"🎯 *{dominant_strategy}* Multi-TF Enhanced",
@@ -216,32 +226,44 @@ class TelegramSignalNotifier:
             f"• ATR Value: {atr_value:.6f}",
             f"• Scan Mode: Multi-Timeframe Enhanced",
         ]
-        
-        # CORNIX section - STRICTLY FORMATTED with ZERO markdown for clean parsing
+
+        # CORNIX SECTION - OFFICIAL SPECIFICATION FORMAT
+        # Format: Pair, Direction, Entry, Targets, Stop Loss, Leverage
         cornix_section = [
             f"",
-            f"🎯 *CORNIX COMPATIBLE FORMAT:*",
-            f"{cornix_symbol} {action}",
+            f"🎯 CORNIX SIGNAL:",
+            f"{cornix_symbol}",
+            f"{action}",
+            f"Leverage: {leverage}x",
+            f"",
             f"Entry: {entry_price:.5f}",
         ]
-        
-        # Add SL
-        cornix_section.append(f"SL: {stop_loss:.5f}")
-        
-        # Add all TPs in strictly clean format
-        if tp1 > 0:
-            cornix_section.append(f"TP: {tp1:.5f}")
-        if tp2 > 0:
-            cornix_section.append(f"TP: {tp2:.5f}")
-        if tp3 > 0:
-            cornix_section.append(f"TP: {tp3:.5f}")
-        
-        # Add leverage and margin
-        cornix_section.extend([
-            f"Leverage: {leverage}x",
-            f"Margin: CROSS",
-        ])
-        
+
+        # Add Take Profit targets (Cornix official format: "Target 1:", "Target 2:", etc.)
+        target_num = 1
+        take_profits = [tp for tp in [tp1, tp2, tp3] if tp > 0]
+        tp_distribution = [40, 35, 25]  # 40% at TP1, 35% at TP2, 25% at TP3
+
+        for i, tp in enumerate(take_profits):
+            cornix_section.append(f"Target {target_num}: {tp:.5f}")
+            target_num += 1
+
+        # Add Stop Loss (Cornix official format)
+        cornix_section.append(f"")
+        cornix_section.append(f"Stop Loss: {stop_loss:.5f}")
+
+        # Add position management details
+        cornix_section.append(f"")
+        cornix_section.append(f"💡 Position Management:")
+        if len(take_profits) >= 1:
+            cornix_section.append(f"• Close {tp_distribution[0]}% at TP1")
+        if len(take_profits) >= 2:
+            cornix_section.append(f"• Close {tp_distribution[1]}% at TP2")
+        if len(take_profits) >= 3:
+            cornix_section.append(f"• Close {tp_distribution[2]}% at TP3")
+        cornix_section.append(f"• Move SL to entry after TP1")
+
+
         # Footer section
         footer_section = [
             f"",
@@ -251,15 +273,15 @@ class TelegramSignalNotifier:
             f"Cross Margin & Auto Leverage",
             f"- Comprehensive Risk Management"
         ]
-        
+
         # Combine all sections
         lines = strategy_section + cornix_section + footer_section
-        
+
         return "\n".join(lines)
-    
+
     def _format_position_update(self, symbol: str, update_type: str, details: Dict[str, Any]) -> str:
         """Format position update message"""
-        
+
         emoji_map = {
             'OPENED': '🟢',
             'CLOSED': '⚫',
@@ -269,15 +291,15 @@ class TelegramSignalNotifier:
             'PROFIT': '💰',
             'LOSS': '⚠️'
         }
-        
+
         emoji = emoji_map.get(update_type, '📊')
-        
+
         lines = [
             f"{emoji} **POSITION UPDATE: {update_type}** {emoji}",
             f"",
             f"📊 **Market:** `{symbol}`"
         ]
-        
+
         # Add details
         for key, value in details.items():
             if key == 'pnl':
@@ -291,14 +313,14 @@ class TelegramSignalNotifier:
                 lines.append(f"📈 **Direction:** **{value}**")
             elif key == 'reason':
                 lines.append(f"💡 **Reason:** {value}")
-        
+
         lines.append(f"⏰ **Time:** {datetime.now().strftime('%H:%M:%S UTC')}")
-        
+
         return "\n".join(lines)
-    
+
     def _format_performance_summary(self, summary: Dict[str, Any]) -> str:
         """Format performance summary"""
-        
+
         lines = [
             f"📊 **PERFORMANCE SUMMARY** 📊",
             f"{'='*40}",
@@ -316,34 +338,34 @@ class TelegramSignalNotifier:
             f"⏰ **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f"{'='*40}"
         ]
-        
+
         return "\n".join(lines)
-    
+
     async def _send_telegram_message(self, message: str) -> bool:
         """Send message via Telegram Bot API"""
         try:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            
+
             # Truncate message if too long (Telegram limit is 4096 characters)
             if len(message) > 4000:
                 message = message[:3900] + "\n\n... (message truncated)"
-            
+
             payload = {
                 'chat_id': self.chat_id,
                 'text': message,
                 'parse_mode': 'Markdown',
                 'disable_web_page_preview': True
             }
-            
+
             self.logger.info(f"📤 Sending to Telegram chat: {self.chat_id}")
             self.logger.debug(f"URL: {url}")
             self.logger.debug(f"Message length: {len(message)} characters")
-            
+
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=payload) as response:
                     response_text = await response.text()
-                    
+
                     if response.status == 200:
                         self.logger.info("✅ Telegram message sent successfully")
                         self.logger.debug(f"Response: {response_text}")
@@ -351,13 +373,13 @@ class TelegramSignalNotifier:
                     else:
                         self.logger.error(f"❌ Telegram API error {response.status}")
                         self.logger.error(f"Response: {response_text}")
-                        
+
                         # Parse error for better debugging
                         try:
                             error_json = json.loads(response_text)
                             error_description = error_json.get('description', 'Unknown error')
                             self.logger.error(f"Error description: {error_description}")
-                            
+
                             # Specific error handling
                             if 'chat not found' in error_description.lower():
                                 self.logger.error("💡 Chat ID is incorrect. Make sure to use your personal chat ID or @channelname")
@@ -365,12 +387,12 @@ class TelegramSignalNotifier:
                                 self.logger.error("💡 Bot was blocked by the user. Unblock the bot in Telegram")
                             elif 'unauthorized' in error_description.lower():
                                 self.logger.error("💡 Bot token is invalid. Check TELEGRAM_BOT_TOKEN in Replit Secrets")
-                                
+
                         except:
                             pass
-                        
+
                         return False
-            
+
         except aiohttp.ClientError as e:
             self.logger.error(f"❌ Network error sending to Telegram: {e}")
             self.logger.error("💡 Check your internet connection or try again later")
@@ -384,11 +406,11 @@ class TelegramSignalNotifier:
             import traceback
             self.logger.error(traceback.format_exc())
             return False
-    
+
     def _get_symbol(self, signal: Any) -> str:
         """Extract symbol from signal"""
         return self._get_attr(signal, 'symbol', 'UNKNOWN')
-    
+
     def _get_attr(self, obj: Any, attr: str, default: Any = None) -> Any:
         """Get attribute from object or dict"""
         if hasattr(obj, attr):
@@ -396,23 +418,23 @@ class TelegramSignalNotifier:
         elif isinstance(obj, dict):
             return obj.get(attr, default)
         return default
-    
+
     def _calc_pct(self, entry: float, target: float, direction: str) -> float:
         """Calculate percentage change"""
         if entry == 0:
             return 0.0
-        
+
         pct = ((target - entry) / entry) * 100
-        
+
         # For SHORT positions, invert the sign
         if direction == "SHORT":
             pct = -pct
-        
+
         return abs(pct)
-    
+
     def _get_dominant_strategy(self, strategy_votes: Dict[str, str], strategy_scores: Dict[str, float], direction: str) -> str:
         """Get the dominant strategy name based on votes and scores"""
-        
+
         # Strategy name mapping to display names
         strategy_names = {
             'ultimate_scalping': 'Ichimoku Sniper',
@@ -422,22 +444,22 @@ class TelegramSignalNotifier:
             'ichimoku_sniper': 'Ichimoku Sniper',
             'market_intelligence': 'Market Intelligence'
         }
-        
+
         # Find strategies that agree with the consensus direction
         agreeing_strategies = {}
         for strategy, vote in strategy_votes.items():
             if vote == direction or (vote == 'BUY' and direction == 'LONG') or (vote == 'SELL' and direction == 'SHORT'):
                 score = strategy_scores.get(strategy, 0)
                 agreeing_strategies[strategy] = score
-        
+
         # Return the highest scoring agreeing strategy
         if agreeing_strategies:
             dominant = max(agreeing_strategies, key=lambda x: agreeing_strategies[x])
             return strategy_names.get(dominant, 'Ichimoku Sniper')
-        
+
         # Default to Ichimoku Sniper if no agreeing strategies found
         return 'Ichimoku Sniper'
-    
+
     def _format_cornix_signal(self, signal: Any) -> str:
         """Format signal in Cornix-compatible format"""
         symbol = self._get_symbol(signal)
@@ -448,9 +470,9 @@ class TelegramSignalNotifier:
         tp2 = self._get_attr(signal, 'take_profit_2', 0)
         tp3 = self._get_attr(signal, 'take_profit_3', 0)
         leverage = self._get_attr(signal, 'leverage', 20)
-        
+
         action = "BUY" if direction == "LONG" else "SELL"
-        
+
         # Cornix format
         cornix_lines = [
             f"{symbol} {action}",
@@ -462,7 +484,7 @@ class TelegramSignalNotifier:
             f"Leverage: {leverage}x",
             f"Margin: CROSS"
         ]
-        
+
         return "\n".join(cornix_lines)
 
 
@@ -471,9 +493,9 @@ async def test_telegram_notifier():
     print("\n" + "="*80)
     print("🧪 TESTING TELEGRAM SIGNAL NOTIFIER")
     print("="*80)
-    
+
     notifier = TelegramSignalNotifier()
-    
+
     # Create test signal
     test_signal = {
         'symbol': 'ETH/USDT:USDT',
@@ -491,15 +513,15 @@ async def test_telegram_notifier():
         'risk_reward_ratio': 2.4,
         'timeframe': '1m'
     }
-    
+
     print("\n📤 Sending test signal...")
     success = await notifier.send_signal(test_signal)
-    
+
     if success:
         print("✅ Test signal sent successfully!")
     else:
         print("❌ Failed to send test signal")
-    
+
     print("\n" + "="*80)
 
 

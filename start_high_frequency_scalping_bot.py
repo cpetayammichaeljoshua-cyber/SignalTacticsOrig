@@ -191,7 +191,7 @@ async def main():
         top_n=20  # Monitor top 20 for high-frequency
     )
     
-    # Step 5: Initialize Telegram notifier
+    # Step 5: Initialize Telegram notifier with enhanced configuration
     logger.info("📱 Step 5: Initializing Telegram signal notifier...")
     telegram_notifier = TelegramSignalNotifier()
     
@@ -201,6 +201,27 @@ async def main():
     
     if telegram_ok:
         logger.info("✅ Telegram notifier ready and tested")
+        # Send startup notification to channel
+        startup_msg = """🚀 **HIGH-FREQUENCY SCALPING BOT ONLINE**
+
+✅ Multi-Strategy System Active
+📊 Monitoring 20+ High-Volume Markets
+⚡ 5-Second Scan Intervals
+🎯 6 Advanced Strategies Running
+📈 Multi-Timeframe Analysis (1m, 3m, 5m, 30m)
+
+**Active Strategies:**
+• Ultimate Scalping (22% weight)
+• Lightning Scalping (20% weight)
+• Momentum Scalping (18% weight)
+• Volume Breakout (15% weight)
+• Ichimoku Sniper (15% weight)
+• Market Intelligence (10% weight)
+
+🔔 Ready to send premium trading signals!"""
+        
+        await telegram_notifier.send_message(startup_msg)
+        logger.info("📢 Startup notification sent to Telegram channel")
     else:
         logger.warning("⚠️ Telegram connection test failed - signals will not be sent")
         logger.warning("💡 Please configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Replit Secrets")

@@ -414,6 +414,26 @@ class HighFrequencyScalpingOrchestrator:
         else:
             return base_leverage
 
+    async def _send_status_update(self, scan_count: int, symbols: List[str]):
+        """Send periodic status update to Telegram"""
+        if not self.telegram_notifier:
+            self.logger.warning("Telegram notifier not initialized. Skipping status update.")
+            return
+
+        status_message = (
+            f"🚀 High-Frequency Scalping Bot Status Update:\n"
+            f"--------------------------------------------\n"
+            f"Scan Cycles Completed: {scan_count}\n"
+            f"Symbols Scanned: {len(symbols)}\n"
+            f"Scan Interval: {self.scan_interval}s\n"
+            f"Total Signals Generated: {self.signals_generated}\n"
+            f"Active Positions: {len(self.active_positions)}\n"
+            f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        self.logger.info("📤 Sending hourly status update to Telegram...")
+        await self.telegram_notifier.send_message(status_message)
+
+
     async def scan_markets_high_frequency(
         self,
         exchange,
@@ -423,42 +443,39 @@ class HighFrequencyScalpingOrchestrator:
         """Scan markets at high frequency for scalping opportunities"""
 
         scan_count = 0
+        last_status_update = datetime.now()
+        status_update_interval = 3600  # Send status update every hour
 
         while True:
             try:
                 scan_count += 1
-                scan_start = time.time()
+                self.logger.info(f"🔍 Starting scan cycle #{scan_count}")
 
-                self.logger.info(f"\n{'='*80}")
-                self.logger.info(f"⚡ HIGH-FREQUENCY SCAN #{scan_count} - {datetime.now().strftime('%H:%M:%S')}")
-                self.logger.info(f"{'='*80}")
-
-                # Scan all symbols in parallel for maximum speed
-                tasks = []
+                # Scan all symbols in parallel
+                scan_tasks = []
                 for symbol in symbols:
-                    task = self._scan_single_symbol(exchange, symbol, position_manager)
-                    tasks.append(task)
+                    task = asyncio.create_task(
+                        self._scan_single_symbol(exchange, symbol, position_manager)
+                    )
+                    scan_tasks.append(task)
 
-                # Execute all scans concurrently
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Wait for all scans to complete
+                await asyncio.gather(*scan_tasks, return_exceptions=True)
 
-                # Count signals
-                signals_found = sum(1 for r in results if r and not isinstance(r, Exception))
+                # Send periodic status updates
+                now = datetime.now()
+                if (now - last_status_update).total_seconds() >= status_update_interval:
+                    await self._send_status_update(scan_count, symbols)
+                    last_status_update = now
 
-                scan_duration = time.time() - scan_start
-
-                self.logger.info(
-                    f"✅ Scan completed in {scan_duration:.2f}s | "
-                    f"Signals: {signals_found}/{len(symbols)} | "
-                    f"Total generated: {self.signals_generated}"
-                )
-
-                # High-frequency interval
+                # Wait before next scan
+                self.logger.info(f"⏱️ Waiting {self.scan_interval} seconds before next scan...")
                 await asyncio.sleep(self.scan_interval)
 
             except Exception as e:
                 self.logger.error(f"Scan error: {e}")
                 await asyncio.sleep(self.scan_interval)
+
 
     async def _scan_single_symbol(self, exchange, symbol: str, position_manager) -> Optional[HighFrequencySignal]:
         """Scan single symbol for trading opportunities"""

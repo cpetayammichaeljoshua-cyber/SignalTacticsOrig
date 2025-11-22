@@ -175,6 +175,13 @@ class TelegramSignalNotifier:
         risk_reward = self._get_attr(signal, 'risk_reward_ratio', 0)
         timeframe = self._get_attr(signal, 'timeframe', '1m')
         
+        # Get strategy breakdown
+        strategy_votes = self._get_attr(signal, 'strategy_votes', {})
+        strategy_scores = self._get_attr(signal, 'strategy_scores', {})
+        
+        # Determine dominant strategy (highest scoring strategy that agrees with direction)
+        dominant_strategy = self._get_dominant_strategy(strategy_votes, strategy_scores, direction)
+        
         # Calculate ATR value (approximate from stop loss distance)
         atr_value = abs(entry_price - stop_loss) if entry_price and stop_loss else 0
         
@@ -188,48 +195,54 @@ class TelegramSignalNotifier:
         # Direction-specific formatting
         action = "BUY" if direction == "LONG" else "SELL"
         
-        # Convert symbol format: ETH/USDT:USDT -> ETHUSDT.P or similar
-        # Remove slashes and colons, add .P suffix for perpetual
-        cornix_symbol = symbol.replace('/', '').replace(':USDT', '.P')
+        # Convert symbol format: ETH/USDT:USDT -> FXSUSDT.P SELL
+        # Remove slashes and colons for Cornix format
+        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol.replace(':USDT', '')
+        cornix_symbol = f"{base_symbol}USDT.P"
         
-        # Build professional message matching the image format EXACTLY
+        # Build professional message with CORNIX-FIRST format for maximum readability
         lines = [
-            f"🎯 *STRATEGY:* Ichimoku Sniper",
-            f"Multi-TF Enhanced",
-            f"• *Conversion/Base:* 4/4 periods",
-            f"• *LaggingSpan2/Displacement:* 46/20 periods",
-            f"• *EMA Filter:* 200 periods",
-            f"• *SL/TP Percent:* {sl_pct:.2f}%/{tp_pct:.2f}%",
+            f"🎯 *{dominant_strategy}* Multi-TF Enhanced",
+            f"• Conversion/Base: 4/4 periods",
+            f"• LaggingSpan2/Displacement: 46/20 periods",
+            f"• EMA Filter: 200 periods",
+            f"• SL/TP Percent: {sl_pct:.2f}%/{tp_pct:.2f}%",
             f"",
             f"📊 *SIGNAL ANALYSIS:*",
-            f"• *Strength:* {signal_strength:.1f}%",
-            f"• *Confidence:* {consensus_confidence:.1f}%",
-            f"• *Risk/Reward:* 1:{risk_reward:.2f}",
-            f"• *ATR Value:* {atr_value:.6f}",
-            f"• *Scan Mode:* Multi-Timeframe Enhanced",
+            f"• Strength: {signal_strength:.1f}%",
+            f"• Confidence: {consensus_confidence:.1f}%",
+            f"• Risk/Reward: 1:{risk_reward:.2f}",
+            f"• ATR Value: {atr_value:.6f}",
+            f"• Scan Mode: Multi-Timeframe Enhanced",
             f"",
             f"🎯 *CORNIX COMPATIBLE FORMAT:*",
-            f"*{cornix_symbol} {action}*",
+            f"{cornix_symbol} {action}",
             f"Entry: {entry_price:.5f}",
             f"SL: {stop_loss:.5f}",
-            f"TP: {tp1:.5f}",
         ]
         
-        # Add additional TPs if available
+        # Add all TPs in clean format
+        tp_list = []
+        if tp1 > 0:
+            tp_list.append(f"{tp1:.5f}")
         if tp2 > 0:
-            lines.append(f"TP: {tp2:.5f}")
+            tp_list.append(f"{tp2:.5f}")
         if tp3 > 0:
-            lines.append(f"TP: {tp3:.5f}")
+            tp_list.append(f"{tp3:.5f}")
+        
+        # Add TPs as separate lines for Cornix readability
+        for tp in tp_list:
+            lines.append(f"TP: {tp}")
         
         lines.extend([
             f"Leverage: {leverage}x",
             f"Margin: CROSS",
             f"",
             f"🕐 *Signal Time:* {timestamp}",
-            f"🤖 *Bot:* Pine Script Ichimoku Sniper v6",
+            f"🤖 *Bot:* Pine Script {dominant_strategy} v6",
             f"",
-            f"*Cross Margin & Auto Leverage*",
-            f"*- Comprehensive Risk Management*"
+            f"Cross Margin & Auto Leverage",
+            f"- Comprehensive Risk Management"
         ])
         
         return "\n".join(lines)
@@ -386,6 +399,34 @@ class TelegramSignalNotifier:
             pct = -pct
         
         return abs(pct)
+    
+    def _get_dominant_strategy(self, strategy_votes: Dict[str, str], strategy_scores: Dict[str, float], direction: str) -> str:
+        """Get the dominant strategy name based on votes and scores"""
+        
+        # Strategy name mapping to display names
+        strategy_names = {
+            'ultimate_scalping': 'Ichimoku Sniper',
+            'lightning_scalping': 'Lightning Scalper',
+            'momentum_scalping': 'Momentum Sniper',
+            'volume_breakout': 'Volume Breakout',
+            'ichimoku_sniper': 'Ichimoku Sniper',
+            'market_intelligence': 'Market Intelligence'
+        }
+        
+        # Find strategies that agree with the consensus direction
+        agreeing_strategies = {}
+        for strategy, vote in strategy_votes.items():
+            if vote == direction or (vote == 'BUY' and direction == 'LONG') or (vote == 'SELL' and direction == 'SHORT'):
+                score = strategy_scores.get(strategy, 0)
+                agreeing_strategies[strategy] = score
+        
+        # Return the highest scoring agreeing strategy
+        if agreeing_strategies:
+            dominant = max(agreeing_strategies, key=lambda x: agreeing_strategies[x])
+            return strategy_names.get(dominant, 'Ichimoku Sniper')
+        
+        # Default to Ichimoku Sniper if no agreeing strategies found
+        return 'Ichimoku Sniper'
     
     def _format_cornix_signal(self, signal: Any) -> str:
         """Format signal in Cornix-compatible format"""

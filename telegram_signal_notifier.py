@@ -192,21 +192,15 @@ class TelegramSignalNotifier:
         # Format timestamp - exact format from image
         timestamp = datetime.now().strftime('%Y-%m-%d\n%H:%M:%S UTC')
         
-        # Direction-specific formatting - OFFICIAL CORNIX FORMAT
-        action = "Long" if direction == "LONG" else "Short"
+        # Direction-specific formatting
+        action = "BUY" if direction == "LONG" else "SELL"
         
-        # Convert symbol format: ETH/USDT:USDT -> ETH/USDT (OFFICIAL CORNIX FORMAT)
-        # Cornix expects "BTC/USDT", "ETH/USDT", etc. NOT .P suffix
-        if '/' in symbol:
-            # Extract base and quote: ETH/USDT:USDT -> ETH/USDT
-            parts = symbol.split(':')
-            cornix_symbol = parts[0] if parts else symbol
-        else:
-            # Construct from symbol
-            base_symbol = symbol.replace('USDT', '').replace(':',  '')
-            cornix_symbol = f"{base_symbol}/USDT"
+        # Convert symbol format: ETH/USDT:USDT -> FXSUSDT.P SELL
+        # Remove slashes and colons for Cornix format
+        base_symbol = symbol.split('/')[0] if '/' in symbol else symbol.replace(':USDT', '')
+        cornix_symbol = f"{base_symbol}USDT.P"
         
-        # Build STRICTLY FORMATTED message matching OFFICIAL CORNIX SPECIFICATION
+        # Build STRICTLY FORMATTED message - CORNIX section FIRST with zero markdown
         # Strategy details section (with formatting for readability)
         strategy_section = [
             f"🎯 *{dominant_strategy}* Multi-TF Enhanced",
@@ -223,32 +217,30 @@ class TelegramSignalNotifier:
             f"• Scan Mode: Multi-Timeframe Enhanced",
         ]
         
-        # CORNIX SECTION - OFFICIAL SPECIFICATION FORMAT
-        # Format: Pair, Direction, Entry, Targets, Stop Loss, Leverage
+        # CORNIX section - STRICTLY FORMATTED with ZERO markdown for clean parsing
         cornix_section = [
             f"",
-            f"🎯 CORNIX SIGNAL:",
-            f"{cornix_symbol}",
-            f"{action}",
-            f"Leverage: {leverage}x",
-            f"",
+            f"🎯 *CORNIX COMPATIBLE FORMAT:*",
+            f"{cornix_symbol} {action}",
             f"Entry: {entry_price:.5f}",
         ]
         
-        # Add Take Profit targets (Cornix official format: "Target 1:", "Target 2:", etc.)
-        target_num = 1
-        if tp1 > 0:
-            cornix_section.append(f"Target {target_num}: {tp1:.5f}")
-            target_num += 1
-        if tp2 > 0:
-            cornix_section.append(f"Target {target_num}: {tp2:.5f}")
-            target_num += 1
-        if tp3 > 0:
-            cornix_section.append(f"Target {target_num}: {tp3:.5f}")
+        # Add SL
+        cornix_section.append(f"SL: {stop_loss:.5f}")
         
-        # Add Stop Loss (Cornix official format)
-        cornix_section.append(f"")
-        cornix_section.append(f"Stop Loss: {stop_loss:.5f}")
+        # Add all TPs in strictly clean format
+        if tp1 > 0:
+            cornix_section.append(f"TP: {tp1:.5f}")
+        if tp2 > 0:
+            cornix_section.append(f"TP: {tp2:.5f}")
+        if tp3 > 0:
+            cornix_section.append(f"TP: {tp3:.5f}")
+        
+        # Add leverage and margin
+        cornix_section.extend([
+            f"Leverage: {leverage}x",
+            f"Margin: CROSS",
+        ])
         
         # Footer section
         footer_section = [

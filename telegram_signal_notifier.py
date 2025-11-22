@@ -200,8 +200,9 @@ class TelegramSignalNotifier:
         base_symbol = symbol.split('/')[0] if '/' in symbol else symbol.replace(':USDT', '')
         cornix_symbol = f"{base_symbol}USDT.P"
         
-        # Build professional message with CORNIX-FIRST format for maximum readability
-        lines = [
+        # Build STRICTLY FORMATTED message - CORNIX section FIRST with zero markdown
+        # Strategy details section (with formatting for readability)
+        strategy_section = [
             f"🎯 *{dominant_strategy}* Multi-TF Enhanced",
             f"• Conversion/Base: 4/4 periods",
             f"• LaggingSpan2/Displacement: 46/20 periods",
@@ -214,36 +215,45 @@ class TelegramSignalNotifier:
             f"• Risk/Reward: 1:{risk_reward:.2f}",
             f"• ATR Value: {atr_value:.6f}",
             f"• Scan Mode: Multi-Timeframe Enhanced",
+        ]
+        
+        # CORNIX section - STRICTLY FORMATTED with ZERO markdown for clean parsing
+        cornix_section = [
             f"",
             f"🎯 *CORNIX COMPATIBLE FORMAT:*",
             f"{cornix_symbol} {action}",
             f"Entry: {entry_price:.5f}",
-            f"SL: {stop_loss:.5f}",
         ]
         
-        # Add all TPs in clean format
-        tp_list = []
+        # Add SL
+        cornix_section.append(f"SL: {stop_loss:.5f}")
+        
+        # Add all TPs in strictly clean format
         if tp1 > 0:
-            tp_list.append(f"{tp1:.5f}")
+            cornix_section.append(f"TP: {tp1:.5f}")
         if tp2 > 0:
-            tp_list.append(f"{tp2:.5f}")
+            cornix_section.append(f"TP: {tp2:.5f}")
         if tp3 > 0:
-            tp_list.append(f"{tp3:.5f}")
+            cornix_section.append(f"TP: {tp3:.5f}")
         
-        # Add TPs as separate lines for Cornix readability
-        for tp in tp_list:
-            lines.append(f"TP: {tp}")
-        
-        lines.extend([
+        # Add leverage and margin
+        cornix_section.extend([
             f"Leverage: {leverage}x",
             f"Margin: CROSS",
+        ])
+        
+        # Footer section
+        footer_section = [
             f"",
             f"🕐 *Signal Time:* {timestamp}",
             f"🤖 *Bot:* Pine Script {dominant_strategy} v6",
             f"",
             f"Cross Margin & Auto Leverage",
             f"- Comprehensive Risk Management"
-        ])
+        ]
+        
+        # Combine all sections
+        lines = strategy_section + cornix_section + footer_section
         
         return "\n".join(lines)
     

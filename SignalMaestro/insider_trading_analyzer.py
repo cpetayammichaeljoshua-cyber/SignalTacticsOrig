@@ -49,8 +49,8 @@ class InsiderTradingAnalyzer:
             if len(market_data) < 20:
                 return self._default_metrics()
             
-            volume = market_data['volume'].values
-            close = market_data['close'].values
+            volume = np.asarray(market_data['volume'].values, dtype=float)
+            close = np.asarray(market_data['close'].values, dtype=float)
             
             # Identify large volume trades
             large_buy_vol, large_sell_vol = self._detect_large_trades(market_data)
@@ -91,8 +91,8 @@ class InsiderTradingAnalyzer:
     def _detect_large_trades(self, market_data: pd.DataFrame) -> Tuple[float, float]:
         """Detect large buy and sell trades"""
         try:
-            close = market_data['close'].values
-            volume = market_data['volume'].values
+            close = np.asarray(market_data['close'].values, dtype=float)
+            volume = np.asarray(market_data['volume'].values, dtype=float)
             
             # Threshold for large trade
             avg_volume = float(np.mean(volume))
@@ -138,11 +138,11 @@ class InsiderTradingAnalyzer:
     def _detect_whale_accumulation(self, market_data: pd.DataFrame) -> float:
         """Detect whale (large holder) accumulation patterns"""
         try:
-            volume = market_data['volume'].values
+            volume = np.asarray(market_data['volume'].values, dtype=float)
             
             # Calculate volume percentile
             vol_percentile = float(np.percentile(volume, self.whale_threshold_percentile))
-            recent_large_trades = np.sum(volume[-10:] > vol_percentile)
+            recent_large_trades = int(np.sum(volume[-10:] > vol_percentile))
             
             # More large trades = more whale activity
             whale_score = min(recent_large_trades / 10.0, 1.0)
@@ -177,12 +177,13 @@ class InsiderTradingAnalyzer:
     def _calculate_order_concentration(self, volume: np.ndarray) -> float:
         """Calculate how concentrated large orders are"""
         try:
+            volume = np.asarray(volume, dtype=float)
             avg_vol = float(np.mean(volume))
             
             # Count candles with >2x average volume
-            concentrated = np.sum(volume > (avg_vol * 2.0))
+            concentrated = int(np.sum(volume > (avg_vol * 2.0)))
             
-            concentration_score = min(concentrated / len(volume), 1.0)
+            concentration_score = min(float(concentrated) / len(volume), 1.0)
             return float(concentration_score)
         except Exception:
             return 0.5
@@ -190,14 +191,16 @@ class InsiderTradingAnalyzer:
     def _calculate_sentiment(self, close: np.ndarray, volume: np.ndarray) -> float:
         """Calculate market sentiment (-1 to 1)"""
         try:
+            close = np.asarray(close, dtype=float)
+            volume = np.asarray(volume, dtype=float)
             buy_volume = 0.0
             sell_volume = 0.0
             
             for i in range(1, len(close)):
                 if close[i] > close[i-1]:
-                    buy_volume += volume[i]
+                    buy_volume += float(volume[i])
                 else:
-                    sell_volume += volume[i]
+                    sell_volume += float(volume[i])
             
             total = buy_volume + sell_volume
             if total == 0:
@@ -211,14 +214,14 @@ class InsiderTradingAnalyzer:
     def _detect_manipulation_risk(self, market_data: pd.DataFrame) -> float:
         """Detect pump and dump manipulation risk"""
         try:
-            close = market_data['close'].values
-            volume = market_data['volume'].values
+            close = np.asarray(market_data['close'].values, dtype=float)
+            volume = np.asarray(market_data['volume'].values, dtype=float)
             
             # Risk factors:
             # 1. Large volume with small price movement = distribution
             # 2. Price spike with volume spike = potential pump
             
-            recent_price_change = abs(close[-1] - close[-5]) / close[-5]
+            recent_price_change = abs(float(close[-1]) - float(close[-5])) / (float(close[-5]) + 1e-9)
             recent_vol_avg = float(np.mean(volume[-5:]))
             historical_vol_avg = float(np.mean(volume[:-5]))
             

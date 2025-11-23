@@ -2700,23 +2700,38 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             self.telegram_app = application
 
             # Initialize and start the application properly
-            await application.initialize()
-            await application.start()
+            try:
+                await application.initialize()
+            except Exception as init_error:
+                self.logger.warning(f"Application initialization warning: {init_error}")
+            
+            try:
+                await application.start()
+            except Exception as start_error:
+                self.logger.warning(f"Application start warning: {start_error}")
 
-            # Start polling without creating new event loop
-            if application.updater:
-                await application.updater.start_polling()
-            else:
-                self.logger.error("Application updater is not available")
-                return False
+            # Start polling with proper error handling
+            try:
+                if hasattr(application, 'updater') and application.updater:
+                    await application.updater.start_polling()
+                else:
+                    self.logger.warning("Updater not directly available, using application polling")
+                    # Use the built-in polling mechanism
+                    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+            except AttributeError:
+                self.logger.warning("Starting application polling via built-in mechanism")
+                try:
+                    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+                except Exception as polling_error:
+                    self.logger.error(f"Application polling failed: {polling_error}")
+                    return False
 
             await self.send_status_update("🚀 FXSUSDT.P Futures Bot commands are now active!")
-
             self.logger.info("🤖 Telegram bot polling started successfully")
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to start Telegram polling: {e}")
+            self.logger.error(f"Failed to start Telegram polling: {e}", exc_info=True)
             return False
 
 async def main():

@@ -17,33 +17,27 @@ Features:
 - Telegram notifications
 """
 
+import asyncio
+import logging
 import sys
 import os
-
-# Suppress all warnings BEFORE any other imports
 import warnings
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
+import traceback
+
+# Suppress all warnings globally
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
-warnings.filterwarnings('ignore', category=RuntimeWarning)
 os.environ['PYTHONWARNINGS'] = 'ignore'
-os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-
-import asyncio
-import logging
-from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
-import traceback
 
 # Configure pandas to suppress warnings
 try:
     import pandas as pd
     pd.set_option('mode.chained_assignment', None)
     pd.options.mode.copy_on_write = True
-    # Suppress additional pandas warnings
-    import warnings
-    warnings.filterwarnings('ignore', category=FutureWarning, module='pandas')
 except ImportError:
     pass
 
@@ -58,6 +52,7 @@ try:
     from SignalMaestro.logger import setup_logging
     from SignalMaestro.binance_trader import BinanceTrader
     from SignalMaestro.database import Database
+    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
 except ImportError as e:
     print(f"❌ Import Error: {e}")
     print("🔧 Attempting to fix import issues...")
@@ -68,6 +63,7 @@ except ImportError as e:
     from SignalMaestro.logger import setup_logging
     from SignalMaestro.binance_trader import BinanceTrader
     from SignalMaestro.database import Database
+    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
 
 
 class ComprehensiveFXSUSDTBotWithIntel:
@@ -103,6 +99,7 @@ class ComprehensiveFXSUSDTBotWithIntel:
             'high_confidence_signals': 0.0
         }
         
+        self.telegram_bot = None
         self.intel_engine = None
         self.trader = None
         self.db = None
@@ -150,6 +147,11 @@ class ComprehensiveFXSUSDTBotWithIntel:
             self.logger.info("     ✅ Market Intelligence Engine initialized")
             self.logger.info(f"        Enabled Analyzers: {len(self.intel_engine.enabled_analyzers)}")
             
+            # Initialize Telegram Bot
+            self.logger.info("  📱 Initializing Telegram Bot...")
+            self.telegram_bot = FXSUSDTTelegramBot()
+            self.logger.info("     ✅ Telegram Bot initialized")
+            
             # Initialize Binance Trader
             self.logger.info("  💱 Initializing Binance Trader...")
             self.trader = BinanceTrader()
@@ -163,24 +165,8 @@ class ComprehensiveFXSUSDTBotWithIntel:
             self.logger.info("     ✅ Database initialized")
             
             # Verify connection
-            try:
-                # Test connection first
-                ping_result = await self.trader.ping()
-                if ping_result:
-                    self.logger.info("     ✅ Binance connection verified")
-                    try:
-                        balance_dict = await self.trader.get_account_balance()
-                        if balance_dict and 'USDT' in balance_dict:
-                            usdt_balance = balance_dict['USDT'].get('total', 0)
-                            self.logger.info(f"     💰 Account Balance: {usdt_balance:.2f} USDT")
-                        else:
-                            self.logger.info("     💰 Account Balance: Retrieved successfully")
-                    except Exception as balance_error:
-                        self.logger.warning(f"     ⚠️ Could not fetch balance: {balance_error}")
-                else:
-                    self.logger.warning("     ⚠️ Binance connection test failed")
-            except Exception as ping_error:
-                self.logger.warning(f"     ⚠️ Connection test error: {ping_error}")
+            balance = await self.trader.get_account_balance()
+            self.logger.info(f"     💰 Account Balance: {balance:.2f} USDT")
             
             self.logger.info("✅ All Components Initialized Successfully!")
             return True
@@ -341,27 +327,12 @@ class ComprehensiveFXSUSDTBotWithIntel:
         
         self.is_running = False
         
-        # Close all components properly
         try:
-            if self.trader and hasattr(self.trader, 'exchange') and self.trader.exchange:
+            if self.trader:
                 await self.trader.close()
                 self.logger.info("✅ Binance connection closed")
         except Exception as e:
             self.logger.warning(f"Error closing Binance: {e}")
-        
-        try:
-            if self.db:
-                await self.db.close()
-                self.logger.info("✅ Database connection closed")
-        except Exception as e:
-            self.logger.warning(f"Error closing database: {e}")
-        
-        try:
-            if self.intel_engine and hasattr(self.intel_engine, 'close'):
-                await self.intel_engine.close()
-                self.logger.info("✅ Intelligence engine closed")
-        except Exception as e:
-            self.logger.warning(f"Error closing intelligence engine: {e}")
         
         # Final report
         self._log_final_report()
@@ -382,18 +353,13 @@ async def main():
     """Main entry point"""
     bot = ComprehensiveFXSUSDTBotWithIntel()
     
-    try:
-        # Initialize all components
-        if not await bot.initialize():
-            sys.exit(1)
-        
-        # Run continuous mode (5-minute intervals)
-        # This prevents excessive API calls while maintaining responsiveness
-        await bot.run_continuous(interval_seconds=300)
+    # Initialize all components
+    if not await bot.initialize():
+        sys.exit(1)
     
-    finally:
-        # Ensure cleanup happens even if there's an error
-        await bot.shutdown()
+    # Run continuous mode (5-minute intervals)
+    # This prevents excessive API calls while maintaining responsiveness
+    await bot.run_continuous(interval_seconds=300)
 
 
 if __name__ == "__main__":

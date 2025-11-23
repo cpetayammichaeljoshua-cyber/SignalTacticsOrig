@@ -105,21 +105,14 @@ class BinanceTrader:
 
         if ENHANCED_ERROR_HANDLING:
             # Initialize circuit breaker for Binance API
-            try:
-                self.circuit_breaker = CircuitBreaker(
-                    failure_threshold=5,
-                    recovery_timeout=300  # 5 minutes
-                )
-            except Exception as e:
-                self.logger.warning(f"⚠️ Could not initialize circuit breaker: {e}")
-                self.circuit_breaker = None
+            self.circuit_breaker = CircuitBreaker(
+                failure_threshold=5,
+                recovery_timeout=300,  # 5 minutes
+                retry_threshold=3
+            )
 
             # Get global resilience manager
-            try:
-                self.resilience_manager = get_global_resilience_manager()
-            except Exception as e:
-                self.logger.warning(f"⚠️ Could not get resilience manager: {e}")
-                self.resilience_manager = None
+            self.resilience_manager = get_global_resilience_manager()
 
             self.logger.info("✅ Enhanced error handling enabled for Binance trader")
         else:
@@ -160,19 +153,9 @@ class BinanceTrader:
             raise
 
     async def close(self):
-        """Close exchange connection and cleanup resources"""
-        try:
-            # Stop WebSocket streams
-            if self.ws_running:
-                await self.stop_price_stream()
-            
-            # Close exchange connection
-            if self.exchange:
-                await self.exchange.close()
-                self.exchange = None
-                self.logger.info("Exchange connection closed successfully")
-        except Exception as e:
-            self.logger.error(f"Error closing exchange connection: {e}")
+        """Close exchange connection"""
+        if self.exchange:
+            await self.exchange.close()
 
     async def ping(self) -> bool:
         """Test exchange connectivity"""

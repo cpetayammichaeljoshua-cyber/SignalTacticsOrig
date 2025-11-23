@@ -178,8 +178,6 @@ class BinanceTrader:
                 self.logger.error(f"Binance completely inaccessible: {e2}")
                 return False
 
-    @handle_errors(retry_config=RetryConfigs.API_RETRY)
-    @resilient_api_call
     async def get_account_balance(self) -> Dict[str, Dict[str, float]]:
         """Get account balance for all assets with enhanced error handling"""
         try:
@@ -241,8 +239,6 @@ class BinanceTrader:
             self.logger.error(f"Error calculating portfolio value: {e}")
             return 0.0
 
-    @handle_errors(retry_config=RetryConfigs.API_RETRY)
-    @resilient_api_call
     async def get_current_price(self, symbol: str) -> float:
         """Get current market price for symbol with enhanced error handling"""
         try:

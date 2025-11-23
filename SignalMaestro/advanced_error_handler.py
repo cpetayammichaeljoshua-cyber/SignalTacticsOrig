@@ -71,11 +71,11 @@ class CircuitBreakerState:
 class TradingBotException(Exception):
     """Base exception for trading bot errors"""
     def __init__(self, message: str, category: ErrorCategory = ErrorCategory.UNKNOWN, 
-                 severity: ErrorSeverity = ErrorSeverity.MEDIUM, context: Dict[str, Any] = None):
+                 severity: ErrorSeverity = ErrorSeverity.MEDIUM, context: Optional[Dict[str, Any]] = None):
         super().__init__(message)
         self.category = category
         self.severity = severity
-        self.context = context or {}
+        self.context = context if context is not None else {}
         self.timestamp = datetime.now()
 
 
@@ -178,7 +178,7 @@ class CircuitBreaker:
             result = func(*args, **kwargs)
             self._on_success()
             return result
-        except self.expected_exception as e:
+        except self.expected_exception as e:  # type: ignore
             self._on_failure()
             raise
             
@@ -198,7 +198,7 @@ class CircuitBreaker:
             result = await func(*args, **kwargs)
             self._on_success()
             return result
-        except self.expected_exception as e:
+        except self.expected_exception as e:  # type: ignore
             self._on_failure()
             raise
     
@@ -510,9 +510,9 @@ class AdvancedErrorHandler:
 
 
 # Decorator for automatic error handling
-def handle_errors(retry_config: RetryConfig = None, 
+def handle_errors(retry_config: Optional[RetryConfig] = None, 
                  circuit_breaker_name: Optional[str] = None,
-                 context: Dict[str, Any] = None):
+                 context: Optional[Dict[str, Any]] = None):
     """Decorator for automatic error handling with retry and circuit breaker"""
     def decorator(func):
         @wraps(func)
@@ -525,7 +525,7 @@ def handle_errors(retry_config: RetryConfig = None,
                 error_handler = AdvancedErrorHandler()
             
             return await error_handler.execute_with_retry(
-                func, retry_config, circuit_breaker_name, context, *args, **kwargs
+                func, retry_config if retry_config else RetryConfig(), circuit_breaker_name, context if context else {}, *args, **kwargs
             )
         
         @wraps(func)

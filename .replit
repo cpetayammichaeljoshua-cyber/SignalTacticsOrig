@@ -155,38 +155,6 @@ task = "shell.exec"
 args = "python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Trading Bot Console"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Comprehensive FXSUSDT Bot"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Unified Multi-Market Bot"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "High-Frequency Scalping Bot"
-
-[[workflows.workflow]]
-name = "Trading Bot Console"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py && python start_fxsusdt_bot_comprehensive_fixed.py"
-
-[[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"
 author = 47967880
 mode = "sequential"
@@ -280,37 +248,24 @@ task = "shell.exec"
 args = "python start_auto_train_ml_bot.py && python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "Comprehensive FXSUSDT Bot"
+name = "Project"
+mode = "parallel"
 author = "agent"
 
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_comprehensive_fxsusdt_bot.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
+task = "workflow.run"
+args = "FXSUSDT Bot Comprehensive"
 
 [[workflows.workflow]]
-name = "Unified Multi-Market Bot"
+name = "FXSUSDT Bot Comprehensive"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_unified_multi_market_bot.py"
+args = "python3 start_fxsusdt_bot_comprehensive_fixed.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
-
-[[workflows.workflow]]
-name = "High-Frequency Scalping Bot"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_high_frequency_scalping_bot.py"
 
 [[ports]]
 localPort = 3000

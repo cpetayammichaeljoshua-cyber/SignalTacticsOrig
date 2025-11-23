@@ -333,8 +333,8 @@ class ComprehensiveFXSUSDTBotWithIntel:
         self.is_running = False
         
         try:
-            if self.trader:
-                await self.trader.close()
+            if self.trader and hasattr(self.trader, 'close'):
+                await self.trader.close()  # type: ignore
                 self.logger.info("✅ Binance connection closed")
         except Exception as e:
             self.logger.warning(f"Error closing Binance: {e}")

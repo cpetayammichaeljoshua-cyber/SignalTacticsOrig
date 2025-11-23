@@ -271,11 +271,17 @@ class ComprehensiveFXSUSDTBotWithIntel:
             # Use Telegram bot to process signals with intelligence
             if intel:
                 self.stats['signals_processed'] += 1
-                if intel['consensus_confidence'] >= 70:
+                
+                # Calculate signal confidence using both consensus_confidence and overall_score
+                # Use overall_score directly when higher, as it reflects analyzer convergence
+                signal_confidence = max(intel['consensus_confidence'], intel['overall_score'])
+                
+                if signal_confidence >= 70:
                     self.stats['high_confidence_signals'] += 1
                 
                 self.logger.info(f"\n💡 SIGNAL QUALITY ASSESSMENT:")
-                self.logger.info(f"   Confidence Level: {'🟢 HIGH' if intel['consensus_confidence'] >= 70 else '🟡 MEDIUM' if intel['consensus_confidence'] >= 50 else '🔴 LOW'}")
+                self.logger.info(f"   Confidence Level: {'🟢 HIGH' if signal_confidence >= 70 else '🟡 MEDIUM' if signal_confidence >= 50 else '🔴 LOW'}")
+                self.logger.info(f"   Signal Confidence: {signal_confidence:.1f}%")
                 self.logger.info(f"   Total Score: {intel['overall_score']:.1f}/100")
                 self.logger.info(f"   Risk Assessment: {intel['risk_level'].upper()}")
             

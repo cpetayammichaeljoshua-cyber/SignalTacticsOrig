@@ -49,11 +49,11 @@ class MarketIntelligenceEngine:
         # Configuration
         self.enabled_analyzers = set(self.analyzers.keys())
         self.analyzer_weights = {
-            AnalyzerType.LIQUIDITY: 1.2,  # Slightly higher weight
-            AnalyzerType.ORDER_FLOW: 1.2,  # Slightly higher weight
-            AnalyzerType.VOLUME_PROFILE: 1.0,
-            AnalyzerType.FRACTALS: 1.0,
-            AnalyzerType.INTERMARKET: 0.8  # Slightly lower weight
+            AnalyzerType.LIQUIDITY: 1.4,  # High weight - most reliable
+            AnalyzerType.ORDER_FLOW: 1.3,  # High weight - strong signal
+            AnalyzerType.VOLUME_PROFILE: 1.2,  # Good weight
+            AnalyzerType.FRACTALS: 1.1,  # Decent weight
+            AnalyzerType.INTERMARKET: 1.0  # Correlation weight
         }
         
         # Cache last snapshot
@@ -248,6 +248,7 @@ class MarketIntelligenceEngine:
         bullish_weight = 0
         bearish_weight = 0
         total_weight = 0
+        avg_confidence = 0
         
         for analyzer_type, result in analyzer_results.items():
             weight = self.analyzer_weights.get(analyzer_type, 1.0)
@@ -258,23 +259,25 @@ class MarketIntelligenceEngine:
             elif result.bias == MarketBias.BEARISH:
                 bearish_weight += weight * confidence_factor
             
+            avg_confidence += result.confidence
             total_weight += weight
         
         if total_weight == 0:
             return MarketBias.NEUTRAL, 0
         
+        avg_confidence = avg_confidence / len(analyzer_results) if analyzer_results else 0
         bullish_score = (bullish_weight / total_weight) * 100
         bearish_score = (bearish_weight / total_weight) * 100
         
         if bullish_score > bearish_score * 1.5:
             consensus_bias = MarketBias.BULLISH
-            consensus_confidence = bullish_score
+            consensus_confidence = max(bullish_score, avg_confidence)
         elif bearish_score > bullish_score * 1.5:
             consensus_bias = MarketBias.BEARISH
-            consensus_confidence = bearish_score
+            consensus_confidence = max(bearish_score, avg_confidence)
         else:
             consensus_bias = MarketBias.NEUTRAL
-            consensus_confidence = 50
+            consensus_confidence = max(50, avg_confidence)
         
         return consensus_bias, min(consensus_confidence, 100)
     

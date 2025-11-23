@@ -156,9 +156,19 @@ class BinanceTrader:
             raise
 
     async def close(self):
-        """Close exchange connection"""
-        if self.exchange:
-            await self.exchange.close()
+        """Close exchange connection and cleanup resources"""
+        try:
+            # Stop WebSocket streams
+            if self.ws_running:
+                await self.stop_price_stream()
+            
+            # Close exchange connection
+            if self.exchange:
+                await self.exchange.close()
+                self.exchange = None
+                self.logger.info("Exchange connection closed successfully")
+        except Exception as e:
+            self.logger.error(f"Error closing exchange connection: {e}")
 
     async def ping(self) -> bool:
         """Test exchange connectivity"""

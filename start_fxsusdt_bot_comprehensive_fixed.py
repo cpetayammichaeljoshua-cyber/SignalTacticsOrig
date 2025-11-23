@@ -171,8 +171,15 @@ class ComprehensiveFXSUSDTBotWithIntel:
             self.logger.info("     ✅ Database initialized")
             
             # Verify connection
-            balance = await self.trader.get_account_balance()
-            self.logger.info(f"     💰 Account Balance: {balance:.2f} USDT")
+            try:
+                balance_dict = await self.trader.get_account_balance()
+                if balance_dict and 'USDT' in balance_dict:
+                    usdt_balance = balance_dict['USDT'].get('total', 0)
+                    self.logger.info(f"     💰 Account Balance: {usdt_balance:.2f} USDT")
+                else:
+                    self.logger.info("     💰 Account Balance: Retrieved successfully")
+            except Exception as balance_error:
+                self.logger.warning(f"     ⚠️ Could not fetch balance: {balance_error}")
             
             self.logger.info("✅ All Components Initialized Successfully!")
             return True
@@ -333,12 +340,27 @@ class ComprehensiveFXSUSDTBotWithIntel:
         
         self.is_running = False
         
+        # Close all components properly
         try:
-            if self.trader:
+            if self.trader and hasattr(self.trader, 'exchange') and self.trader.exchange:
                 await self.trader.close()
                 self.logger.info("✅ Binance connection closed")
         except Exception as e:
             self.logger.warning(f"Error closing Binance: {e}")
+        
+        try:
+            if self.db:
+                await self.db.close()
+                self.logger.info("✅ Database connection closed")
+        except Exception as e:
+            self.logger.warning(f"Error closing database: {e}")
+        
+        try:
+            if self.intel_engine and hasattr(self.intel_engine, 'close'):
+                await self.intel_engine.close()
+                self.logger.info("✅ Intelligence engine closed")
+        except Exception as e:
+            self.logger.warning(f"Error closing intelligence engine: {e}")
         
         # Final report
         self._log_final_report()
@@ -359,13 +381,18 @@ async def main():
     """Main entry point"""
     bot = ComprehensiveFXSUSDTBotWithIntel()
     
-    # Initialize all components
-    if not await bot.initialize():
-        sys.exit(1)
+    try:
+        # Initialize all components
+        if not await bot.initialize():
+            sys.exit(1)
+        
+        # Run continuous mode (5-minute intervals)
+        # This prevents excessive API calls while maintaining responsiveness
+        await bot.run_continuous(interval_seconds=300)
     
-    # Run continuous mode (5-minute intervals)
-    # This prevents excessive API calls while maintaining responsiveness
-    await bot.run_continuous(interval_seconds=300)
+    finally:
+        # Ensure cleanup happens even if there's an error
+        await bot.shutdown()
 
 
 if __name__ == "__main__":

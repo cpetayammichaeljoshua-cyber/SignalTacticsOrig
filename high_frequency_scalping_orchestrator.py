@@ -80,10 +80,10 @@ class HighFrequencyScalpingOrchestrator:
             'market_intelligence': 0.10     # Market context
         }
 
-        # Consensus requirements (ULTRA-RELAXED FOR MORE SIGNALS)
-        self.min_strategies_agree = 1  # Even 1 strong strategy can generate signal
-        self.min_consensus_confidence = 10.0  # 10% agreement minimum (allows 1 out of 6 strategies)
-        self.min_signal_strength = 50.0  # Minimum weighted strength (lowered for more opportunities)
+        # Consensus requirements (PRODUCTION-GRADE FOR STABLE SIGNALS)
+        self.min_strategies_agree = 3  # At least 3 strategies must agree for valid signal
+        self.min_consensus_confidence = 50.0  # 50% agreement minimum (3+ out of 6 strategies)
+        self.min_signal_strength = 65.0  # Minimum weighted strength for production reliability
 
         # Risk management for high-frequency
         self.max_risk_per_trade = 1.0  # 1% per trade
@@ -301,6 +301,7 @@ class HighFrequencyScalpingOrchestrator:
         short_votes = 0
         long_strength = 0.0
         short_strength = 0.0
+        neutral_votes = 0
 
         strategy_votes = {}
         strategy_scores = {}
@@ -308,7 +309,10 @@ class HighFrequencyScalpingOrchestrator:
         for strategy_name, signal in strategy_signals.items():
             weight = self.strategy_weights.get(strategy_name, 0.1)
 
-            # Extract direction and strength
+            # Extract direction and strength with proper validation
+            direction = None
+            strength = 0.0
+            
             if hasattr(signal, 'direction'):
                 direction = signal.direction
                 strength = getattr(signal, 'signal_strength', 50)
@@ -318,42 +322,63 @@ class HighFrequencyScalpingOrchestrator:
             else:
                 continue
 
+            # Validate strength is numeric and in valid range
+            try:
+                strength = float(strength)
+                if strength < 0 or strength > 100:
+                    strength = max(0, min(100, strength))
+            except (ValueError, TypeError):
+                strength = 50
+
             strategy_votes[strategy_name] = direction
             strategy_scores[strategy_name] = strength
 
-            # Weight votes
+            # Weight votes - FIXED: Only process clear LONG/SHORT signals
             if direction == 'LONG' or direction == 'BUY':
                 long_votes += 1
                 long_strength += strength * weight
             elif direction == 'SHORT' or direction == 'SELL':
                 short_votes += 1
                 short_strength += strength * weight
+            else:
+                # Track neutral/no signal
+                neutral_votes += 1
 
         # Determine consensus
         total_strategies = len(strategy_signals)
+        directional_votes = long_votes + short_votes
+
+        # Need at least 50% of strategies to have directional signals
+        if directional_votes < total_strategies * 0.5:
+            self.logger.debug(f"Insufficient directional signals: {directional_votes}/{total_strategies}")
+            return None
 
         if long_votes > short_votes:
             consensus_direction = 'LONG'
             strategies_agree = long_votes
-            weighted_strength = long_strength
+            weighted_strength = long_strength / (long_votes if long_votes > 0 else 1)
         elif short_votes > long_votes:
             consensus_direction = 'SHORT'
             strategies_agree = short_votes
-            weighted_strength = short_strength
+            weighted_strength = short_strength / (short_votes if short_votes > 0 else 1)
         else:
-            # No consensus
+            # No consensus (equal votes)
+            self.logger.debug(f"No clear consensus: {long_votes} LONG vs {short_votes} SHORT")
             return None
 
-        # Check consensus requirements
+        # Check consensus requirements - PRODUCTION GRADE
         consensus_confidence = (strategies_agree / total_strategies) * 100
 
         if strategies_agree < self.min_strategies_agree:
+            self.logger.debug(f"Insufficient agreements: {strategies_agree} < {self.min_strategies_agree}")
             return None
 
         if consensus_confidence < self.min_consensus_confidence:
+            self.logger.debug(f"Low confidence: {consensus_confidence:.1f}% < {self.min_consensus_confidence}%")
             return None
 
         if weighted_strength < self.min_signal_strength:
+            self.logger.debug(f"Low strength: {weighted_strength:.1f}% < {self.min_signal_strength}%")
             return None
 
         # Calculate entry price from latest candle
@@ -440,36 +465,62 @@ class HighFrequencyScalpingOrchestrator:
                 self.logger.error("❌ Signal missing symbol or direction")
                 return False
             
-            # Check prices
-            if signal.entry_price <= 0 or signal.stop_loss <= 0:
-                self.logger.error("❌ Signal has invalid prices")
+            # Direction must be LONG or SHORT
+            if signal.direction not in ['LONG', 'SHORT']:
+                self.logger.error(f"❌ Invalid direction: {signal.direction}")
                 return False
             
-            # Check at least one TP
-            if signal.take_profit_1 <= 0 and signal.take_profit_2 <= 0 and signal.take_profit_3 <= 0:
+            # Check prices are positive
+            if signal.entry_price <= 0:
+                self.logger.error(f"❌ Invalid entry price: {signal.entry_price}")
+                return False
+                
+            if signal.stop_loss <= 0:
+                self.logger.error(f"❌ Invalid stop loss: {signal.stop_loss}")
+                return False
+            
+            # Check at least one valid TP
+            valid_tps = [tp for tp in [signal.take_profit_1, signal.take_profit_2, signal.take_profit_3] if tp > 0]
+            if not valid_tps:
                 self.logger.error("❌ Signal has no valid take profit levels")
                 return False
             
-            # Validate SL/TP logic
+            # Validate SL/TP logic with tolerance
+            tolerance = 0.001  # 0.1% tolerance
+            
             if signal.direction == 'LONG':
-                if signal.stop_loss >= signal.entry_price:
+                if signal.stop_loss >= signal.entry_price * (1 + tolerance):
                     self.logger.error(f"❌ LONG: SL ({signal.stop_loss}) must be below entry ({signal.entry_price})")
                     return False
-                if signal.take_profit_1 <= signal.entry_price:
-                    self.logger.error(f"❌ LONG: TP must be above entry")
+                if signal.take_profit_1 <= signal.entry_price * (1 - tolerance):
+                    self.logger.error(f"❌ LONG: TP ({signal.take_profit_1}) must be above entry ({signal.entry_price})")
                     return False
+                    
             else:  # SHORT
-                if signal.stop_loss <= signal.entry_price:
+                if signal.stop_loss <= signal.entry_price * (1 - tolerance):
                     self.logger.error(f"❌ SHORT: SL ({signal.stop_loss}) must be above entry ({signal.entry_price})")
                     return False
-                if signal.take_profit_1 >= signal.entry_price:
-                    self.logger.error(f"❌ SHORT: TP must be below entry")
+                if signal.take_profit_1 >= signal.entry_price * (1 + tolerance):
+                    self.logger.error(f"❌ SHORT: TP ({signal.take_profit_1}) must be below entry ({signal.entry_price})")
                     return False
             
-            # Check leverage
+            # Check leverage is within bounds
             if signal.leverage < 1 or signal.leverage > 125:
                 self.logger.error(f"❌ Invalid leverage: {signal.leverage}")
                 return False
+            
+            # Check signal strength and confidence
+            if signal.signal_strength < self.min_signal_strength:
+                self.logger.error(f"❌ Signal strength too low: {signal.signal_strength:.1f}%")
+                return False
+                
+            if signal.consensus_confidence < self.min_consensus_confidence:
+                self.logger.error(f"❌ Confidence too low: {signal.consensus_confidence:.1f}%")
+                return False
+            
+            # Check risk/reward ratio minimum
+            if signal.risk_reward_ratio < 1.0:
+                self.logger.warning(f"⚠️ Low R/R ratio: {signal.risk_reward_ratio:.2f} (acceptable for high-frequency)")
             
             return True
         

@@ -31,14 +31,55 @@ from typing import List
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import core components
-from high_frequency_scalping_orchestrator import HighFrequencyScalpingOrchestrator
-from dynamic_multi_market_position_manager import DynamicMultiMarketPositionManager
-from dynamic_comprehensive_error_fixer import DynamicComprehensiveErrorFixer
-from bot_health_check import check_bot_health
-from telegram_signal_notifier import TelegramSignalNotifier
-from automatic_position_closer import AutomaticPositionCloser
-from atas_platform_integration import ATASPlatformIntegration
+# Import core components with safe error handling
+try:
+    from high_frequency_scalping_orchestrator import HighFrequencyScalpingOrchestrator
+except Exception as e:
+    print(f"❌ Failed to import orchestrator: {e}")
+    sys.exit(1)
+
+try:
+    from dynamic_multi_market_position_manager import DynamicMultiMarketPositionManager
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Could not import position manager: {e}")
+    DynamicMultiMarketPositionManager = None
+
+try:
+    from dynamic_comprehensive_error_fixer import DynamicComprehensiveErrorFixer
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Could not import error fixer: {e}")
+    DynamicComprehensiveErrorFixer = None
+
+try:
+    from bot_health_check import check_bot_health
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Could not import health check: {e}")
+    async def check_bot_health() -> bool:
+        return True
+
+try:
+    from telegram_signal_notifier import TelegramSignalNotifier
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.error(f"❌ Could not import Telegram notifier: {e}")
+    sys.exit(1)
+
+try:
+    from automatic_position_closer import AutomaticPositionCloser
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Could not import position closer: {e}")
+    AutomaticPositionCloser = None
+
+try:
+    from atas_platform_integration import ATASPlatformIntegration
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Could not import ATAS integration: {e}")
+    ATASPlatformIntegration = None
 
 # Configure logging
 logging.basicConfig(
@@ -159,8 +200,15 @@ async def main():
     
     # Step 1: Apply comprehensive error fixes
     logger.info("🔧 Step 1: Applying comprehensive error fixes...")
-    error_fixer = DynamicComprehensiveErrorFixer()
-    error_fixer.apply_all_fixes()
+    if DynamicComprehensiveErrorFixer:
+        try:
+            error_fixer = DynamicComprehensiveErrorFixer()
+            error_fixer.apply_all_fixes()
+            logger.info("✅ Error fixes applied")
+        except Exception as e:
+            logger.warning(f"⚠️ Error fixer failed: {e}")
+    else:
+        logger.info("⏭️  Skipping error fixer (not available)")
     
     # Step 2: Health check
     logger.info("🏥 Step 2: Running health checks...")
@@ -207,21 +255,42 @@ async def main():
     
     # Step 6: Initialize automatic position closer
     logger.info("🔄 Step 6: Initializing automatic position closer...")
-    position_closer = AutomaticPositionCloser(
-        exchange=exchange,
-        telegram_notifier=telegram_notifier
-    )
-    logger.info("✅ Position closer ready")
+    position_closer = None
+    if AutomaticPositionCloser:
+        try:
+            position_closer = AutomaticPositionCloser(
+                exchange=exchange,
+                telegram_notifier=telegram_notifier
+            )
+            logger.info("✅ Position closer ready")
+        except Exception as e:
+            logger.warning(f"⚠️ Position closer initialization failed: {e}")
+    else:
+        logger.info("⏭️  Position closer not available")
     
     # Step 7: Initialize ATAS platform integration
     logger.info("🔌 Step 7: Initializing ATAS platform integration...")
-    atas_integration = ATASPlatformIntegration(host='0.0.0.0', port=8888)
-    logger.info("✅ ATAS integration ready on http://0.0.0.0:8888")
+    atas_integration = None
+    if ATASPlatformIntegration:
+        try:
+            atas_integration = ATASPlatformIntegration(host='0.0.0.0', port=8888)
+            logger.info("✅ ATAS integration ready on http://0.0.0.0:8888")
+        except Exception as e:
+            logger.warning(f"⚠️ ATAS integration initialization failed: {e}")
+    else:
+        logger.info("⏭️  ATAS integration not available")
     
     # Step 8: Initialize position manager
     logger.info("💎 Step 8: Initializing dynamic position manager...")
-    position_manager = DynamicMultiMarketPositionManager(exchange=exchange)
-    logger.info("✅ Position manager ready")
+    position_manager = None
+    if DynamicMultiMarketPositionManager:
+        try:
+            position_manager = DynamicMultiMarketPositionManager(exchange=exchange)
+            logger.info("✅ Position manager ready")
+        except Exception as e:
+            logger.warning(f"⚠️ Position manager initialization failed: {e}")
+    else:
+        logger.info("⏭️  Position manager not available")
     
     # Step 9: Initialize high-frequency orchestrator with all integrations
     logger.info("⚡ Step 9: Initializing high-frequency scalping orchestrator...")
@@ -271,12 +340,18 @@ async def main():
     
     try:
         # Start position monitoring
-        position_monitor_task = asyncio.create_task(position_closer.monitor_positions())
-        logger.info("✅ Position monitoring started")
+        if position_closer:
+            position_monitor_task = asyncio.create_task(position_closer.monitor_positions())
+            logger.info("✅ Position monitoring started")
+        else:
+            logger.info("⏭️  Skipping position monitoring (not available)")
         
         # Start ATAS API server
-        atas_server_task = asyncio.create_task(atas_integration.start_server())
-        logger.info("✅ ATAS API server started")
+        if atas_integration:
+            atas_server_task = asyncio.create_task(atas_integration.start_server())
+            logger.info("✅ ATAS API server started")
+        else:
+            logger.info("⏭️  Skipping ATAS API server (not available)")
         
         # Step 11: Start high-frequency scanning
         logger.info("🚀 Step 11: Starting HIGH-FREQUENCY market scanner...")

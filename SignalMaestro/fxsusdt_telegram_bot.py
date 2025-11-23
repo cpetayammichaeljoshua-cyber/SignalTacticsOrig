@@ -2563,7 +2563,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             if not self.bot_token:
                 self.logger.error("Bot token is not set")
                 return False
-            application = Application.builder().token(self.bot_token).build()
+            
+            # Build application with error handling for Updater initialization
+            try:
+                application = Application.builder().token(self.bot_token).build()
+            except (AttributeError, TypeError) as builder_error:
+                self.logger.warning(f"Application builder failed ({builder_error}), using fallback polling")
+                # Fallback: use pure polling mechanism
+                return await self._start_fallback_polling()
 
             # Add individual command handlers
             async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2732,7 +2739,100 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
         except Exception as e:
             self.logger.error(f"Failed to start Telegram polling: {e}", exc_info=True)
+            # Try fallback polling as last resort
+            try:
+                return await self._start_fallback_polling()
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback polling also failed: {fallback_error}")
+                return False
+    
+    async def _start_fallback_polling(self):
+        """Fallback pure HTTP polling mechanism without Updater"""
+        try:
+            self.logger.info("🔄 Starting fallback HTTP polling (no Updater)")
+            import telegram
+            self.bot = telegram.Bot(token=self.bot_token)
+            
+            # Verify bot connection
+            try:
+                me = await self.bot.get_me()
+                self.logger.info(f"✅ Bot connected: @{me.username}")
+            except Exception as bot_error:
+                self.logger.error(f"Bot connection failed: {bot_error}")
+                return False
+            
+            # Start simple polling loop
+            offset = 0
+            self.logger.info("🚀 Fallback polling loop started")
+            
+            while True:
+                try:
+                    updates = await self.bot.get_updates(offset=offset, timeout=30)
+                    
+                    for update in updates:
+                        try:
+                            # Process command
+                            if update.message and update.message.text and update.message.text.startswith('/'):
+                                await self._handle_fallback_command(update)
+                            offset = update.update_id + 1
+                        except Exception as update_error:
+                            self.logger.error(f"Update processing error: {update_error}")
+                            offset = update.update_id + 1
+                
+                except asyncio.CancelledError:
+                    self.logger.info("Fallback polling cancelled")
+                    break
+                except Exception as poll_error:
+                    self.logger.warning(f"Polling error: {poll_error}, retrying...")
+                    await asyncio.sleep(5)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fallback polling failed: {e}", exc_info=True)
             return False
+    
+    async def _handle_fallback_command(self, update):
+        """Handle commands in fallback mode"""
+        try:
+            message = update.message
+            chat_id = message.chat_id
+            text = message.text.strip()
+            
+            # Extract command
+            parts = text.split()
+            command = parts[0].lstrip('/')
+            args = parts[1:] if len(parts) > 1 else []
+            
+            # Execute command
+            if command in self.commands:
+                try:
+                    # Import for type hints if needed
+                    from telegram import Update as TGUpdate
+                    from telegram.ext import ContextTypes
+                    
+                    # Call command handler
+                    handler_func = self.commands[f'/{command}']
+                    
+                    # Create mock context for compatibility
+                    class MockContext:
+                        def __init__(self, args):
+                            self.args = args
+                    
+                    # Handle async commands
+                    if asyncio.iscoroutinefunction(handler_func):
+                        await handler_func(update, MockContext(args))
+                    else:
+                        handler_func(update, MockContext(args))
+                        
+                except Exception as cmd_error:
+                    self.logger.error(f"Command execution error: {cmd_error}")
+                    await self.send_message(str(chat_id), f"❌ Command error: {str(cmd_error)}")
+            else:
+                await self.send_message(str(chat_id), f"❓ Unknown command: /{command}\nUse /help for available commands")
+                
+        except Exception as e:
+            self.logger.error(f"Fallback command handling error: {e}")
 
 async def main():
     """Main function to run the FXSUSDT bot"""

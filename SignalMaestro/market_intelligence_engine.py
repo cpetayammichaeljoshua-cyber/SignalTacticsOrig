@@ -89,10 +89,13 @@ class MarketIntelligenceEngine:
                 return 0.5
             
             close_series = market_data['close']
-            close = float(close_series.iloc[-1]) if hasattr(close_series, 'iloc') else float(close_series[-1])
-            ma_20 = float(close_series.rolling(20).mean().iloc[-1])
+            close_val = close_series.iloc[-1] if hasattr(close_series, 'iloc') else close_series[-1]
+            close = float(close_val)
+            ma_20_val = close_series.rolling(20).mean().iloc[-1]
+            ma_20 = float(ma_20_val)
             ma_50_series = close_series.rolling(50).mean()
-            ma_50 = float(ma_50_series.iloc[-1]) if len(market_data) >= 50 else ma_20
+            ma_50_val = ma_50_series.iloc[-1] if len(market_data) >= 50 else ma_20
+            ma_50 = float(ma_50_val)
             
             # Price position relative to moving averages
             if close > ma_20 > ma_50:
@@ -111,8 +114,10 @@ class MarketIntelligenceEngine:
                 return 0.5
             
             vol_series = market_data['volume']
-            current_volume = float(vol_series.iloc[-1]) if hasattr(vol_series, 'iloc') else float(vol_series[-1])
-            avg_volume = float(vol_series.rolling(10).mean().iloc[-1])
+            current_vol_val = vol_series.iloc[-1] if hasattr(vol_series, 'iloc') else vol_series[-1]
+            current_volume = float(current_vol_val)
+            avg_vol_val = vol_series.rolling(10).mean().iloc[-1]
+            avg_volume = float(avg_vol_val)
             
             # Volume surge indicator
             if current_volume > avg_volume * 1.5:
@@ -159,8 +164,10 @@ class MarketIntelligenceEngine:
             gain = (deltas.where(deltas > 0, 0)).rolling(window=14).mean()
             loss = (-deltas.where(deltas < 0, 0)).rolling(window=14).mean()
             
-            loss_val = float(loss.iloc[-1]) if hasattr(loss, 'iloc') else float(loss[-1])
-            gain_val = float(gain.iloc[-1]) if hasattr(gain, 'iloc') else float(gain[-1])
+            loss_last = loss.iloc[-1] if hasattr(loss, 'iloc') else loss[-1]
+            loss_val = float(loss_last)
+            gain_last = gain.iloc[-1] if hasattr(gain, 'iloc') else gain[-1]
+            gain_val = float(gain_last)
             rs = gain_val / loss_val if loss_val != 0 else 1.0
             rsi = 100 - (100 / (1 + rs)) if rs > 0 else 50
             
@@ -237,7 +244,8 @@ class MarketIntelligenceEngine:
             tr2 = abs(high - close.shift())
             tr3 = abs(low - close.shift())
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = tr.rolling(14).mean().iloc[-1]
+            atr_val = tr.rolling(14).mean().iloc[-1]
+            atr = float(atr_val)
             
             # Dynamic risk calculation
             risk_factor = (atr / entry_price) * risk_percent
@@ -252,7 +260,7 @@ class MarketIntelligenceEngine:
             return {
                 'stop_loss': float(stop_loss),
                 'take_profit': float(take_profit),
-                'atr': float(atr),
+                'atr': atr,
                 'atr_based': True
             }
         except Exception as e:

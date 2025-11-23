@@ -651,33 +651,52 @@ class HighFrequencyScalpingOrchestrator:
                             # Validate signal data before sending
                             if not self._validate_signal(signal):
                                 self.logger.error(f"❌ Signal validation failed for {symbol}")
+                                self.logger.error(f"   Direction: {signal.direction}")
+                                self.logger.error(f"   Entry: {signal.entry_price}, SL: {signal.stop_loss}")
+                                self.logger.error(f"   Strength: {signal.signal_strength:.1f}%, Confidence: {signal.consensus_confidence:.1f}%")
                                 return None
                             
-                            # Send signal
+                            # Send signal to Telegram
+                            self.logger.info(f"📡 Sending to Telegram chat: {self.telegram_notifier.chat_id}")
                             telegram_success = await self.telegram_notifier.send_signal(signal)
                             
                             if telegram_success:
-                                self.logger.info(f"✅ TRADE ✅ - Signal sent successfully to Telegram for {symbol}")
+                                self.logger.info(f"✅ TRADE ✅ - Signal DELIVERED to Telegram for {symbol}")
+                                self.logger.info(f"   Direction: {signal.direction}")
+                                self.logger.info(f"   Entry: ${signal.entry_price:.5f}")
+                                self.logger.info(f"   SL: ${signal.stop_loss:.5f}")
+                                self.logger.info(f"   TP1/TP2/TP3: ${signal.take_profit_1:.5f} / ${signal.take_profit_2:.5f} / ${signal.take_profit_3:.5f}")
+                                self.signals_executed += 1
                             else:
-                                self.logger.warning(f"⚠️ Telegram notification failed for {symbol}")
+                                self.logger.error(f"❌ Telegram notification failed for {symbol} - check logs above")
                         except Exception as e:
-                            self.logger.error(f"❌ Error sending signal: {e}")
+                            self.logger.error(f"❌ Error sending signal: {str(e)[:200]}")
+                            import traceback
+                            self.logger.error(traceback.format_exc()[:500])
                     else:
                         self.logger.warning("⚠️ Telegram notifier not initialized")
 
 
                     # Export to ATAS platform
                     if self.atas_integration:
-                        asyncio.create_task(self.atas_integration.export_signal(signal))
+                        try:
+                            asyncio.create_task(self.atas_integration.export_signal(signal))
+                            self.logger.info(f"📤 Exported signal to ATAS platform")
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ ATAS export error: {e}")
 
                     # Add to position closer for monitoring (if in live mode)
                     if self.position_closer:
-                        order_info = {
-                            'entry_price': signal.entry_price,
-                            'position_size': signal.position_size_usdt,
-                            'quantity': signal.position_size_usdt / signal.entry_price
-                        }
-                        asyncio.create_task(self.position_closer.add_position(signal, order_info))
+                        try:
+                            order_info = {
+                                'entry_price': signal.entry_price,
+                                'position_size': signal.position_size_usdt,
+                                'quantity': signal.position_size_usdt / signal.entry_price if signal.entry_price > 0 else 0
+                            }
+                            asyncio.create_task(self.position_closer.add_position(signal, order_info))
+                            self.logger.info(f"📊 Added to position monitor")
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ Position closer error: {e}")
 
                 return signal
 

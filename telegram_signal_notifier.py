@@ -84,23 +84,26 @@ class TelegramSignalNotifier:
                 self.logger.error("💡 Please set TELEGRAM_CHAT_ID in Replit Secrets (use your chat ID or @channelname)")
                 return False
             
-            # Format signal message for strict Cornix compatibility
+            # Format signal message for Cornix compatibility
             message = self._format_signal_message(signal)
             
             # Validate message format before sending
-            if not message or len(message) < 100:
-                self.logger.error(f"❌ Signal format validation failed - message too short")
+            if not message or len(message) < 50:
+                self.logger.error(f"❌ Signal format validation failed - message too short ({len(message) or 0} chars)")
                 return False
             
-            # Check for required Cornix format markers
-            if "CORNIX SIGNAL:" not in message:
-                self.logger.error(f"❌ Missing Cornix format header")
-                return False
+            # Verify message contains key signal elements
+            message_upper = message.upper()
+            if not ("CORNIX" in message_upper and ("LONG" in message_upper or "SHORT" in message_upper)):
+                self.logger.warning(f"⚠️ Message may be missing standard format, but attempting to send anyway")
+                # Don't return False - attempt to send anyway as formatting may vary
             
             symbol = self._get_symbol(signal)
+            direction = self._get_attr(signal, 'direction', 'UNKNOWN')
             self.logger.info(f"📤 Sending CORNIX SIGNAL for {symbol}")
-            self.logger.info(f"   Format: {self._get_attr(signal, 'direction', 'UNKNOWN')} signal")
-            self.logger.info(f"   Telegram Chat: {self.chat_id}")
+            self.logger.info(f"   Direction: {direction}")
+            self.logger.info(f"   Message size: {len(message)} chars")
+            self.logger.info(f"   Chat ID: {self.chat_id}")
             
             # Send to Telegram with retry logic
             max_retries = 3

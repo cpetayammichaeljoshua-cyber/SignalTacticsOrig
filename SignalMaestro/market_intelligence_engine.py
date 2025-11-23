@@ -2,6 +2,7 @@
 MARKET INTELLIGENCE ENGINE
 Integrates sentiment analysis, market prediction, and technical analysis
 for enhanced high-frequency trading signals.
+Includes Order Flow Analysis for enhanced decision-making.
 """
 import asyncio
 import logging
@@ -9,6 +10,13 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import pandas as pd
 import numpy as np
+
+# Import Order Flow Trading module
+try:
+    from SignalMaestro.order_flow_trading import OrderFlowAnalyzer
+    ORDER_FLOW_AVAILABLE = True
+except ImportError:
+    ORDER_FLOW_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +30,16 @@ class MarketIntelligenceEngine:
         self.signal_cache = {}
         self.market_regime = "neutral"
         self.confidence_threshold = 0.65
+        
+        # Initialize Order Flow Analyzer
+        self.order_flow_analyzer = None
+        if ORDER_FLOW_AVAILABLE:
+            try:
+                self.order_flow_analyzer = OrderFlowAnalyzer()
+                logger.info("✅ Order Flow Analyzer initialized")
+            except Exception as e:
+                logger.debug(f"Order Flow Analyzer initialization failed: {e}")
+        
         logger.info("✅ Market Intelligence Engine initialized")
     
     async def analyze_market(self, symbol: str, market_data: pd.DataFrame, 
@@ -55,6 +73,30 @@ class MarketIntelligenceEngine:
             # Momentum Analysis
             momentum_score = self._analyze_momentum(market_data)
             analysis['scores']['momentum'] = momentum_score
+            
+            # Order Flow Analysis (if available)
+            if self.order_flow_analyzer:
+                try:
+                    order_flow_metrics = await self.order_flow_analyzer.analyze_order_flow(
+                        market_data, symbol
+                    )
+                    order_flow_score = (
+                        (order_flow_metrics.order_imbalance + 1) / 2 * 0.3 +  # -1 to 1 -> 0 to 1
+                        order_flow_metrics.smart_money_activity * 0.3 +
+                        order_flow_metrics.volume_profile_score * 0.2 +
+                        order_flow_metrics.support_demand * 0.1 +
+                        order_flow_metrics.resistance_supply * 0.1
+                    )
+                    analysis['scores']['order_flow'] = float(order_flow_score)
+                    analysis['order_flow_metrics'] = {
+                        'imbalance': order_flow_metrics.order_imbalance,
+                        'smart_money': order_flow_metrics.smart_money_activity,
+                        'volume_profile': order_flow_metrics.volume_profile_score,
+                        'cumulative_delta': order_flow_metrics.cumulative_delta,
+                        'buy_sell_ratio': order_flow_metrics.buy_sell_ratio
+                    }
+                except Exception as e:
+                    logger.debug(f"Order Flow analysis unavailable: {e}")
             
             # AI-Enhanced Analysis (if available)
             if ai_orchestrator:

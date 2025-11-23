@@ -18,6 +18,13 @@ try:
 except ImportError:
     ORDER_FLOW_AVAILABLE = False
 
+# Import Insider Trading module
+try:
+    from SignalMaestro.insider_trading_analyzer import InsiderTradingAnalyzer
+    INSIDER_TRADING_AVAILABLE = True
+except ImportError:
+    INSIDER_TRADING_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class MarketIntelligenceEngine:
@@ -39,6 +46,15 @@ class MarketIntelligenceEngine:
                 logger.info("✅ Order Flow Analyzer initialized")
             except Exception as e:
                 logger.debug(f"Order Flow Analyzer initialization failed: {e}")
+        
+        # Initialize Insider Trading Analyzer
+        self.insider_analyzer = None
+        if INSIDER_TRADING_AVAILABLE:
+            try:
+                self.insider_analyzer = InsiderTradingAnalyzer()
+                logger.info("✅ Insider Trading Analyzer initialized")
+            except Exception as e:
+                logger.debug(f"Insider Trading Analyzer initialization failed: {e}")
         
         logger.info("✅ Market Intelligence Engine initialized")
     
@@ -97,6 +113,29 @@ class MarketIntelligenceEngine:
                     }
                 except Exception as e:
                     logger.debug(f"Order Flow analysis unavailable: {e}")
+            
+            # Insider Trading Analysis (if available)
+            if self.insider_analyzer:
+                try:
+                    insider_metrics = await self.insider_analyzer.analyze_insider_trading(
+                        market_data, symbol
+                    )
+                    insider_score = (
+                        insider_metrics.institutional_activity_score * 0.35 +
+                        insider_metrics.whale_accumulation * 0.25 +
+                        (1.0 - insider_metrics.manipulation_risk) * 0.2 +
+                        (insider_metrics.sentiment_score + 1.0) / 2.0 * 0.2
+                    )
+                    analysis['scores']['insider'] = float(insider_score)
+                    analysis['insider_metrics'] = {
+                        'institutional_activity': insider_metrics.institutional_activity_score,
+                        'whale_accumulation': insider_metrics.whale_accumulation,
+                        'unusual_volume': insider_metrics.unusual_volume,
+                        'sentiment': insider_metrics.sentiment_score,
+                        'manipulation_risk': insider_metrics.manipulation_risk
+                    }
+                except Exception as e:
+                    logger.debug(f"Insider trading analysis unavailable: {e}")
             
             # AI-Enhanced Analysis (if available)
             if ai_orchestrator:

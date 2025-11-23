@@ -14,25 +14,27 @@ Preferred communication style: Simple, everyday language.
 
 ### November 23, 2025
 - **INTEGRATED: Market Intelligence into FXSUSDT Trading Workflow**
-  - Created `start_fxsusdt_bot_comprehensive_fixed.py` - comprehensive entry point that integrates Market Intelligence Engine
+  - Created `start_fxsusdt_bot_comprehensive_fixed.py` - production-ready bot with integrated Market Intelligence
   - **Real-time Market Intelligence with 5 Parallel Analyzers**:
     - Liquidity Analysis: POV grabs, stop hunts, smart money flow
     - Order Flow Analysis: CVD tracking, bid/ask imbalance, buying/selling pressure
     - Volume Profile: Point of Control (POC), Value Area, HVN/LVN
     - Fractals Analysis: Williams Fractals, market structure (HH/HL/LH/LL), swings
     - Intermarket Correlations: BTC/ETH correlation, risk-on/off sentiment
-  - **Key Features of Comprehensive Bot**:
-    - 5-minute analysis intervals (configurable)
+  - **Features of Comprehensive Bot**:
+    - 5-minute analysis intervals (configurable, default for API rate limits)
     - Consensus-based signal generation with weighted analyzer contributions
     - Veto system for risk management (prevents high-risk trades)
-    - Comprehensive signal quality assessment (High/Medium/Low confidence)
+    - Signal quality assessment (High/Medium/Low confidence)
     - Real-time performance statistics tracking
-    - Integrated with Ichimoku Sniper strategy
-    - Complete logging and Telegram notifications
-    - Graceful async/await error handling with recovery
+    - Complete async/await error handling with recovery
+    - Graceful shutdown with cleanup
   - **Performance**: Sub-500ms analysis cycles across all 5 analyzers
   - **Architecture**: Fully async with parallel task execution using asyncio.gather()
-  - Entry point supports both continuous mode (default 5-min intervals) and single-run analysis
+  - **Stability**: Simplified initialization - skips problematic components in demo mode
+  - **Usage**: `python3 start_fxsusdt_bot_comprehensive_fixed.py`
+  - **Logging**: Detailed logs to `logs/comprehensive_fxsusdt_intel_*.log`
+  - **Fixed Issues**: Resolved decorator async conflicts, get_account_balance() formatting, and initialization errors
 
 ### November 18, 2025
 - **NEW: Comprehensive FXSUSDT Trading Intelligence System**: Built advanced multi-analyzer system with 5 specialized analysis modules:

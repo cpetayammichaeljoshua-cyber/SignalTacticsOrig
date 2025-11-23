@@ -2140,6 +2140,18 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             # Initialize smart SL/TP system
             smart_system = get_smart_sltp_system('FXSUSDT')
             
+            # Convert market_data to DataFrame if it's a list
+            import pandas as pd
+            if isinstance(market_data, list):
+                try:
+                    # Try to create DataFrame from list of values
+                    df = pd.DataFrame(market_data)
+                    if df.shape[1] >= 5:
+                        df.columns = ['open', 'high', 'low', 'close', 'volume'] + list(df.columns[5:])
+                    market_data = df
+                except Exception:
+                    pass
+            
             # Analyze order flow
             order_flow = await smart_system.analyze_order_flow(market_data, current_price)
             
@@ -2198,68 +2210,6 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         except Exception as e:
             self.logger.error(f"Smart SL/TP command error: {e}")
             await self.send_message(chat_id, f"❌ Error: {str(e)}")
-            if not current_price:
-                await self.send_message(chat_id, "❌ Could not fetch current price")
-                return
-
-            # Initialize position manager
-            position_manager = DynamicPositionManager(self.trader)
-
-            # Calculate multi-timeframe ATR
-            atr_data = await position_manager.calculate_multi_timeframe_atr('FXSUSDT')
-
-            # Detect market regime
-            market_regime = await position_manager.detect_market_regime('FXSUSDT')
-
-            # Calculate dynamic SL/TP
-            sl_tp_config = await position_manager.calculate_dynamic_sl_tp(
-                'FXSUSDT', direction, current_price, atr_data, market_regime
-            )
-
-            # Format response
-            message = f"""🎯 **Dynamic SL/TP Analysis**
-
-**📊 Position Details:**
-• **Direction:** {direction}
-• **Entry Price:** `{current_price:.6f}`
-• **Market Regime:** `{market_regime}`
-
-**🛡️ Stop Loss & Take Profit:**
-• **Stop Loss:** `{sl_tp_config['stop_loss']:.6f}`
-• **Take Profit 1:** `{sl_tp_config['take_profit_1']:.6f}` (33% position)
-• **Take Profit 2:** `{sl_tp_config['take_profit_2']:.6f}` (33% position)
-• **Take Profit 3:** `{sl_tp_config['take_profit_3']:.6f}` (34% position)
-
-**📈 Risk Management:**
-• **Risk/Reward Ratio:** `1:{sl_tp_config['risk_reward_ratio']:.2f}`
-• **ATR Value:** `{sl_tp_config['atr_used']:.6f}`
-• **SL Multiplier:** `{sl_tp_config['sl_multiplier']}x ATR`
-• **TP Multiplier:** `{sl_tp_config['tp_multiplier']}x ATR`
-
-**🎯 Trailing Stop:**"""
-
-            if sl_tp_config.get('trailing_stop'):
-                ts = sl_tp_config['trailing_stop']
-                message += f"""
-• **Activation Price:** `{ts['activation_price']:.6f}`
-• **Trail Distance:** `{ts['trail_distance']:.6f}`
-• **Status:** {'🟢 Active' if ts.get('active') else '⚪ Waiting'}"""
-            else:
-                message += "\n• **Status:** Disabled"
-
-            message += f"""
-
-**💡 Trading Tips:**
-• Adjust position size based on SL distance
-• Consider partial profit taking at each TP level
-• Trail SL once TP1 is reached
-• Market regime: {market_regime} - adjust strategy accordingly"""
-
-            await self.send_message(chat_id, message)
-
-        except Exception as e:
-            self.logger.error(f"Error in cmd_dynamic_sltp: {e}")
-            await self.send_message(chat_id, f"❌ Error calculating dynamic SL/TP: {e}")
 
         self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
 
@@ -2312,9 +2262,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 • **24h Range:** `{(high_24h - low_24h):.6f}`
 
 **📈 Market Conditions:**
-• **Regime:** `{market_regime.upper()}`
-• **ATR (Weighted):** `{atr_data['weighted_atr']:.6f}`
-• **ATR Trend:** `{atr_data.get('atr_trend', 'stable').upper()}`
+• **Regime:** `{str(market_regime).upper()}`
+• **ATR (Weighted):** `{float(atr_data.get('weighted_atr', 0)):.6f}`
+• **ATR Trend:** `{str(atr_data.get('atr_trend', 'stable')).upper()}`
 • **Volume:** {volume_status} `{volume:,.0f}`
 
 **⚡ Trading Recommendations:**
@@ -2324,15 +2274,18 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **📊 Multi-Timeframe ATR:**"""
 
-                for tf, atr_val in atr_data.get('individual_atrs', {}).items():
-                    dashboard += f"\n• **{tf}:** `{atr_val:.6f}`"
+                individual_atrs = atr_data.get('individual_atrs', {})
+                if isinstance(individual_atrs, dict):
+                    for tf, atr_val in individual_atrs.items():
+                        dashboard += f"\n• **{tf}:** `{float(atr_val):.6f}`"
 
+                weighted_atr = float(atr_data.get('weighted_atr', 0))
                 dashboard += f"""
 
 **🎯 Market Opportunities:**
 • **Scalping:** {'✅ Favorable' if abs(change_percent) > 0.5 else '⚠️ Limited'}
 • **Swing Trading:** {'✅ Active' if abs(change_percent) > 2 else '⏸️ Patient approach'}
-• **Volatility:** {'🔥 High' if atr_data['weighted_atr'] > 0.0002 else '📊 Normal' if atr_data['weighted_atr'] > 0.0001 else '💤 Low'}
+• **Volatility:** {'🔥 High' if weighted_atr > 0.0002 else '📊 Normal' if weighted_atr > 0.0001 else '💤 Low'}
 
 **⏰ Updated:** {datetime.now().strftime('%H:%M:%S UTC')}
 
@@ -2688,11 +2641,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 # Create async wrapper for Freqtrade commands
                 async def freqtrade_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, func=cmd_func):
                     try:
-                        chat_id = update.effective_chat.id
-                        args = context.args or []
-                        result = await func(chat_id, args)
-                        if result:
-                            await self.send_message(str(chat_id), result)
+                        if update.effective_chat:
+                            chat_id = update.effective_chat.id
+                            args = context.args or []
+                            result = await func(chat_id, args)
+                            if result:
+                                await self.send_message(str(chat_id), result)
+                        else:
+                            self.logger.warning("Freqtrade handler: No chat available")
                     except Exception as e:
                         self.logger.error(f"Freqtrade command error: {e}")
                         if update.message:
@@ -2724,11 +2680,17 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 else:
                     self.logger.warning("Updater not directly available, using application polling")
                     # Use the built-in polling mechanism
-                    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
-            except AttributeError:
+                    if hasattr(application, 'run_polling') and callable(application.run_polling):
+                        result = application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+                        if result:
+                            await result
+            except (AttributeError, TypeError):
                 self.logger.warning("Starting application polling via built-in mechanism")
                 try:
-                    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+                    if hasattr(application, 'run_polling') and callable(application.run_polling):
+                        result = application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+                        if result:
+                            await result
                 except Exception as polling_error:
                     self.logger.error(f"Application polling failed: {polling_error}")
                     return False
@@ -2746,11 +2708,15 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 self.logger.error(f"Fallback polling also failed: {fallback_error}")
                 return False
     
-    async def _start_fallback_polling(self):
+    async def _start_fallback_polling(self) -> bool:
         """Fallback pure HTTP polling mechanism without Updater"""
         try:
             self.logger.info("🔄 Starting fallback HTTP polling (no Updater)")
             import telegram
+            # Ensure bot_token is valid
+            if not self.bot_token or not isinstance(self.bot_token, str):
+                self.logger.error("Invalid bot token for fallback polling")
+                return False
             self.bot = telegram.Bot(token=self.bot_token)
             
             # Verify bot connection
@@ -2792,12 +2758,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             self.logger.error(f"Fallback polling failed: {e}", exc_info=True)
             return False
     
-    async def _handle_fallback_command(self, update):
+    async def _handle_fallback_command(self, update) -> None:
         """Handle commands in fallback mode"""
         try:
             message = update.message
+            if not message or not message.chat_id:
+                return
             chat_id = message.chat_id
-            text = message.text.strip()
+            text = message.text.strip() if message.text else ""
             
             # Extract command
             parts = text.split()

@@ -105,10 +105,14 @@ class BinanceTrader:
 
         if ENHANCED_ERROR_HANDLING:
             # Initialize circuit breaker for Binance API
-            self.circuit_breaker = CircuitBreaker(
-                failure_threshold=5,
-                recovery_timeout=300  # 5 minutes
-            )
+            try:
+                self.circuit_breaker = CircuitBreaker(
+                    failure_threshold=5,
+                    recovery_timeout=300  # 5 minutes
+                )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize circuit breaker: {e}")
+                self.circuit_breaker = None
 
             # Get global resilience manager
             try:

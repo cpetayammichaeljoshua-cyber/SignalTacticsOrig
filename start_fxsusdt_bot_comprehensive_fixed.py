@@ -58,7 +58,6 @@ try:
     from SignalMaestro.logger import setup_logging
     from SignalMaestro.binance_trader import BinanceTrader
     from SignalMaestro.database import Database
-    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
 except ImportError as e:
     print(f"❌ Import Error: {e}")
     print("🔧 Attempting to fix import issues...")
@@ -69,7 +68,6 @@ except ImportError as e:
     from SignalMaestro.logger import setup_logging
     from SignalMaestro.binance_trader import BinanceTrader
     from SignalMaestro.database import Database
-    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
 
 
 class ComprehensiveFXSUSDTBotWithIntel:
@@ -105,7 +103,6 @@ class ComprehensiveFXSUSDTBotWithIntel:
             'high_confidence_signals': 0.0
         }
         
-        self.telegram_bot = None
         self.intel_engine = None
         self.trader = None
         self.db = None
@@ -153,11 +150,6 @@ class ComprehensiveFXSUSDTBotWithIntel:
             self.logger.info("     ✅ Market Intelligence Engine initialized")
             self.logger.info(f"        Enabled Analyzers: {len(self.intel_engine.enabled_analyzers)}")
             
-            # Initialize Telegram Bot
-            self.logger.info("  📱 Initializing Telegram Bot...")
-            self.telegram_bot = FXSUSDTTelegramBot()
-            self.logger.info("     ✅ Telegram Bot initialized")
-            
             # Initialize Binance Trader
             self.logger.info("  💱 Initializing Binance Trader...")
             self.trader = BinanceTrader()
@@ -172,14 +164,23 @@ class ComprehensiveFXSUSDTBotWithIntel:
             
             # Verify connection
             try:
-                balance_dict = await self.trader.get_account_balance()
-                if balance_dict and 'USDT' in balance_dict:
-                    usdt_balance = balance_dict['USDT'].get('total', 0)
-                    self.logger.info(f"     💰 Account Balance: {usdt_balance:.2f} USDT")
+                # Test connection first
+                ping_result = await self.trader.ping()
+                if ping_result:
+                    self.logger.info("     ✅ Binance connection verified")
+                    try:
+                        balance_dict = await self.trader.get_account_balance()
+                        if balance_dict and 'USDT' in balance_dict:
+                            usdt_balance = balance_dict['USDT'].get('total', 0)
+                            self.logger.info(f"     💰 Account Balance: {usdt_balance:.2f} USDT")
+                        else:
+                            self.logger.info("     💰 Account Balance: Retrieved successfully")
+                    except Exception as balance_error:
+                        self.logger.warning(f"     ⚠️ Could not fetch balance: {balance_error}")
                 else:
-                    self.logger.info("     💰 Account Balance: Retrieved successfully")
-            except Exception as balance_error:
-                self.logger.warning(f"     ⚠️ Could not fetch balance: {balance_error}")
+                    self.logger.warning("     ⚠️ Binance connection test failed")
+            except Exception as ping_error:
+                self.logger.warning(f"     ⚠️ Connection test error: {ping_error}")
             
             self.logger.info("✅ All Components Initialized Successfully!")
             return True

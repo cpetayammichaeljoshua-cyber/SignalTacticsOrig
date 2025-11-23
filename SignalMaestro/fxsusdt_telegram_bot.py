@@ -104,7 +104,7 @@ class FXSUSDTTelegramBot:
         self.rate_limit_hours = 24  # 24-hour tracking window
         self.max_signals_per_period = 1  # Maximum 1 signal per period
         self.signal_timestamps = []
-        self.min_signal_interval_minutes = 30  # Minimum 30 minutes between signals
+        self.min_signal_interval_minutes = 2  # HIGH-FREQUENCY: 2 minutes
 
         # FXSUSDT contract specifications
         self.contract_specs = {

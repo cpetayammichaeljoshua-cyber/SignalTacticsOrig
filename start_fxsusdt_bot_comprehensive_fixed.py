@@ -17,27 +17,33 @@ Features:
 - Telegram notifications
 """
 
-import asyncio
-import logging
 import sys
 import os
-import warnings
-from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
-import traceback
 
-# Suppress all warnings globally
+# Suppress all warnings BEFORE any other imports
+import warnings
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 os.environ['PYTHONWARNINGS'] = 'ignore'
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+
+import asyncio
+import logging
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
+import traceback
 
 # Configure pandas to suppress warnings
 try:
     import pandas as pd
     pd.set_option('mode.chained_assignment', None)
     pd.options.mode.copy_on_write = True
+    # Suppress additional pandas warnings
+    import warnings
+    warnings.filterwarnings('ignore', category=FutureWarning, module='pandas')
 except ImportError:
     pass
 

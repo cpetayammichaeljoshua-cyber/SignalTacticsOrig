@@ -21,6 +21,7 @@ from SignalMaestro.dynamic_position_manager import DynamicPositionManager
 from SignalMaestro.market_intelligence_analyzer import MarketIntelligenceAnalyzer, market_analyzer
 from SignalMaestro.smart_dynamic_sltp_system import SmartDynamicSLTPSystem
 from SignalMaestro.insider_trading_analyzer import insider_analyzer
+from SignalMaestro.atas_integrated_analyzer import atas_analyzer
 from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
@@ -43,6 +44,7 @@ class FXSUSDTTelegramBot:
         self.market_intelligence = market_analyzer  # Market Intelligence Analyzer
         self.smart_sltp = SmartDynamicSLTPSystem()  # Smart SL/TP System
         self.insider_analyzer = insider_analyzer  # Insider Trading Detection
+        self.atas_analyzer = atas_analyzer  # ATAS Integrated Analyzer
 
         # Initialize Freqtrade commands integration
         self.freqtrade_commands = FreqtradeTelegramCommands(self)
@@ -95,7 +97,8 @@ class FXSUSDTTelegramBot:
             '/dashboard': self.cmd_market_dashboard,
             '/market_intel': self.cmd_market_intelligence,
             '/insider': self.cmd_insider_detection,
-            '/orderflow': self.cmd_order_flow
+            '/orderflow': self.cmd_order_flow,
+            '/atas': self.cmd_atas_analysis
         }
         
         # Add all Freqtrade commands
@@ -387,28 +390,38 @@ Margin: CROSS
                 if not self.can_send_signal():
                     continue
                 
-                # ===== MARKET INTELLIGENCE BOOST =====
-                # Get market data for intelligence analysis
+                # ===== ATAS + MARKET INTELLIGENCE BOOST =====
+                # Get market data for comprehensive analysis
                 try:
                     market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
                     if market_data is not None and len(market_data) >= 50:
-                        # Run market intelligence analysis in parallel
+                        # Run ATAS analysis (all indicators)
+                        atas_results = await self.atas_analyzer.analyze_all_indicators(market_data)
+                        if 'error' not in atas_results:
+                            atas_composite = atas_results.get('composite_signal', 'NEUTRAL')
+                            atas_strength = atas_results.get('overall_strength', 50)
+                            
+                            # ATAS signal confirmation
+                            if atas_composite in ['STRONG_BUY', 'STRONG_SELL']:
+                                signal.confidence = min(100, signal.confidence + 20)
+                                self.logger.info(f"🔷 ATAS All Indicators confirm: +20% confidence (ATAS: {atas_composite}, Strength: {atas_strength:.1f}%)")
+                            elif atas_composite in ['BUY', 'SELL']:
+                                signal.confidence = min(100, signal.confidence + 12)
+                                self.logger.info(f"🔷 ATAS Indicators boost: +12% (ATAS: {atas_composite})")
+                        
+                        # Market intelligence
                         mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data)
                         insider_signal = await self.insider_analyzer.detect_insider_activity(market_data)
                         
-                        # Boost signal if market intelligence confirms
                         if mi_summary and mi_summary.get('signal'):
                             mi_signal = mi_summary['signal']
                             if mi_signal in ['strong_buy', 'strong_sell']:
-                                signal.confidence = min(100, signal.confidence + 15)
-                                self.logger.info(f"📊 Market Intelligence boost: +15% confidence (now {signal.confidence:.1f}%)")
+                                signal.confidence = min(100, signal.confidence + 10)
                         
-                        # Add insider trading detection bonus
                         if insider_signal.detected and insider_signal.confidence > 70:
-                            signal.confidence = min(100, signal.confidence + 10)
-                            self.logger.info(f"🐋 Insider activity detected ({insider_signal.activity_type}): +10% confidence bonus")
+                            signal.confidence = min(100, signal.confidence + 8)
                 except Exception as e:
-                    self.logger.debug(f"Market intelligence analysis skipped: {e}")
+                    self.logger.debug(f"ATAS analysis skipped: {e}")
 
                 # Enhanced AI analysis if available
                 if self.ai_processor:
@@ -2764,59 +2777,24 @@ Imbalance: {order_flow.volume_imbalance*100:+.1f}%"""
         except Exception as e:
             await self.send_message(chat_id, f"❌ Error: {str(e)}")
 
-async def main():
-    """Main function to run the FXSUSDT bot"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-
-    bot = FXSUSDTTelegramBot()
-
-    try:
-        # Start the Telegram command system
-        bot.logger.info("🤖 Starting Telegram command system...")
-        telegram_success = await bot.start_telegram_polling()
-
-        if not telegram_success:
-            bot.logger.warning("⚠️ Telegram polling failed to start, continuing with scanner only")
-
-        # Start the continuous scanner
-        bot.logger.info("🔍 Starting market scanner...")
-        await bot.run_continuous_scanner()
-
-    except KeyboardInterrupt:
-        bot.logger.info("👋 Bot stopped by user")
-        if hasattr(bot, 'telegram_app') and bot.telegram_app:
-            try:
-                # Ensure proper shutdown of the Telegram application
-                await bot.telegram_app.stop()
-                await bot.telegram_app.shutdown()
-            except Exception as e:
-                bot.logger.error(f"Error stopping Telegram app: {e}")
-    except Exception as e:
-        bot.logger.error(f"❌ Critical error: {e}")
-        if hasattr(bot, 'telegram_app') and bot.telegram_app:
-            try:
-                # Ensure proper shutdown of the Telegram application
-                await bot.telegram_app.stop()
-                await bot.telegram_app.shutdown()
-            except Exception as e:
-                bot.logger.error(f"Error stopping Telegram app: {e}")
-        raise
-
-
-if __name__ == "__main__":
-    # Ensure the event loop is managed correctly, especially in environments like Replit
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "There is no current event loop" in str(e):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(main())
-        else:
-            raise
+    async def cmd_atas_analysis(self, update, context):
+        """ATAS comprehensive indicator analysis"""
+        chat_id = str(update.effective_chat.id)
+        try:
+            market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+            if market_data is None or len(market_data) < 100:
+                await self.send_message(chat_id, "❌ Insufficient data")
+                return
+            atas_results = await self.atas_analyzer.analyze_all_indicators(market_data)
+            if 'error' in atas_results:
+                await self.send_message(chat_id, f"Error: {atas_results['error']}")
+                return
+            comp = atas_results.get('composite_signal', 'NEUTRAL')
+            strength = atas_results.get('overall_strength', 0)
+            msg = f"🔷 ATAS All Indicators\nSignal: {comp}\nStrength: {strength:.1f}%"
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
 
 async def main():
     """Main function to run the FXSUSDT bot"""
@@ -2824,25 +2802,19 @@ async def main():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-
     bot = FXSUSDTTelegramBot()
-
     try:
         bot.logger.info("🤖 Starting Telegram command system...")
         telegram_success = await bot.start_telegram_polling()
-
         if not telegram_success:
-            bot.logger.warning("⚠️ Telegram polling failed to start, continuing with scanner only")
-
+            bot.logger.warning("⚠️ Telegram polling failed")
         bot.logger.info("🔍 Starting market scanner...")
         await bot.run_continuous_scanner()
-
     except KeyboardInterrupt:
-        bot.logger.info("👋 Bot stopped by user")
+        bot.logger.info("👋 Bot stopped")
     except Exception as e:
-        bot.logger.error(f"❌ Critical error: {e}")
+        bot.logger.error(f"Critical error: {e}")
         raise
-
 
 if __name__ == "__main__":
     try:

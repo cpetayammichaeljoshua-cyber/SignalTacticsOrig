@@ -2150,7 +2150,12 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                         df.columns = ['open', 'high', 'low', 'close', 'volume'] + list(df.columns[5:])
                     market_data = df
                 except Exception:
-                    pass
+                    # If conversion fails, create minimal DataFrame
+                    cols = ['open', 'high', 'low', 'close', 'volume']
+                    market_data = pd.DataFrame(data=market_data, columns=cols)
+            
+            # Ensure market_data is DataFrame for type safety
+            assert isinstance(market_data, pd.DataFrame), "market_data must be DataFrame"
             
             # Analyze order flow
             order_flow = await smart_system.analyze_order_flow(market_data, current_price)
@@ -2682,14 +2687,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     # Use the built-in polling mechanism
                     if hasattr(application, 'run_polling') and callable(application.run_polling):
                         result = application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
-                        if result:
+                        if result and asyncio.iscoroutine(result):
                             await result
             except (AttributeError, TypeError):
                 self.logger.warning("Starting application polling via built-in mechanism")
                 try:
                     if hasattr(application, 'run_polling') and callable(application.run_polling):
                         result = application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
-                        if result:
+                        if result and asyncio.iscoroutine(result):
                             await result
                 except Exception as polling_error:
                     self.logger.error(f"Application polling failed: {polling_error}")
@@ -2727,13 +2732,18 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 self.logger.error(f"Bot connection failed: {bot_error}")
                 return False
             
-            # Start simple polling loop
+            # Start simple polling loop with trade scanning
             offset = 0
-            self.logger.info("🚀 Fallback polling loop started")
+            self.logger.info("🚀 Fallback polling loop started with market scanning")
+            last_scan = time.time()
             
             while True:
                 try:
-                    updates = await self.bot.get_updates(offset=offset, timeout=30)
+                    # Check for telegram updates
+                    if hasattr(self.bot, 'get_updates') and callable(self.bot.get_updates):
+                        updates = await self.bot.get_updates(offset=offset, timeout=10)
+                    else:
+                        updates = []
                     
                     for update in updates:
                         try:
@@ -2744,6 +2754,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                         except Exception as update_error:
                             self.logger.error(f"Update processing error: {update_error}")
                             offset = update.update_id + 1
+                    
+                    # Scan for market signals and push trades every 2 minutes
+                    if time.time() - last_scan >= 120:  # 2 minute interval
+                        try:
+                            await self.scan_and_signal()
+                        except Exception as scan_error:
+                            self.logger.error(f"Scan error: {scan_error}")
+                        last_scan = time.time()
                 
                 except asyncio.CancelledError:
                     self.logger.info("Fallback polling cancelled")

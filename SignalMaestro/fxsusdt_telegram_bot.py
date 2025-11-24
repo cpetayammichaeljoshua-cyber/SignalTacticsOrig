@@ -22,6 +22,7 @@ from SignalMaestro.market_intelligence_analyzer import MarketIntelligenceAnalyze
 from SignalMaestro.smart_dynamic_sltp_system import SmartDynamicSLTPSystem
 from SignalMaestro.insider_trading_analyzer import insider_analyzer
 from SignalMaestro.atas_integrated_analyzer import atas_analyzer
+from SignalMaestro.bookmap_trading_analyzer import BookmapTradingAnalyzer, bookmap_analyzer
 from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
@@ -46,6 +47,7 @@ class FXSUSDTTelegramBot:
         self.smart_sltp = SmartDynamicSLTPSystem()  # Smart SL/TP System
         self.insider_analyzer = insider_analyzer  # Insider Trading Detection
         self.atas_analyzer = atas_analyzer  # ATAS Integrated Analyzer
+        self.bookmap_analyzer = bookmap_analyzer  # Bookmap Trading Analyzer
 
         # Initialize Freqtrade commands integration
         self.freqtrade_commands = FreqtradeTelegramCommands(self)
@@ -480,6 +482,25 @@ Margin: CROSS
                         
                         if insider_signal.detected and insider_signal.confidence > 70:
                             signal.confidence = min(100, signal.confidence + 8)
+                        
+                        # Bookmap order flow analysis
+                        try:
+                            order_book = await self.trader.get_order_book('FXSUSDT', limit=20)
+                            if order_book:
+                                bookmap_signal = await self.bookmap_analyzer.analyze_order_book('FXSUSDT', order_book)
+                                
+                                # Boost confidence based on order flow direction alignment
+                                if bookmap_signal.order_flow_direction.value in ['STRONG_BUY', 'BUY'] and signal.action == 'BUY':
+                                    signal.confidence = min(100, signal.confidence + 15)
+                                    self.logger.info(f"📊 Bookmap Order Flow ALIGNED: +15% confidence (Flow: {bookmap_signal.order_flow_direction.value}, Heatmap: {bookmap_signal.heatmap_intensity*100:.1f}%)")
+                                elif bookmap_signal.order_flow_direction.value in ['STRONG_SELL', 'SELL'] and signal.action == 'SELL':
+                                    signal.confidence = min(100, signal.confidence + 15)
+                                    self.logger.info(f"📊 Bookmap Order Flow ALIGNED: +15% confidence (Flow: {bookmap_signal.order_flow_direction.value}, Heatmap: {bookmap_signal.heatmap_intensity*100:.1f}%)")
+                                elif abs(bookmap_signal.volume_imbalance) > 0.3:
+                                    signal.confidence = min(100, signal.confidence + 8)
+                                    self.logger.info(f"📊 Bookmap Volume Imbalance: +8% confidence (Imbalance: {bookmap_signal.volume_imbalance*100:+.1f}%)")
+                        except Exception as e:
+                            self.logger.debug(f"Bookmap analysis skipped: {e}")
                 except Exception as e:
                     self.logger.debug(f"ATAS analysis skipped: {e}")
 
@@ -3100,6 +3121,38 @@ Imbalance: {order_flow.volume_imbalance*100:+.1f}%"""
             strength = atas_results.get('overall_strength', 0)
 
             msg = f"🔷 ATAS All Indicators\nSignal: {comp}\nStrength: {strength:.1f}%"
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
+
+    async def cmd_bookmap_analysis(self, update, context):
+        """Bookmap order flow and DOM analysis"""
+        chat_id = str(update.effective_chat.id)
+        try:
+            order_book = await self.trader.get_order_book('FXSUSDT', limit=20)
+            if not order_book:
+                await self.send_message(chat_id, "❌ No order book data")
+                return
+            
+            signal = await self.bookmap_analyzer.analyze_order_book('FXSUSDT', order_book)
+            
+            msg = f"""📊 **BOOKMAP ORDER FLOW ANALYSIS**
+
+🎯 Price Level: {signal.price_level:.5f}
+📈 Order Flow: {signal.order_flow_direction.value}
+🔥 Heatmap Intensity: {signal.heatmap_intensity*100:.1f}%
+
+👥 Buy/Sell Ratio:
+• Aggressive Buy: {signal.aggressive_buy_ratio*100:.1f}%
+• Aggressive Sell: {signal.aggressive_sell_ratio*100:.1f}%
+• Imbalance: {signal.volume_imbalance*100:+.1f}%
+
+🏛️ Institutional Activity: {signal.institutional_activity*100:.1f}%
+🎛️ DOM Structure: {signal.dom_structure_signal}
+💪 Strength: {signal.strength:.1f}%
+🎲 Confidence: {signal.confidence*100:.1f}%
+
+🟢 Liquidity Level: {signal.liquidity_level.value}"""
             await self.send_message(chat_id, msg)
         except Exception as e:
             await self.send_message(chat_id, f"❌ Error: {str(e)}")

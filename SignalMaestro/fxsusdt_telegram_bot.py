@@ -2151,8 +2151,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     market_data = df
                 except Exception:
                     # If conversion fails, create minimal DataFrame
-                    cols = ['open', 'high', 'low', 'close', 'volume']
-                    market_data = pd.DataFrame(data=market_data, columns=cols)
+                    market_data_dict = {
+                        'open': [float(row[0]) if len(row) > 0 else 0 for row in market_data],
+                        'high': [float(row[1]) if len(row) > 1 else 0 for row in market_data],
+                        'low': [float(row[2]) if len(row) > 2 else 0 for row in market_data],
+                        'close': [float(row[3]) if len(row) > 3 else 0 for row in market_data],
+                        'volume': [float(row[4]) if len(row) > 4 else 0 for row in market_data]
+                    }
+                    market_data = pd.DataFrame(market_data_dict)
             
             # Ensure market_data is DataFrame for type safety
             assert isinstance(market_data, pd.DataFrame), "market_data must be DataFrame"
@@ -2742,7 +2748,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             
             # Verify bot connection
             try:
-                me = await self.bot.get_me()
+                me = await self.bot.get_me()  # type: ignore
                 self.logger.info(f"✅ Bot connected: @{me.username}")
             except Exception as bot_error:
                 self.logger.error(f"Bot connection failed: {bot_error}")
@@ -2757,7 +2763,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 try:
                     # Check for telegram updates
                     if hasattr(self.bot, 'get_updates') and callable(self.bot.get_updates):
-                        updates = await self.bot.get_updates(offset=offset, timeout=10)
+                        updates = await self.bot.get_updates(offset=offset, timeout=10)  # type: ignore
                     else:
                         updates = []
                     

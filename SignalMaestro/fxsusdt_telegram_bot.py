@@ -23,6 +23,8 @@ from SignalMaestro.smart_dynamic_sltp_system import SmartDynamicSLTPSystem
 from SignalMaestro.insider_trading_analyzer import insider_analyzer
 from SignalMaestro.atas_integrated_analyzer import atas_analyzer
 from SignalMaestro.bookmap_trading_analyzer import BookmapTradingAnalyzer, bookmap_analyzer
+from SignalMaestro.advanced_market_depth_analyzer import get_market_depth_analyzer
+from SignalMaestro.market_microstructure_enhancer import get_market_microstructure_enhancer
 from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
@@ -48,6 +50,8 @@ class FXSUSDTTelegramBot:
         self.insider_analyzer = insider_analyzer  # Insider Trading Detection
         self.atas_analyzer = atas_analyzer  # ATAS Integrated Analyzer
         self.bookmap_analyzer = bookmap_analyzer  # Bookmap Trading Analyzer
+        self.depth_analyzer = get_market_depth_analyzer()  # Advanced market depth
+        self.microstructure_enhancer = get_market_microstructure_enhancer()  # Microstructure enhancement
 
         # Initialize Freqtrade commands integration
         self.freqtrade_commands = FreqtradeTelegramCommands(self)
@@ -501,6 +505,50 @@ Margin: CROSS
                                     self.logger.info(f"📊 Bookmap Volume Imbalance: +8% confidence (Imbalance: {bookmap_signal.volume_imbalance*100:+.1f}%)")
                         except Exception as e:
                             self.logger.debug(f"Bookmap analysis skipped: {e}")
+                        
+                        # ===== MARKET MICROSTRUCTURE ENHANCEMENT =====
+                        # Advanced DOM depth, tape, and footprint analysis
+                        try:
+                            # Get order book and trades for microstructure analysis
+                            order_book = await self.trader.get_order_book('FXSUSDT', limit=20)
+                            trades = await self.trader.get_recent_trades('FXSUSDT', limit=100)
+                            current_price = signal.entry_price
+                            
+                            if order_book and trades:
+                                # Enhance signal with microstructure analysis
+                                enhanced = await self.microstructure_enhancer.enhance_signal(
+                                    {'direction': signal.action, 'confidence': signal.confidence},
+                                    order_book,
+                                    trades,
+                                    market_data,
+                                    current_price
+                                )
+                                
+                                if enhanced and enhanced.get('microstructure_boost', 0) > 0:
+                                    boost = enhanced.get('microstructure_boost', 0)
+                                    signal.confidence = min(100, signal.confidence + boost)
+                                    
+                                    # Log microstructure insights
+                                    reasoning = enhanced.get('microstructure_reasoning', [])
+                                    if reasoning:
+                                        self.logger.info(f"🔬 Market Microstructure Analysis:")
+                                        for reason in reasoning:
+                                            self.logger.info(f"   {reason}")
+                                    
+                                    # Log detailed analysis
+                                    dom = enhanced.get('dom_analysis', {})
+                                    if dom:
+                                        self.logger.info(f"   📊 DOM: {dom.get('signal')} | Aggressive Buy: {dom.get('aggressive_buy_pressure', 0):.1f}%")
+                                    
+                                    tape = enhanced.get('tape_analysis', {})
+                                    if tape:
+                                        self.logger.info(f"   📈 Tape: {tape.get('pattern')} | Momentum: {tape.get('momentum', 0):+.1f}")
+                                    
+                                    footprint = enhanced.get('footprint_analysis', {})
+                                    if footprint:
+                                        self.logger.info(f"   👣 Footprint: {footprint.get('type')} | Strength: {footprint.get('strength', 0):.0f}%")
+                        except Exception as e:
+                            self.logger.debug(f"Microstructure analysis skipped: {e}")
                 except Exception as e:
                     self.logger.debug(f"ATAS analysis skipped: {e}")
 

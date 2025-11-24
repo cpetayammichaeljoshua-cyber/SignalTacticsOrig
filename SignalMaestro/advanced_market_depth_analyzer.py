@@ -205,38 +205,47 @@ class AdvancedMarketDepthAnalyzer:
             if not trades or len(trades) < 5:
                 return self._fallback_tape_analysis()
             
-            # Recent trades
+            # Recent trades - safe type conversion
             recent = trades[-self.tape_window:]
             
-            buy_vol = 0
-            sell_vol = 0
+            buy_vol = 0.0
+            sell_vol = 0.0
             large_buys = []
             large_sells = []
             
-            avg_price = np.mean([t.get('price', 0) for t in recent])
+            # Calculate avg price using pure Python to avoid dtype issues
+            prices = []
+            for t in recent:
+                try:
+                    p = float(t.get('price', 0))
+                    prices.append(p)
+                except (ValueError, TypeError):
+                    pass
+            avg_price = sum(prices) / len(prices) if prices else 1.0
             
             for trade in recent:
-                price = float(trade.get('price', 0))
-                qty = float(trade.get('qty', 0))
-                is_buyer_maker = trade.get('m', False)  # true if buyer is market maker
-                
-                if is_buyer_maker:  # Seller was aggressive
-                    sell_vol += qty
-                    if qty > avg_price * 0.001:  # Large trade
-                        large_sells.append({'price': price, 'qty': qty})
-                else:  # Buyer was aggressive
-                    buy_vol += qty
-                    if qty > avg_price * 0.001:
-                        large_buys.append({'price': price, 'qty': qty})
+                try:
+                    price = float(trade.get('price', 0))
+                    qty = float(trade.get('qty', 0))
+                    is_buyer_maker = trade.get('m', False)
+                    
+                    if is_buyer_maker:
+                        sell_vol += qty
+                        if qty > avg_price * 0.001:
+                            large_sells.append({'price': price, 'qty': qty})
+                    else:
+                        buy_vol += qty
+                        if qty > avg_price * 0.001:
+                            large_buys.append({'price': price, 'qty': qty})
+                except (ValueError, TypeError):
+                    pass
             
             total_vol = buy_vol + sell_vol
             buy_aggression = (buy_vol / (total_vol + 0.001)) * 100
             sell_aggression = (sell_vol / (total_vol + 0.001)) * 100
-            
-            # Momentum
             momentum = (buy_vol - sell_vol) / (total_vol + 0.001) * 100
             
-            # Pattern detection
+            # Pattern detection - pure Python calculation
             if buy_vol > sell_vol * 1.5:
                 pattern = TapePattern.AGGRESSIVE_BUYING
                 profile = "buy_heavy"
@@ -244,17 +253,23 @@ class AdvancedMarketDepthAnalyzer:
                 pattern = TapePattern.AGGRESSIVE_SELLING
                 profile = "sell_heavy"
             else:
-                # Calculate historical average safely
+                # Calculate historical average using pure Python (no numpy)
                 hist_vols = []
-                for tape_batch in list(self.tape_history)[-5:]:
-                    if isinstance(tape_batch, list):
-                        batch_vol = sum(float(t.get('qty', 0)) for t in tape_batch)
-                        hist_vols.append(batch_vol)
+                try:
+                    for tape_data in list(self.tape_history)[-5:]:
+                        if isinstance(tape_data, (int, float)):
+                            hist_vols.append(float(tape_data))
+                except:
+                    pass
                 
-                hist_avg = np.mean(hist_vols) if hist_vols else 0
-                if total_vol < hist_avg * 0.5:
-                    pattern = TapePattern.QUIET
-                    profile = "balanced"
+                if hist_vols:
+                    hist_avg = sum(hist_vols) / len(hist_vols)
+                    if total_vol < hist_avg * 0.5:
+                        pattern = TapePattern.QUIET
+                        profile = "balanced"
+                    else:
+                        pattern = TapePattern.MIXED_ACTIVITY
+                        profile = "balanced"
                 else:
                     pattern = TapePattern.MIXED_ACTIVITY
                     profile = "balanced"
@@ -267,10 +282,11 @@ class AdvancedMarketDepthAnalyzer:
             else:
                 trend = "NEUTRAL"
             
-            # Confidence based on volume and consistency
+            # Confidence
             confidence = min((abs(momentum) / 100) * 100, 100.0)
             
-            self.tape_history.append(recent)
+            # Store volume as float
+            self.tape_history.append(float(total_vol))
             
             return TapeAnalysis(
                 pattern=pattern,
@@ -298,19 +314,27 @@ class AdvancedMarketDepthAnalyzer:
             # Get recent candles
             recent = ohlcv_data.iloc[-10:].copy()
             
-            # Volume analysis - handle missing column gracefully
+            # Safe OHLCV column handling - add defaults if missing
             if 'volume' not in recent.columns:
-                recent['volume'] = 1.0  # Default if missing
+                recent['volume'] = 1.0
+            if 'high' not in recent.columns:
+                recent['high'] = current_price
+            if 'low' not in recent.columns:
+                recent['low'] = current_price
+            if 'close' not in recent.columns:
+                recent['close'] = current_price
+            if 'open' not in recent.columns:
+                recent['open'] = current_price
             
-            volumes = np.array(recent['volume'].values, dtype=float)
-            avg_vol = np.mean(volumes) if len(volumes) > 0 else 1.0
-            recent_vol = volumes[-1] if len(volumes) > 0 else 1.0
+            # Convert all to float arrays safely
+            volumes = np.array(recent['volume'].values, dtype=np.float64)
+            highs = np.array(recent['high'].values, dtype=np.float64)
+            lows = np.array(recent['low'].values, dtype=np.float64)
+            closes = np.array(recent['close'].values, dtype=np.float64)
+            opens = np.array(recent['open'].values, dtype=np.float64)
             
-            # High-Low range analysis
-            highs = recent['high'].values
-            lows = recent['low'].values
-            closes = recent['close'].values
-            opens = recent['open'].values
+            avg_vol = float(np.mean(volumes)) if len(volumes) > 0 else 1.0
+            recent_vol = float(volumes[-1]) if len(volumes) > 0 else 1.0
             
             # Calculate absorption/rejection
             total_range = np.sum(highs - lows)

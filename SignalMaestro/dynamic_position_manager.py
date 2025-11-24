@@ -15,7 +15,7 @@ from datetime import datetime
 import hmac
 import hashlib
 
-from fxsusdt_trader import FXSUSDTTrader
+from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
 
 @dataclass
 class PositionConfig:

@@ -25,6 +25,7 @@ from SignalMaestro.atas_integrated_analyzer import atas_analyzer
 from SignalMaestro.bookmap_trading_analyzer import BookmapTradingAnalyzer, bookmap_analyzer
 from SignalMaestro.advanced_market_depth_analyzer import get_market_depth_analyzer
 from SignalMaestro.market_microstructure_enhancer import get_market_microstructure_enhancer
+from SignalMaestro.dynamic_leveraging_stop_loss import get_dynamic_leveraging_sl
 from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
@@ -52,6 +53,7 @@ class FXSUSDTTelegramBot:
         self.bookmap_analyzer = bookmap_analyzer  # Bookmap Trading Analyzer
         self.depth_analyzer = get_market_depth_analyzer()  # Advanced market depth
         self.microstructure_enhancer = get_market_microstructure_enhancer()  # Microstructure enhancement
+        self.dynamic_sl = get_dynamic_leveraging_sl()  # Dynamic leveraging stop loss
 
         # Initialize Freqtrade commands integration
         self.freqtrade_commands = FreqtradeTelegramCommands(self)
@@ -135,6 +137,8 @@ class FXSUSDTTelegramBot:
             '/insider': self.cmd_insider_detection,
 
             '/orderflow': self.cmd_order_flow,
+            
+            '/dynamic_sl': self.cmd_dynamic_leveraging_sl,
 
         }
         
@@ -473,7 +477,8 @@ Margin: CROSS
                                 self.logger.info(f"🔷 ATAS Indicators boost: +12% (ATAS: {atas_composite})")
                         
                         # Market intelligence
-                        mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data)
+                        current_price = signal.entry_price
+                        mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data, current_price)
                         insider_signal = await self.insider_analyzer.detect_insider_activity(market_data)
                         
                         if mi_summary and mi_summary.get('signal'):
@@ -515,14 +520,28 @@ Margin: CROSS
                             current_price = signal.entry_price
                             
                             if order_book and trades:
-                                # Enhance signal with microstructure analysis
-                                enhanced = await self.microstructure_enhancer.enhance_signal(
-                                    {'direction': signal.action, 'confidence': signal.confidence},
-                                    order_book,
-                                    trades,
-                                    market_data,
-                                    current_price
-                                )
+                                # Convert market_data to DataFrame for microstructure analysis
+                                import pandas as pd
+                                enhanced = None
+                                try:
+                                    if isinstance(market_data, list) and len(market_data) > 0:
+                                        df_market = pd.DataFrame(market_data)
+                                        if len(df_market.columns) < 6:
+                                            df_market.columns = ['time', 'open', 'high', 'low', 'close', 'volume'][:len(df_market.columns)]
+                                    else:
+                                        df_market = market_data if isinstance(market_data, pd.DataFrame) else None
+                                except:
+                                    df_market = None
+                                
+                                if df_market is not None and len(df_market) > 0:
+                                    # Enhance signal with microstructure analysis
+                                    enhanced = await self.microstructure_enhancer.enhance_signal(
+                                        {'direction': signal.action, 'confidence': signal.confidence},
+                                        order_book,
+                                        trades,
+                                        df_market,
+                                        current_price
+                                    )
                                 
                                 if enhanced and enhanced.get('microstructure_boost', 0) > 0:
                                     boost = enhanced.get('microstructure_boost', 0)
@@ -3104,7 +3123,8 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             if market_data is None or len(market_data) < 50:
                 await self.send_message(chat_id, "❌ Insufficient data")
                 return
-            mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data)
+            current_price = await self.trader.get_current_price()
+            mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data, current_price or 0.0)
             msg = f"""📊 MARKET INTELLIGENCE
 Buy/Sell Ratio: {mi_summary.get('volume', {}).get('buy_sell_ratio', 0):.2f}x
 
@@ -3139,7 +3159,21 @@ Signal: {mi_summary.get('signal', 'neutral').upper()}"""
                 await self.send_message(chat_id, "❌ Insufficient data")
                 return
             current_price = await self.trader.get_current_price()
-            order_flow = await self.smart_sltp.analyze_order_flow(market_data, current_price)
+            
+            # Convert market_data to DataFrame for analyze_order_flow
+            import pandas as pd
+            if isinstance(market_data, list) and len(market_data) > 0:
+                df_market = pd.DataFrame(market_data)
+                if len(df_market.columns) < 6:
+                    df_market.columns = ['time', 'open', 'high', 'low', 'close', 'volume'][:len(df_market.columns)]
+            else:
+                df_market = market_data if isinstance(market_data, pd.DataFrame) else pd.DataFrame()
+            
+            if len(df_market) > 0:
+                order_flow = await self.smart_sltp.analyze_order_flow(df_market, current_price or 0.0)
+            else:
+                await self.send_message(chat_id, "❌ Insufficient market data")
+                return
             msg = f"""📈 ORDER FLOW
 Direction: {order_flow.direction.value.upper()}
 Buy: {order_flow.aggressive_buy_ratio*100:.1f}%
@@ -3202,6 +3236,87 @@ Imbalance: {order_flow.volume_imbalance*100:+.1f}%"""
 
 🟢 Liquidity Level: {signal.liquidity_level.value}"""
             await self.send_message(chat_id, msg)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
+    
+    async def cmd_dynamic_leveraging_sl(self, update, context):
+        """Dynamic leveraging stop loss with percentage below trigger
+        Usage: /dynamic_sl LONG/SHORT [percentage] [leverage]"""
+        chat_id = str(update.effective_chat.id)
+        try:
+            if not context.args or len(context.args) < 1:
+                await self.send_message(chat_id, """❌ **Usage:** `/dynamic_sl LONG` or `/dynamic_sl SHORT` [pct_below] [leverage]
+**Examples:**
+• `/dynamic_sl LONG` - Dynamic SL for long (1.5% default)
+• `/dynamic_sl SHORT 2` - SHORT with 2% below trigger
+• `/dynamic_sl LONG 1.8 25` - LONG with 1.8%, 25x leverage""")
+                return
+            
+            direction = context.args[0].upper()
+            if direction not in ['LONG', 'SHORT', 'BUY', 'SELL']:
+                await self.send_message(chat_id, "❌ Direction must be LONG/BUY or SHORT/SELL")
+                return
+            
+            direction = 'LONG' if direction in ['LONG', 'BUY'] else 'SHORT'
+            
+            pct_below = float(context.args[1]) / 100 if len(context.args) > 1 else None
+            leverage = int(context.args[2]) if len(context.args) > 2 else 20
+            
+            current_price = await self.trader.get_current_price()
+            if not current_price:
+                await self.send_message(chat_id, "❌ Could not fetch price")
+                return
+            
+            position_manager = DynamicPositionManager(self.trader)
+            atr_data = await position_manager.calculate_multi_timeframe_atr('FXSUSDT')
+            market_regime = await position_manager.detect_market_regime('FXSUSDT')
+            atr_pct = (atr_data.get('weighted_atr', 0.0001) / current_price) * 100
+            
+            dsl = self.dynamic_sl.calculate_dynamic_sl(
+                entry_price=current_price,
+                direction=direction,
+                trigger_price=current_price,
+                percentage_below=pct_below,
+                current_leverage=leverage,
+                atr_percentage=atr_pct / 100,
+                market_regime=market_regime,
+                confidence_base=80.0
+            )
+            
+            distance = abs(current_price - dsl.adjusted_stop_loss)
+            distance_pct = (distance / current_price) * 100
+            
+            msg = f"""🛡️ **DYNAMIC LEVERAGING STOP LOSS**
+
+**Position Setup:**
+• **Direction:** {direction}
+• **Entry Price:** `{current_price:.5f}`
+• **Leverage:** `{dsl.leverage}x`
+• **Market Regime:** `{market_regime}`
+
+**Stop Loss Levels:**
+• **Base SL:** `{dsl.base_stop_loss:.5f}`
+• **Adjusted SL:** `{dsl.adjusted_stop_loss:.5f}`
+• **Distance:** `{distance:.5f}` ({distance_pct:.3f}%)
+• **Trigger Price:** `{dsl.trigger_price:.5f}`
+• **% Below Trigger:** `{dsl.percentage_below*100:.2f}%`
+
+**Advanced Metrics:**
+• **Volatility Factor:** `{dsl.volatility_factor:.2f}x`
+• **Confidence:** `{dsl.confidence:.1f}%`
+• **Market Regime:** `{dsl.market_regime}`
+
+**Reasoning:** {dsl.reasoning}
+
+💡 **Tips:**
+• Set TP at 2-3x the SL distance
+• Use trailing stops after TP1
+• Adjust leverage based on account risk tolerance"""
+            
+            await self.send_message(chat_id, msg)
+            self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
+        except ValueError:
+            await self.send_message(chat_id, "❌ Invalid parameters. Use: /dynamic_sl LONG [pct] [leverage]")
         except Exception as e:
             await self.send_message(chat_id, f"❌ Error: {str(e)}")
 

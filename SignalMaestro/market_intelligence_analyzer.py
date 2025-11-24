@@ -62,9 +62,15 @@ class MarketIntelligenceAnalyzer:
         self.min_bars_for_analysis = 100
         self.volume_threshold_multiplier = 1.5  # 150% of average = unusual
         
-    async def analyze_volume_profile(self, ohlcv_data: pd.DataFrame) -> VolumeAnalysis:
+    async def analyze_volume_profile(self, ohlcv_data) -> VolumeAnalysis:
         """Analyze volume profile and detect volume anomalies"""
         try:
+            # Convert to DataFrame if list
+            if isinstance(ohlcv_data, list):
+                if not ohlcv_data or len(ohlcv_data) == 0:
+                    return VolumeAnalysis(0, 0, 0, 0, 0, 0, "stable", False)
+                ohlcv_data = pd.DataFrame(ohlcv_data, columns=['open', 'high', 'low', 'close', 'volume'])
+            
             if len(ohlcv_data) < self.min_bars_for_analysis:
                 raise ValueError(f"Insufficient data: {len(ohlcv_data)} < {self.min_bars_for_analysis}")
             
@@ -110,10 +116,14 @@ class MarketIntelligenceAnalyzer:
             self.logger.error(f"Volume analysis error: {e}")
             return VolumeAnalysis(0, 0, 0, 0, 0, 0, "stable", False)
     
-    async def detect_institutional_activity(self, ohlcv_data: pd.DataFrame) -> InstitutionalActivity:
+    async def detect_institutional_activity(self, ohlcv_data) -> InstitutionalActivity:
         """Detect patterns suggesting institutional trading activity"""
         try:
-            if len(ohlcv_data) < 50:
+            if isinstance(ohlcv_data, list):
+                if not ohlcv_data or len(ohlcv_data) < 50:
+                    return InstitutionalActivity.NONE
+                ohlcv_data = pd.DataFrame(ohlcv_data, columns=['open', 'high', 'low', 'close', 'volume'])
+            elif len(ohlcv_data) < 50:
                 return InstitutionalActivity.NONE
             
             # Get last 50 candles for recent activity
@@ -152,10 +162,14 @@ class MarketIntelligenceAnalyzer:
             self.logger.error(f"Institutional activity detection error: {e}")
             return InstitutionalActivity.NONE
     
-    async def analyze_order_flow_intelligence(self, ohlcv_data: pd.DataFrame) -> OrderFlowIntelligence:
+    async def analyze_order_flow_intelligence(self, ohlcv_data) -> OrderFlowIntelligence:
         """Comprehensive order flow intelligence analysis"""
         try:
-            if len(ohlcv_data) < self.min_bars_for_analysis:
+            if isinstance(ohlcv_data, list):
+                if not ohlcv_data or len(ohlcv_data) < self.min_bars_for_analysis:
+                    return OrderFlowIntelligence("ranging", [], [], 0, InstitutionalActivity.NONE, 0, 50, "normal")
+                ohlcv_data = pd.DataFrame(ohlcv_data, columns=['open', 'high', 'low', 'close', 'volume'])
+            elif len(ohlcv_data) < self.min_bars_for_analysis:
                 raise ValueError("Insufficient data for analysis")
             
             # Volume analysis
@@ -256,9 +270,14 @@ class MarketIntelligenceAnalyzer:
         except:
             return []
     
-    async def get_market_intelligence_summary(self, ohlcv_data: pd.DataFrame) -> Dict[str, Any]:
+    async def get_market_intelligence_summary(self, ohlcv_data) -> Dict[str, Any]:
         """Get comprehensive market intelligence summary"""
         try:
+            if isinstance(ohlcv_data, list):
+                if not ohlcv_data or len(ohlcv_data) < 50:
+                    return {'error': 'Insufficient data'}
+                ohlcv_data = pd.DataFrame(ohlcv_data, columns=['open', 'high', 'low', 'close', 'volume'])
+            
             volume_analysis = await self.analyze_volume_profile(ohlcv_data)
             order_flow = await self.analyze_order_flow_intelligence(ohlcv_data)
             

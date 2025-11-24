@@ -18,6 +18,9 @@ import numpy as np
 from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
 from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
 from SignalMaestro.dynamic_position_manager import DynamicPositionManager
+from SignalMaestro.market_intelligence_analyzer import MarketIntelligenceAnalyzer, market_analyzer
+from SignalMaestro.smart_dynamic_sltp_system import SmartDynamicSLTPSystem
+from SignalMaestro.insider_trading_analyzer import insider_analyzer
 from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
@@ -36,7 +39,10 @@ class FXSUSDTTelegramBot:
 
         # Components
         self.strategy = IchimokuSniperStrategy()
-        self.trader = FXSUSDTTrader() # Assuming this is your Binance API wrapper
+        self.trader = FXSUSDTTrader()
+        self.market_intelligence = market_analyzer  # Market Intelligence Analyzer
+        self.smart_sltp = SmartDynamicSLTPSystem()  # Smart SL/TP System
+        self.insider_analyzer = insider_analyzer  # Insider Trading Detection
 
         # Initialize Freqtrade commands integration
         self.freqtrade_commands = FreqtradeTelegramCommands(self)
@@ -86,7 +92,10 @@ class FXSUSDTTelegramBot:
             '/backtest': self.cmd_backtest,
             '/optimize': self.cmd_optimize_strategy,
             '/dynamic_sltp': self.cmd_dynamic_sltp,
-            '/dashboard': self.cmd_market_dashboard
+            '/dashboard': self.cmd_market_dashboard,
+            '/market_intel': self.cmd_market_intelligence,
+            '/insider': self.cmd_insider_detection,
+            '/orderflow': self.cmd_order_flow
         }
         
         # Add all Freqtrade commands
@@ -377,6 +386,29 @@ Margin: CROSS
                 # Rate limiting check
                 if not self.can_send_signal():
                     continue
+                
+                # ===== MARKET INTELLIGENCE BOOST =====
+                # Get market data for intelligence analysis
+                try:
+                    market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+                    if market_data is not None and len(market_data) >= 50:
+                        # Run market intelligence analysis in parallel
+                        mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data)
+                        insider_signal = await self.insider_analyzer.detect_insider_activity(market_data)
+                        
+                        # Boost signal if market intelligence confirms
+                        if mi_summary and mi_summary.get('signal'):
+                            mi_signal = mi_summary['signal']
+                            if mi_signal in ['strong_buy', 'strong_sell']:
+                                signal.confidence = min(100, signal.confidence + 15)
+                                self.logger.info(f"📊 Market Intelligence boost: +15% confidence (now {signal.confidence:.1f}%)")
+                        
+                        # Add insider trading detection bonus
+                        if insider_signal.detected and insider_signal.confidence > 70:
+                            signal.confidence = min(100, signal.confidence + 10)
+                            self.logger.info(f"🐋 Insider activity detected ({insider_signal.activity_type}): +10% confidence bonus")
+                except Exception as e:
+                    self.logger.debug(f"Market intelligence analysis skipped: {e}")
 
                 # Enhanced AI analysis if available
                 if self.ai_processor:
@@ -2682,6 +2714,55 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         except Exception as e:
             self.logger.error(f"Failed to start Telegram polling: {e}")
             return False
+    
+    async def cmd_market_intelligence(self, update, context):
+        """Market intelligence analysis"""
+        chat_id = str(update.effective_chat.id)
+        try:
+            market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+            if market_data is None or len(market_data) < 50:
+                await self.send_message(chat_id, "❌ Insufficient data")
+                return
+            mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data)
+            msg = f"""📊 MARKET INTELLIGENCE
+Buy/Sell Ratio: {mi_summary.get('volume', {}).get('buy_sell_ratio', 0):.2f}x
+Signal: {mi_summary.get('signal', 'neutral').upper()}"""
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
+    
+    async def cmd_insider_detection(self, update, context):
+        """Insider activity detection"""
+        chat_id = str(update.effective_chat.id)
+        try:
+            market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+            if market_data is None or len(market_data) < 50:
+                await self.send_message(chat_id, "❌ Insufficient data")
+                return
+            insider_signal = await self.insider_analyzer.detect_insider_activity(market_data)
+            msg = f"🐋 {insider_signal.activity_type.upper()}: {insider_signal.confidence:.1f}%\n{insider_signal.description}" if insider_signal.detected else "🟢 No insider activity"
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
+    
+    async def cmd_order_flow(self, update, context):
+        """Order flow analysis"""
+        chat_id = str(update.effective_chat.id)
+        try:
+            market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+            if market_data is None or len(market_data) < 50:
+                await self.send_message(chat_id, "❌ Insufficient data")
+                return
+            current_price = await self.trader.get_current_price()
+            order_flow = await self.smart_sltp.analyze_order_flow(market_data, current_price)
+            msg = f"""📈 ORDER FLOW
+Direction: {order_flow.direction.value.upper()}
+Buy: {order_flow.aggressive_buy_ratio*100:.1f}%
+Sell: {order_flow.aggressive_sell_ratio*100:.1f}%
+Imbalance: {order_flow.volume_imbalance*100:+.1f}%"""
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Error: {str(e)}")
 
 async def main():
     """Main function to run the FXSUSDT bot"""
@@ -2727,6 +2808,43 @@ async def main():
 
 if __name__ == "__main__":
     # Ensure the event loop is managed correctly, especially in environments like Replit
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "There is no current event loop" in str(e):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(main())
+        else:
+            raise
+
+async def main():
+    """Main function to run the FXSUSDT bot"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    bot = FXSUSDTTelegramBot()
+
+    try:
+        bot.logger.info("🤖 Starting Telegram command system...")
+        telegram_success = await bot.start_telegram_polling()
+
+        if not telegram_success:
+            bot.logger.warning("⚠️ Telegram polling failed to start, continuing with scanner only")
+
+        bot.logger.info("🔍 Starting market scanner...")
+        await bot.run_continuous_scanner()
+
+    except KeyboardInterrupt:
+        bot.logger.info("👋 Bot stopped by user")
+    except Exception as e:
+        bot.logger.error(f"❌ Critical error: {e}")
+        raise
+
+
+if __name__ == "__main__":
     try:
         asyncio.run(main())
     except RuntimeError as e:

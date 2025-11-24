@@ -455,6 +455,48 @@ class FXSUSDTTrader:
         """Get market data (alias for get_klines for compatibility)"""
         return await self.get_klines(timeframe, limit)
 
+    async def get_order_book(self, symbol: str = None, limit: int = 20) -> Optional[Dict[str, Any]]:
+        """Get order book (depth) data for market microstructure analysis"""
+        try:
+            symbol = symbol or self.symbol
+            url = f"{self.base_url}/fapi/v1/depth"
+            params = {"symbol": symbol, "limit": limit}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug(f"📊 Order book retrieved for {symbol}")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get order book: {response.status}")
+                        return None
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting order book: {e}")
+            return None
+
+    async def get_recent_trades(self, symbol: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent market trades for time & sales tape analysis"""
+        try:
+            symbol = symbol or self.symbol
+            url = f"{self.base_url}/fapi/v1/trades"
+            params = {"symbol": symbol, "limit": limit}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.logger.debug(f"📈 Retrieved {len(data)} recent trades for {symbol}")
+                        return data
+                    else:
+                        self.logger.error(f"Failed to get recent trades: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            self.logger.error(f"Error getting recent trades: {e}")
+            return []
+
     async def test_connection(self) -> bool:
         """Test API connection and credentials"""
         try:

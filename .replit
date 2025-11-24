@@ -161,26 +161,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Trading Bot Console"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "Trading Bot"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "FXSUSDT Trading Bot"
-
-[[workflows.workflow]]
-name = "Trading Bot Console"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py"
 
 [[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"
@@ -269,17 +250,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_fxsusdt_bot_comprehensive_fixed.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow]]
-name = "FXSUSDT Trading Bot"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python SignalMaestro/start_fxsusdt_bot_comprehensive_fixed.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

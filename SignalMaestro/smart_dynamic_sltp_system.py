@@ -562,45 +562,75 @@ class SmartDynamicSLTPSystem:
                                      order_flow: OrderFlowAnalysis,
                                      atr: float,
                                      market_regime: str) -> Tuple[float, float, float, str]:
-        """Calculate intelligent take profits for LONG position"""
+        """Calculate intelligent take profits for LONG position - ENHANCED FOR MAXIMUM PROFITABILITY"""
         
         # Find resistances above entry
         valid_resistances = [z for z in resistance_zones if z.price > entry_price]
         valid_resistances.sort(key=lambda x: x.price)
         
+        # ENHANCED: Order flow-based TP scaling
+        flow_strength = order_flow.strength / 100.0  # 0-1
+        flow_multiplier = 0.8 + (flow_strength * 0.6)  # 0.8 - 1.4x scaling
+        
         if len(valid_resistances) >= 3:
-            # Use actual resistance levels
+            # Use actual resistance levels with flow-based extension
             tp1 = valid_resistances[0].price
             tp2 = valid_resistances[1].price
             tp3 = valid_resistances[2].price
-            reasoning = f"Resistance-based TPs: {tp1:.6f}, {tp2:.6f}, {tp3:.6f}"
+            
+            # ENHANCED: Extend TP3 based on order flow strength
+            if order_flow.direction in [OrderFlowDirection.STRONG_BUY, OrderFlowDirection.BUY]:
+                extension = (tp3 - entry_price) * (flow_multiplier - 1.0) * 0.5
+                tp3 = tp3 + extension
+                reasoning = f"Resistance-based TPs (Flow-extended): {tp1:.6f}, {tp2:.6f}, {tp3:.6f}"
+            else:
+                reasoning = f"Resistance-based TPs: {tp1:.6f}, {tp2:.6f}, {tp3:.6f}"
             
         elif len(valid_resistances) == 2:
             tp1 = valid_resistances[0].price
             tp2 = valid_resistances[1].price
-            tp3 = entry_price + (atr * 4)
-            reasoning = f"Mixed TPs: R1={tp1:.6f}, R2={tp2:.6f}, ATR-based={tp3:.6f}"
+            # ENHANCED: Better TP3 scaling with momentum
+            tp3 = entry_price + (atr * 5 * flow_multiplier)
+            reasoning = f"Mixed TPs (Momentum-optimized): R1={tp1:.6f}, R2={tp2:.6f}, ATR-extended={tp3:.6f}"
             
         elif len(valid_resistances) == 1:
             tp1 = valid_resistances[0].price
-            tp2 = entry_price + (atr * 2.5)
-            tp3 = entry_price + (atr * 4)
-            reasoning = f"R1={tp1:.6f}, ATR-scaled TPs"
+            # ENHANCED: Improved scaling for aggressive market
+            tp2 = entry_price + (atr * 3.5 * flow_multiplier)
+            tp3 = entry_price + (atr * 5.5 * flow_multiplier)
+            reasoning = f"R1={tp1:.6f}, ATR-optimized TPs (Momentum)"
             
         else:
-            # Full ATR-based
-            tp1 = entry_price + (atr * 1.5)
-            tp2 = entry_price + (atr * 2.5)
-            tp3 = entry_price + (atr * 4)
-            reasoning = "ATR-based TPs (1.5x, 2.5x, 4x)"
+            # Full ATR-based with enhanced scaling
+            base_tp1 = entry_price + (atr * 1.8)
+            base_tp2 = entry_price + (atr * 3.2)
+            base_tp3 = entry_price + (atr * 5.0)
+            
+            tp1 = base_tp1 * flow_multiplier if flow_multiplier > 1.0 else base_tp1
+            tp2 = base_tp2 * flow_multiplier if flow_multiplier > 1.0 else base_tp2
+            tp3 = base_tp3 * flow_multiplier if flow_multiplier > 1.0 else base_tp3
+            reasoning = f"ATR-optimized TPs (Flow: {flow_multiplier:.2f}x, {order_flow.direction.value})"
         
-        # Adjust for market regime
+        # ENHANCED: Aggressive regime adjustment for maximum profitability
         if market_regime == "trending_bullish":
-            tp3 = tp3 * 1.2
-            reasoning += " | Extended TP3 for trend"
-        elif market_regime == "volatile":
+            trend_extension = (tp3 - entry_price) * 0.35  # 35% extension in strong trends
+            tp3 = tp3 + trend_extension
+            tp2 = tp2 + (trend_extension * 0.25)  # Also boost TP2
+            reasoning += " | STRONG TREND: TPs extended +35%"
+        elif market_regime == "volatile" and order_flow.strength > 70:
+            # In volatile markets with strong order flow, keep aggressive TPs
+            tp1 = entry_price + (atr * 1.5)
+            reasoning += " | Volatile + Strong Flow: Aggressive TP1"
+        elif market_regime == "ranging":
+            # In ranging markets, take quicker profits
             tp1 = entry_price + (atr * 1.2)
-            reasoning += " | Tighter TP1 for volatility"
+            tp2 = entry_price + (atr * 2.3)
+            reasoning += " | Ranging: Quick-profit mode"
+        
+        # Ensure TP3 > TP2 > TP1 > Entry (sanity check)
+        tp1 = max(tp1, entry_price + (atr * 0.5))
+        tp2 = max(tp2, tp1 + (atr * 0.3))
+        tp3 = max(tp3, tp2 + (atr * 0.5))
         
         return tp1, tp2, tp3, reasoning
     
@@ -609,43 +639,74 @@ class SmartDynamicSLTPSystem:
                                       order_flow: OrderFlowAnalysis,
                                       atr: float,
                                       market_regime: str) -> Tuple[float, float, float, str]:
-        """Calculate intelligent take profits for SHORT position"""
+        """Calculate intelligent take profits for SHORT position - ENHANCED FOR MAXIMUM PROFITABILITY"""
         
         # Find supports below entry
         valid_supports = [z for z in support_zones if z.price < entry_price]
         valid_supports.sort(key=lambda x: x.price, reverse=True)
         
+        # ENHANCED: Order flow-based TP scaling for SHORT
+        flow_strength = order_flow.strength / 100.0  # 0-1
+        flow_multiplier = 0.8 + (flow_strength * 0.6)  # 0.8 - 1.4x scaling
+        
         if len(valid_supports) >= 3:
             tp1 = valid_supports[0].price
             tp2 = valid_supports[1].price
             tp3 = valid_supports[2].price
-            reasoning = f"Support-based TPs: {tp1:.6f}, {tp2:.6f}, {tp3:.6f}"
+            
+            # ENHANCED: Extend TP3 based on order flow strength (downward for SHORT)
+            if order_flow.direction in [OrderFlowDirection.STRONG_SELL, OrderFlowDirection.SELL]:
+                extension = (entry_price - tp3) * (flow_multiplier - 1.0) * 0.5
+                tp3 = tp3 - extension
+                reasoning = f"Support-based TPs (Flow-extended): {tp1:.6f}, {tp2:.6f}, {tp3:.6f}"
+            else:
+                reasoning = f"Support-based TPs: {tp1:.6f}, {tp2:.6f}, {tp3:.6f}"
             
         elif len(valid_supports) == 2:
             tp1 = valid_supports[0].price
             tp2 = valid_supports[1].price
-            tp3 = entry_price - (atr * 4)
-            reasoning = f"Mixed TPs: S1={tp1:.6f}, S2={tp2:.6f}, ATR-based={tp3:.6f}"
+            # ENHANCED: Better TP3 scaling with momentum (downward)
+            tp3 = entry_price - (atr * 5 * flow_multiplier)
+            reasoning = f"Mixed TPs (Momentum-optimized): S1={tp1:.6f}, S2={tp2:.6f}, ATR-extended={tp3:.6f}"
             
         elif len(valid_supports) == 1:
             tp1 = valid_supports[0].price
-            tp2 = entry_price - (atr * 2.5)
-            tp3 = entry_price - (atr * 4)
-            reasoning = f"S1={tp1:.6f}, ATR-scaled TPs"
+            # ENHANCED: Improved scaling for aggressive market (downward)
+            tp2 = entry_price - (atr * 3.5 * flow_multiplier)
+            tp3 = entry_price - (atr * 5.5 * flow_multiplier)
+            reasoning = f"S1={tp1:.6f}, ATR-optimized TPs (Momentum)"
             
         else:
-            tp1 = entry_price - (atr * 1.5)
-            tp2 = entry_price - (atr * 2.5)
-            tp3 = entry_price - (atr * 4)
-            reasoning = "ATR-based TPs (1.5x, 2.5x, 4x)"
+            # Full ATR-based with enhanced scaling (SHORT: downward)
+            base_tp1 = entry_price - (atr * 1.8)
+            base_tp2 = entry_price - (atr * 3.2)
+            base_tp3 = entry_price - (atr * 5.0)
+            
+            tp1 = base_tp1 * flow_multiplier if flow_multiplier > 1.0 else base_tp1
+            tp2 = base_tp2 * flow_multiplier if flow_multiplier > 1.0 else base_tp2
+            tp3 = base_tp3 * flow_multiplier if flow_multiplier > 1.0 else base_tp3
+            reasoning = f"ATR-optimized TPs (Flow: {flow_multiplier:.2f}x, {order_flow.direction.value})"
         
-        # Adjust for market regime
+        # ENHANCED: Aggressive regime adjustment for maximum profitability
         if market_regime == "trending_bearish":
-            tp3 = tp3 * 0.8  # Further down
-            reasoning += " | Extended TP3 for trend"
-        elif market_regime == "volatile":
+            trend_extension = (entry_price - tp3) * 0.35  # 35% extension downward
+            tp3 = tp3 - trend_extension
+            tp2 = tp2 - (trend_extension * 0.25)  # Also boost TP2 downward
+            reasoning += " | STRONG TREND: TPs extended -35%"
+        elif market_regime == "volatile" and order_flow.strength > 70:
+            # In volatile markets with strong order flow, keep aggressive TPs
+            tp1 = entry_price - (atr * 1.5)
+            reasoning += " | Volatile + Strong Flow: Aggressive TP1"
+        elif market_regime == "ranging":
+            # In ranging markets, take quicker profits
             tp1 = entry_price - (atr * 1.2)
-            reasoning += " | Tighter TP1 for volatility"
+            tp2 = entry_price - (atr * 2.3)
+            reasoning += " | Ranging: Quick-profit mode"
+        
+        # Ensure TP3 < TP2 < TP1 < Entry (sanity check for SHORT)
+        tp1 = min(tp1, entry_price - (atr * 0.5))
+        tp2 = min(tp2, tp1 - (atr * 0.3))
+        tp3 = min(tp3, tp2 - (atr * 0.5))
         
         return tp1, tp2, tp3, reasoning
     

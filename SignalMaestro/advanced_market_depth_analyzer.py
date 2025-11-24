@@ -243,13 +243,21 @@ class AdvancedMarketDepthAnalyzer:
             elif sell_vol > buy_vol * 1.5:
                 pattern = TapePattern.AGGRESSIVE_SELLING
                 profile = "sell_heavy"
-            elif total_vol < np.mean([np.sum([t.get('qty', 0) for t in self.tape_history]) 
-                                      for _ in range(min(5, len(self.tape_history))) if self.tape_history]) * 0.5:
-                pattern = TapePattern.QUIET
-                profile = "balanced"
             else:
-                pattern = TapePattern.MIXED_ACTIVITY
-                profile = "balanced"
+                # Calculate historical average safely
+                hist_vols = []
+                for tape_batch in list(self.tape_history)[-5:]:
+                    if isinstance(tape_batch, list):
+                        batch_vol = sum(float(t.get('qty', 0)) for t in tape_batch)
+                        hist_vols.append(batch_vol)
+                
+                hist_avg = np.mean(hist_vols) if hist_vols else 0
+                if total_vol < hist_avg * 0.5:
+                    pattern = TapePattern.QUIET
+                    profile = "balanced"
+                else:
+                    pattern = TapePattern.MIXED_ACTIVITY
+                    profile = "balanced"
             
             # Trend direction
             if momentum > 20:
@@ -290,10 +298,13 @@ class AdvancedMarketDepthAnalyzer:
             # Get recent candles
             recent = ohlcv_data.iloc[-10:].copy()
             
-            # Volume analysis
-            volumes = recent['volume'].values
-            avg_vol = np.mean(volumes)
-            recent_vol = volumes[-1]
+            # Volume analysis - handle missing column gracefully
+            if 'volume' not in recent.columns:
+                recent['volume'] = 1.0  # Default if missing
+            
+            volumes = np.array(recent['volume'].values, dtype=float)
+            avg_vol = np.mean(volumes) if len(volumes) > 0 else 1.0
+            recent_vol = volumes[-1] if len(volumes) > 0 else 1.0
             
             # High-Low range analysis
             highs = recent['high'].values
@@ -321,10 +332,10 @@ class AdvancedMarketDepthAnalyzer:
                 strength = min(rejection, 100.0)
             elif closes[-1] > opens[-1] and recent_vol > avg_vol:
                 footprint_type = FootprintType.ACCUMULATION
-                strength = min((recent_vol / avg_vol) * 50, 100.0)
+                strength = min(float((recent_vol / avg_vol) * 50), 100.0)
             elif closes[-1] < opens[-1] and recent_vol > avg_vol:
                 footprint_type = FootprintType.DISTRIBUTION
-                strength = min((recent_vol / avg_vol) * 50, 100.0)
+                strength = min(float((recent_vol / avg_vol) * 50), 100.0)
             elif closes[-1] > highs[-2]:
                 footprint_type = FootprintType.SUPPORT_BUILD
                 strength = 50.0

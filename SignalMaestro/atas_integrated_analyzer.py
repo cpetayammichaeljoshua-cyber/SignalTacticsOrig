@@ -12,15 +12,35 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
+def _normalize_ohlcv(data):
+    """Normalize OHLCV data (handle 5 or 6 columns)"""
+    if isinstance(data, list):
+        if not data or len(data) == 0:
+            return None
+        first = data[0] if isinstance(data[0], (list, tuple)) else None
+        col_count = len(first) if first else 5
+        
+        if col_count == 6:
+            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df = df.drop('timestamp', axis=1)
+        else:
+            df = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'])
+        return df
+    elif isinstance(data, pd.DataFrame):
+        if 'timestamp' in data.columns:
+            data = data.drop('timestamp', axis=1)
+        return data
+    return None
+
 @dataclass
 class ATASIndicatorSignal:
     """ATAS indicator signal"""
     timestamp: str
     indicator_name: str
     value: float
-    signal: str  # 'BUY', 'SELL', 'NEUTRAL'
-    strength: float  # 0-100
-    confidence: float  # 0-100
+    signal: str
+    strength: float
+    confidence: float
     description: str
 
 class ATASIntegratedAnalyzer:
@@ -33,11 +53,8 @@ class ATASIntegratedAnalyzer:
     async def analyze_all_indicators(self, ohlcv_data) -> Dict[str, Any]:
         """Analyze all ATAS indicators in parallel"""
         try:
-            if isinstance(ohlcv_data, list):
-                if not ohlcv_data or len(ohlcv_data) < self.min_bars:
-                    return {'error': 'Insufficient data'}
-                ohlcv_data = pd.DataFrame(ohlcv_data, columns=['open', 'high', 'low', 'close', 'volume'])
-            elif len(ohlcv_data) < self.min_bars:
+            df = _normalize_ohlcv(ohlcv_data)
+            if df is None or len(df) < self.min_bars:
                 return {'error': 'Insufficient data'}
             
             results = {
@@ -46,21 +63,21 @@ class ATASIntegratedAnalyzer:
             }
             
             # Analyze all indicators
-            results['indicators']['moving_averages'] = await self.analyze_moving_averages(ohlcv_data)
-            results['indicators']['rsi'] = await self.analyze_rsi(ohlcv_data)
-            results['indicators']['macd'] = await self.analyze_macd(ohlcv_data)
-            results['indicators']['bollinger_bands'] = await self.analyze_bollinger_bands(ohlcv_data)
-            results['indicators']['stochastic'] = await self.analyze_stochastic(ohlcv_data)
-            results['indicators']['atr'] = await self.analyze_atr(ohlcv_data)
-            results['indicators']['adx'] = await self.analyze_adx(ohlcv_data)
-            results['indicators']['vpt'] = await self.analyze_volume_price_trend(ohlcv_data)
-            results['indicators']['obv'] = await self.analyze_obv(ohlcv_data)
-            results['indicators']['accumulation_distribution'] = await self.analyze_accumulation_distribution(ohlcv_data)
-            results['indicators']['keltner_channel'] = await self.analyze_keltner_channel(ohlcv_data)
-            results['indicators']['pivot_points'] = await self.analyze_pivot_points(ohlcv_data)
-            results['indicators']['supertrend'] = await self.analyze_supertrend(ohlcv_data)
-            results['indicators']['vwap'] = await self.analyze_vwap(ohlcv_data)
-            results['indicators']['ichimoku'] = await self.analyze_ichimoku_extended(ohlcv_data)
+            results['indicators']['moving_averages'] = await self.analyze_moving_averages(df)
+            results['indicators']['rsi'] = await self.analyze_rsi(df)
+            results['indicators']['macd'] = await self.analyze_macd(df)
+            results['indicators']['bollinger_bands'] = await self.analyze_bollinger_bands(df)
+            results['indicators']['stochastic'] = await self.analyze_stochastic(df)
+            results['indicators']['atr'] = await self.analyze_atr(df)
+            results['indicators']['adx'] = await self.analyze_adx(df)
+            results['indicators']['vpt'] = await self.analyze_volume_price_trend(df)
+            results['indicators']['obv'] = await self.analyze_obv(df)
+            results['indicators']['accumulation_distribution'] = await self.analyze_accumulation_distribution(df)
+            results['indicators']['keltner_channel'] = await self.analyze_keltner_channel(df)
+            results['indicators']['pivot_points'] = await self.analyze_pivot_points(df)
+            results['indicators']['supertrend'] = await self.analyze_supertrend(df)
+            results['indicators']['vwap'] = await self.analyze_vwap(df)
+            results['indicators']['ichimoku'] = await self.analyze_ichimoku_extended(df)
             
             # Calculate composite signal
             results['composite_signal'] = self._calculate_composite_signal(results['indicators'])
@@ -75,23 +92,14 @@ class ATASIntegratedAnalyzer:
         """SMA, EMA, WMA analysis"""
         try:
             close = df['close'].values
-            sma_20 = np.mean(close[-20:])
-            sma_50 = np.mean(close[-50:])
-            sma_200 = np.mean(close[-100:])
-            
-            current = close[-1]
+            sma_20 = float(np.mean(close[-20:]))
+            sma_50 = float(np.mean(close[-50:]))
+            sma_200 = float(np.mean(close[-100:]))
+            current = float(close[-1])
             signal = 'BUY' if current > sma_20 > sma_50 > sma_200 else ('SELL' if current < sma_20 < sma_50 < sma_200 else 'NEUTRAL')
-            
-            return {
-                'sma_20': float(sma_20),
-                'sma_50': float(sma_50),
-                'sma_200': float(sma_200),
-                'current_price': float(current),
-                'signal': signal,
-                'strength': 75.0 if signal != 'NEUTRAL' else 50.0
-            }
+            return {'sma_20': sma_20, 'sma_50': sma_50, 'sma_200': sma_200, 'current_price': current, 'signal': signal, 'strength': 75.0 if signal != 'NEUTRAL' else 50.0}
         except Exception as e:
-            self.logger.debug(f"MA analysis error: {e}")
+            self.logger.debug(f"MA error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     async def analyze_rsi(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -101,20 +109,14 @@ class ATASIntegratedAnalyzer:
             deltas = np.diff(close)
             gains = np.where(deltas > 0, deltas, 0)
             losses = np.where(deltas < 0, -deltas, 0)
-            
-            avg_gain = np.mean(gains)
-            avg_loss = np.mean(losses)
+            avg_gain = float(np.mean(gains))
+            avg_loss = float(np.mean(losses))
             rs = avg_gain / avg_loss if avg_loss > 0 else 0
             rsi = 100 - (100 / (1 + rs)) if rs >= 0 else 0
-            
             signal = 'BUY' if rsi < 30 else ('SELL' if rsi > 70 else 'NEUTRAL')
-            return {
-                'rsi': float(rsi),
-                'signal': signal,
-                'strength': abs(rsi - 50) / 50 * 100
-            }
+            return {'rsi': float(rsi), 'signal': signal, 'strength': float(abs(rsi - 50) / 50 * 100)}
         except Exception as e:
-            self.logger.debug(f"RSI analysis error: {e}")
+            self.logger.debug(f"RSI error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     async def analyze_macd(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -126,67 +128,40 @@ class ATASIntegratedAnalyzer:
             macd = exp1 - exp2
             signal_line = pd.Series(macd).ewm(span=9).mean().values
             histogram = macd - signal_line
-            
-            current_hist = histogram[-1]
-            signal = 'BUY' if current_hist > 0 and histogram[-2] < 0 else ('SELL' if current_hist < 0 and histogram[-2] > 0 else 'NEUTRAL')
-            
-            return {
-                'macd': float(macd[-1]),
-                'signal_line': float(signal_line[-1]),
-                'histogram': float(current_hist),
-                'signal': signal,
-                'strength': min(100, abs(current_hist) * 1000)
-            }
+            current_macd = float(macd[-1])
+            current_signal = float(signal_line[-1])
+            current_hist = float(histogram[-1])
+            signal = 'BUY' if current_hist > 0 and macd[-2] <= signal_line[-2] else ('SELL' if current_hist < 0 and macd[-2] >= signal_line[-2] else 'NEUTRAL')
+            return {'macd': current_macd, 'signal_line': current_signal, 'histogram': current_hist, 'signal': signal, 'strength': float(abs(current_hist) * 100)}
         except Exception as e:
-            self.logger.debug(f"MACD analysis error: {e}")
+            self.logger.debug(f"MACD error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     async def analyze_bollinger_bands(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Bollinger Bands"""
+        """Bollinger Bands Analysis"""
         try:
-            close = df['close'].values[-20:]
+            close = df['close'].values[-50:]
             sma = np.mean(close)
             std = np.std(close)
-            upper_band = sma + (2 * std)
-            lower_band = sma - (2 * std)
-            current = close[-1]
-            
-            if current < lower_band:
-                signal = 'BUY'
-            elif current > upper_band:
-                signal = 'SELL'
-            else:
-                signal = 'NEUTRAL'
-            
-            return {
-                'upper_band': float(upper_band),
-                'middle_band': float(sma),
-                'lower_band': float(lower_band),
-                'current_price': float(current),
-                'signal': signal,
-                'strength': 65.0 if signal != 'NEUTRAL' else 50.0
-            }
+            upper = float(sma + 2 * std)
+            lower = float(sma - 2 * std)
+            current = float(close[-1])
+            signal = 'BUY' if current < lower else ('SELL' if current > upper else 'NEUTRAL')
+            return {'upper': upper, 'middle': float(sma), 'lower': lower, 'signal': signal, 'strength': 70.0 if signal != 'NEUTRAL' else 40.0}
         except Exception as e:
-            self.logger.debug(f"Bollinger Bands error: {e}")
+            self.logger.debug(f"BB error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     async def analyze_stochastic(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Stochastic Oscillator"""
         try:
-            low = df['low'].values[-14:]
-            high = df['high'].values[-14:]
             close = df['close'].values[-14:]
-            
-            ll = np.min(low)
-            hh = np.max(high)
-            k = 100 * (close[-1] - ll) / (hh - ll) if hh > ll else 50
-            
-            signal = 'BUY' if k < 20 else ('SELL' if k > 80 else 'NEUTRAL')
-            return {
-                'stoch_k': float(k),
-                'signal': signal,
-                'strength': abs(k - 50) / 50 * 100
-            }
+            high14 = np.max(close)
+            low14 = np.min(close)
+            current = float(close[-1])
+            k_percent = float(((current - low14) / (high14 - low14)) * 100) if high14 != low14 else 50.0
+            signal = 'BUY' if k_percent < 20 else ('SELL' if k_percent > 80 else 'NEUTRAL')
+            return {'k_percent': k_percent, 'signal': signal, 'strength': float(abs(k_percent - 50) / 50 * 100)}
         except Exception as e:
             self.logger.debug(f"Stochastic error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -197,16 +172,9 @@ class ATASIntegratedAnalyzer:
             high = df['high'].values[-14:]
             low = df['low'].values[-14:]
             close = df['close'].values[-14:]
-            
-            tr = np.maximum(high - low, np.abs(high - close[:-1]), np.abs(low - close[:-1]))
-            atr = np.mean(tr)
-            
-            return {
-                'atr': float(atr),
-                'atr_percent': float(atr / close[-1] * 100),
-                'signal': 'NEUTRAL',
-                'strength': 50.0
-            }
+            tr = np.maximum(high[1:] - low[1:], np.maximum(abs(high[1:] - close[:-1]), abs(low[1:] - close[:-1])))
+            atr = float(np.mean(tr))
+            return {'atr': atr, 'signal': 'NEUTRAL', 'strength': 60.0}
         except Exception as e:
             self.logger.debug(f"ATR error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -214,24 +182,19 @@ class ATASIntegratedAnalyzer:
     async def analyze_adx(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Average Directional Index"""
         try:
-            high = df['high'].values[-14:]
-            low = df['low'].values[-14:]
-            
-            up_move = high[1:] - high[:-1]
-            down_move = low[:-1] - low[1:]
-            
-            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
-            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
-            
-            adx = (np.mean(plus_dm) - np.mean(minus_dm)) / (np.mean(plus_dm) + np.mean(minus_dm) + 0.001) * 100
-            adx = (adx + 100) / 2  # Normalize
-            
-            signal = 'BUY' if adx > 60 else ('SELL' if adx < -60 else 'NEUTRAL')
-            return {
-                'adx': float(adx),
-                'signal': signal,
-                'strength': abs(adx) / 100 * 100
-            }
+            high = df['high'].values
+            low = df['low'].values
+            up_moves = high[1:] - high[:-1]
+            down_moves = low[:-1] - low[1:]
+            plus_dm = np.where((up_moves > down_moves) & (up_moves > 0), up_moves, 0)
+            minus_dm = np.where((down_moves > up_moves) & (down_moves > 0), down_moves, 0)
+            tr = np.maximum(high[1:] - low[1:], np.maximum(abs(high[1:] - df['close'].values[:-1]), abs(low[1:] - df['close'].values[:-1])))
+            atr = np.mean(tr[-14:])
+            di_plus = float(np.mean(plus_dm[-14:]) / atr * 100) if atr > 0 else 0
+            di_minus = float(np.mean(minus_dm[-14:]) / atr * 100) if atr > 0 else 0
+            adx = float(abs(di_plus - di_minus) / (di_plus + di_minus) * 100) if (di_plus + di_minus) > 0 else 0
+            signal = 'BUY' if di_plus > di_minus and adx > 25 else ('SELL' if di_minus > di_plus and adx > 25 else 'NEUTRAL')
+            return {'adx': adx, 'di_plus': di_plus, 'di_minus': di_minus, 'signal': signal, 'strength': float(adx)}
         except Exception as e:
             self.logger.debug(f"ADX error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -241,15 +204,10 @@ class ATASIntegratedAnalyzer:
         try:
             close = df['close'].values
             volume = df['volume'].values
-            
-            price_change = np.diff(close) / close[:-1] * 100
-            vpt = np.sum(volume[1:] * price_change / 100)
-            
-            return {
-                'vpt': float(vpt),
-                'signal': 'NEUTRAL',
-                'strength': 50.0
-            }
+            returns = np.diff(close) / close[:-1]
+            vpt = np.sum(returns * volume[:-1])
+            signal = 'BUY' if vpt > 0 else ('SELL' if vpt < 0 else 'NEUTRAL')
+            return {'vpt': float(vpt), 'signal': signal, 'strength': 65.0}
         except Exception as e:
             self.logger.debug(f"VPT error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -257,17 +215,21 @@ class ATASIntegratedAnalyzer:
     async def analyze_obv(self, df: pd.DataFrame) -> Dict[str, Any]:
         """On Balance Volume"""
         try:
-            close = df['close'].values[-50:]
-            volume = df['volume'].values[-50:]
-            
-            obv = np.cumsum(np.where(np.diff(close, prepend=close[0]) > 0, volume, np.where(np.diff(close, prepend=close[0]) < 0, -volume, 0)))
-            
-            signal = 'BUY' if obv[-1] > np.mean(obv[-20:]) else ('SELL' if obv[-1] < np.mean(obv[-20:]) else 'NEUTRAL')
-            return {
-                'obv': float(obv[-1]),
-                'signal': signal,
-                'strength': 60.0 if signal != 'NEUTRAL' else 50.0
-            }
+            close = df['close'].values
+            volume = df['volume'].values
+            obv = np.zeros_like(close)
+            obv[0] = volume[0]
+            for i in range(1, len(close)):
+                if close[i] > close[i-1]:
+                    obv[i] = obv[i-1] + volume[i]
+                elif close[i] < close[i-1]:
+                    obv[i] = obv[i-1] - volume[i]
+                else:
+                    obv[i] = obv[i-1]
+            current_obv = float(obv[-1])
+            prev_obv = float(obv[-20])
+            signal = 'BUY' if current_obv > prev_obv else ('SELL' if current_obv < prev_obv else 'NEUTRAL')
+            return {'obv': current_obv, 'signal': signal, 'strength': 60.0 if signal != 'NEUTRAL' else 30.0}
         except Exception as e:
             self.logger.debug(f"OBV error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -279,16 +241,15 @@ class ATASIntegratedAnalyzer:
             low = df['low'].values
             close = df['close'].values
             volume = df['volume'].values
-            
-            clv = ((close - low) - (high - close)) / (high - low + 0.001)
-            ad_line = np.cumsum(clv * volume)
-            
-            signal = 'BUY' if ad_line[-1] > np.mean(ad_line[-20:]) else ('SELL' if ad_line[-1] < np.mean(ad_line[-20:]) else 'NEUTRAL')
-            return {
-                'ad_line': float(ad_line[-1]),
-                'signal': signal,
-                'strength': 60.0 if signal != 'NEUTRAL' else 50.0
-            }
+            ad_line = np.zeros_like(close)
+            for i in range(len(close)):
+                hl_range = high[i] - low[i]
+                clv = ((close[i] - low[i]) - (high[i] - close[i])) / hl_range if hl_range > 0 else 0
+                ad_line[i] = ad_line[i-1] + clv * volume[i] if i > 0 else clv * volume[i]
+            current_ad = float(ad_line[-1])
+            prev_ad = float(ad_line[-20])
+            signal = 'BUY' if current_ad > prev_ad else ('SELL' if current_ad < prev_ad else 'NEUTRAL')
+            return {'ad_line': current_ad, 'signal': signal, 'strength': 60.0 if signal != 'NEUTRAL' else 30.0}
         except Exception as e:
             self.logger.debug(f"A/D error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -297,46 +258,34 @@ class ATASIntegratedAnalyzer:
         """Keltner Channel"""
         try:
             close = df['close'].values[-20:]
-            high = df['high'].values[-20:]
-            low = df['low'].values[-20:]
-            
-            ema = pd.Series(close).ewm(span=10).mean().values
-            tr = np.maximum(high - low, np.abs(high - ema[:-1]), np.abs(low - ema[:-1]))
-            atr = np.mean(tr)
-            
-            upper = ema[-1] + atr
-            lower = ema[-1] - atr
-            
-            signal = 'SELL' if close[-1] > upper else ('BUY' if close[-1] < lower else 'NEUTRAL')
-            return {
-                'upper': float(upper),
-                'middle': float(ema[-1]),
-                'lower': float(lower),
-                'signal': signal,
-                'strength': 65.0 if signal != 'NEUTRAL' else 50.0
-            }
+            atr_vals = np.zeros(len(close)-1)
+            for i in range(1, len(close)):
+                tr = max(df['high'].values[-(len(close)-i)] - df['low'].values[-(len(close)-i)], 
+                        abs(df['high'].values[-(len(close)-i)] - close[i-1]), 
+                        abs(df['low'].values[-(len(close)-i)] - close[i-1]))
+                atr_vals[i-1] = tr
+            atr = float(np.mean(atr_vals))
+            mid = float(np.mean(close))
+            upper = float(mid + 2 * atr)
+            lower = float(mid - 2 * atr)
+            current = float(close[-1])
+            signal = 'BUY' if current < lower else ('SELL' if current > upper else 'NEUTRAL')
+            return {'upper': upper, 'middle': mid, 'lower': lower, 'signal': signal, 'strength': 65.0 if signal != 'NEUTRAL' else 40.0}
         except Exception as e:
             self.logger.debug(f"Keltner error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     async def analyze_pivot_points(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Pivot Points Analysis"""
+        """Pivot Points"""
         try:
-            high = df['high'].values[-1]
-            low = df['low'].values[-1]
-            close = df['close'].values[-1]
-            
+            high = float(df['high'].iloc[-1])
+            low = float(df['low'].iloc[-1])
+            close = float(df['close'].iloc[-1])
             pivot = (high + low + close) / 3
             r1 = 2 * pivot - low
             s1 = 2 * pivot - high
-            
-            return {
-                'pivot': float(pivot),
-                'resistance_1': float(r1),
-                'support_1': float(s1),
-                'signal': 'NEUTRAL',
-                'strength': 50.0
-            }
+            signal = 'BUY' if close < pivot else ('SELL' if close > pivot else 'NEUTRAL')
+            return {'pivot': pivot, 'r1': r1, 's1': s1, 'signal': signal, 'strength': 60.0}
         except Exception as e:
             self.logger.debug(f"Pivot error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -347,20 +296,13 @@ class ATASIntegratedAnalyzer:
             high = df['high'].values[-20:]
             low = df['low'].values[-20:]
             close = df['close'].values[-20:]
-            
-            hl_avg = (high + low) / 2
-            atr = np.mean(np.maximum(high - low, np.abs(high - close[:-1]), np.abs(low - close[:-1])))
-            
-            basic_ub = hl_avg + 3 * atr
-            basic_lb = hl_avg - 3 * atr
-            
-            signal = 'BUY' if close[-1] > basic_ub[-1] else ('SELL' if close[-1] < basic_lb[-1] else 'NEUTRAL')
-            return {
-                'upper_band': float(basic_ub[-1]),
-                'lower_band': float(basic_lb[-1]),
-                'signal': signal,
-                'strength': 70.0 if signal != 'NEUTRAL' else 50.0
-            }
+            hl2 = (high + low) / 2
+            atr = np.mean(np.maximum(high[1:] - low[1:], np.maximum(abs(high[1:] - close[:-1]), abs(low[1:] - close[:-1]))))
+            basic_ub = hl2 + 3 * atr
+            basic_lb = hl2 - 3 * atr
+            current = float(close[-1])
+            signal = 'BUY' if current > np.mean(basic_ub[-5:]) else ('SELL' if current < np.mean(basic_lb[-5:]) else 'NEUTRAL')
+            return {'signal': signal, 'strength': 70.0 if signal != 'NEUTRAL' else 50.0}
         except Exception as e:
             self.logger.debug(f"Supertrend error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
@@ -368,89 +310,68 @@ class ATASIntegratedAnalyzer:
     async def analyze_vwap(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Volume Weighted Average Price"""
         try:
-            typical_price = (df['high'].values + df['low'].values + df['close'].values) / 3
-            vwap = np.sum(typical_price * df['volume'].values) / np.sum(df['volume'].values)
-            current = df['close'].values[-1]
-            
+            close = df['close'].values
+            volume = df['volume'].values
+            vwap = float(np.sum(close * volume) / np.sum(volume))
+            current = float(close[-1])
             signal = 'BUY' if current < vwap else ('SELL' if current > vwap else 'NEUTRAL')
-            return {
-                'vwap': float(vwap),
-                'current_price': float(current),
-                'signal': signal,
-                'strength': 60.0 if signal != 'NEUTRAL' else 50.0
-            }
+            return {'vwap': vwap, 'current': current, 'signal': signal, 'strength': 65.0}
         except Exception as e:
             self.logger.debug(f"VWAP error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     async def analyze_ichimoku_extended(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Extended Ichimoku Analysis"""
+        """Ichimoku Cloud Extended"""
         try:
             high = df['high'].values[-52:]
             low = df['low'].values[-52:]
-            close = df['close'].values[-52:]
-            
-            # Tenkan
-            tenkan_high = np.max(high[-9:])
-            tenkan_low = np.min(low[-9:])
-            tenkan = (tenkan_high + tenkan_low) / 2
-            
-            # Kijun
-            kijun_high = np.max(high[-26:])
-            kijun_low = np.min(low[-26:])
-            kijun = (kijun_high + kijun_low) / 2
-            
+            close = df['close'].values[-9:]
+            tenkan_hi = np.max(high[-9:])
+            tenkan_lo = np.min(low[-9:])
+            tenkan = (tenkan_hi + tenkan_lo) / 2
+            kijun_hi = np.max(high[-26:])
+            kijun_lo = np.min(low[-26:])
+            kijun = (kijun_hi + kijun_lo) / 2
             signal = 'BUY' if tenkan > kijun else ('SELL' if tenkan < kijun else 'NEUTRAL')
-            return {
-                'tenkan': float(tenkan),
-                'kijun': float(kijun),
-                'signal': signal,
-                'strength': 75.0 if signal != 'NEUTRAL' else 50.0
-            }
+            return {'tenkan': float(tenkan), 'kijun': float(kijun), 'signal': signal, 'strength': 75.0 if signal != 'NEUTRAL' else 50.0}
         except Exception as e:
             self.logger.debug(f"Ichimoku error: {e}")
             return {'signal': 'NEUTRAL', 'strength': 0}
     
     def _calculate_composite_signal(self, indicators: Dict[str, Any]) -> str:
         """Calculate composite signal from all indicators"""
-        buy_count = 0
-        sell_count = 0
-        total_signals = 0
-        
-        for indicator_name, data in indicators.items():
-            if isinstance(data, dict) and 'signal' in data:
-                signal = data['signal']
-                if signal == 'BUY':
-                    buy_count += 1
-                elif signal == 'SELL':
-                    sell_count += 1
-                total_signals += 1
-        
-        if total_signals == 0:
+        try:
+            buy_count = sum(1 for ind in indicators.values() if isinstance(ind, dict) and ind.get('signal') == 'BUY')
+            sell_count = sum(1 for ind in indicators.values() if isinstance(ind, dict) and ind.get('signal') == 'SELL')
+            total = buy_count + sell_count
+            
+            if total == 0:
+                return 'NEUTRAL'
+            buy_ratio = buy_count / total
+            if buy_ratio > 0.6:
+                return 'STRONG_BUY'
+            elif buy_ratio > 0.5:
+                return 'BUY'
+            elif buy_ratio < 0.4:
+                return 'STRONG_SELL'
+            elif buy_ratio < 0.5:
+                return 'SELL'
             return 'NEUTRAL'
-        
-        buy_ratio = buy_count / total_signals
-        sell_ratio = sell_count / total_signals
-        
-        if buy_ratio > 0.6:
-            return 'STRONG_BUY'
-        elif buy_ratio > 0.5:
-            return 'BUY'
-        elif sell_ratio > 0.6:
-            return 'STRONG_SELL'
-        elif sell_ratio > 0.5:
-            return 'SELL'
-        else:
+        except Exception as e:
+            self.logger.debug(f"Composite signal error: {e}")
             return 'NEUTRAL'
     
     def _calculate_overall_strength(self, indicators: Dict[str, Any]) -> float:
         """Calculate overall signal strength"""
-        strengths = []
-        for indicator_name, data in indicators.items():
-            if isinstance(data, dict) and 'strength' in data:
-                strengths.append(data['strength'])
-        
-        return float(np.mean(strengths)) if strengths else 50.0
+        try:
+            strengths = []
+            for ind in indicators.values():
+                if isinstance(ind, dict) and 'strength' in ind:
+                    strengths.append(float(ind['strength']))
+            return float(np.mean(strengths)) if strengths else 50.0
+        except Exception as e:
+            self.logger.debug(f"Overall strength error: {e}")
+            return 50.0
 
 # Global instance
 atas_analyzer = ATASIntegratedAnalyzer()

@@ -32,6 +32,7 @@ class FXSUSDTTelegramBot:
 
         # Telegram Configuration
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+
         self.channel_id = "@SignalTactics"
         self.admin_chat_id = os.getenv('ADMIN_CHAT_ID')  # Optional admin notifications
 
@@ -68,37 +69,67 @@ class FXSUSDTTelegramBot:
         # Command system - merge existing commands with Freqtrade commands
         self.commands = {
             '/start': self.cmd_start,
+
             '/help': self.cmd_help,
+
             '/status': self.cmd_status,
+
             '/price': self.cmd_price,
+
             '/balance': self.cmd_balance,
+
             '/position': self.cmd_position,
+
             '/scan': self.cmd_scan,
+
             '/settings': self.cmd_settings,
+
             '/market': self.cmd_market,
+
             '/stats': self.cmd_stats,
+
             '/leverage': self.cmd_leverage,
+
             '/risk': self.cmd_risk,
+
             '/signal': self.cmd_signal,
+
             '/history': self.cmd_history,
+
             '/alerts': self.cmd_alerts,
+
             '/admin': self.cmd_admin,
+
             '/futures': self.cmd_futures_info,
+
             '/contract': self.cmd_contract_specs,
+
             '/funding': self.cmd_funding_rate,
+
             '/oi': self.cmd_open_interest,
+
             '/volume': self.cmd_volume_analysis,
+
             '/sentiment': self.cmd_market_sentiment,
+
             '/news': self.cmd_market_news,
+
             '/watchlist': self.cmd_watchlist,
+
             '/backtest': self.cmd_backtest,
+
             '/optimize': self.cmd_optimize_strategy,
+
             '/dynamic_sltp': self.cmd_dynamic_sltp,
+
             '/dashboard': self.cmd_market_dashboard,
+
             '/market_intel': self.cmd_market_intelligence,
+
             '/insider': self.cmd_insider_detection,
+
             '/orderflow': self.cmd_order_flow,
-            '/atas': self.cmd_atas_analysis
+
         }
         
         # Add all Freqtrade commands
@@ -122,15 +153,25 @@ class FXSUSDTTelegramBot:
         # FXSUSDT contract specifications
         self.contract_specs = {
             'symbol': 'FXSUSDT',
+
             'base_asset': 'FX',
+
             'quote_asset': 'USDT',
+
             'contract_type': 'PERPETUAL',
+
             'settlement_asset': 'USDT',
+
             'margin_type': 'Cross/Isolated',
+
             'tick_size': '0.00001',
+
             'step_size': '0.1',
+
             'max_leverage': '50x',
+
             'funding_interval': '8 hours'
+
         }
 
         self.logger.info("🤖 FXSUSDT Futures Telegram Bot initialized with advanced commands")
@@ -172,14 +213,19 @@ class FXSUSDTTelegramBot:
         return True
 
     async def send_message(self, chat_id: str, text: str, parse_mode: str = 'Markdown') -> bool:
+
         """Send message to Telegram chat/channel"""
         try:
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': chat_id,
+
                 'text': text,
+
                 'parse_mode': parse_mode,
+
                 'disable_web_page_preview': True
+
             }
 
             async with aiohttp.ClientSession() as session:
@@ -187,10 +233,12 @@ class FXSUSDTTelegramBot:
                     if response.status == 200:
                         result = await response.json()
                         if result.get('ok'):
+
                             self.logger.info(f"✅ Message sent to {chat_id}")
                             return True
                         else:
                             self.logger.error(f"❌ Telegram API error: {result.get('description')}")
+
                             return False
                     else:
                         self.logger.error(f"❌ HTTP error: {response.status}")
@@ -273,6 +321,7 @@ Margin: CROSS
 ```
 
 **⏰ Signal Time:** `{signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}`
+
 **🤖 Bot:** `Pine Script Ichimoku Sniper v6`
 
 *Cross Margin & Auto Leverage - Comprehensive Risk Management*
@@ -329,8 +378,11 @@ Margin: CROSS
                     if response.status == 200:
                         result = await response.json()
                         if result.get('ok'):
+
                             bot_info = result.get('result', {})
+
                             bot_name = bot_info.get('username', 'Unknown')
+
                             self.logger.info(f"✅ Telegram connection successful: @{bot_name}")
                             return True
 
@@ -394,18 +446,23 @@ Margin: CROSS
                 # Get market data for comprehensive analysis
                 try:
                     market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+
                     if market_data is not None and len(market_data) >= 50:
                         # Run ATAS analysis (all indicators)
                         atas_results = await self.atas_analyzer.analyze_all_indicators(market_data)
                         if 'error' not in atas_results:
+
                             atas_composite = atas_results.get('composite_signal', 'NEUTRAL')
+
                             atas_strength = atas_results.get('overall_strength', 50)
-                            
+
                             # ATAS signal confirmation
                             if atas_composite in ['STRONG_BUY', 'STRONG_SELL']:
+
                                 signal.confidence = min(100, signal.confidence + 20)
                                 self.logger.info(f"🔷 ATAS All Indicators confirm: +20% confidence (ATAS: {atas_composite}, Strength: {atas_strength:.1f}%)")
                             elif atas_composite in ['BUY', 'SELL']:
+
                                 signal.confidence = min(100, signal.confidence + 12)
                                 self.logger.info(f"🔷 ATAS Indicators boost: +12% (ATAS: {atas_composite})")
                         
@@ -414,8 +471,11 @@ Margin: CROSS
                         insider_signal = await self.insider_analyzer.detect_insider_activity(market_data)
                         
                         if mi_summary and mi_summary.get('signal'):
+
                             mi_signal = mi_summary['signal']
+
                             if mi_signal in ['strong_buy', 'strong_sell']:
+
                                 signal.confidence = min(100, signal.confidence + 10)
                         
                         if insider_signal.detected and insider_signal.confidence > 70:
@@ -427,18 +487,31 @@ Margin: CROSS
                 if self.ai_processor:
                     enhanced_signal = await self.ai_processor.process_and_enhance_signal({
                         'symbol': signal.symbol,
+
                         'action': signal.action,
+
                         'entry_price': signal.entry_price,
+
                         'stop_loss': signal.stop_loss,
+
                         'take_profit': signal.take_profit,
+
                         'take_profit_1': getattr(signal, 'take_profit_1', signal.take_profit),
+
                         'take_profit_2': getattr(signal, 'take_profit_2', signal.take_profit * 1.5),
+
                         'take_profit_3': getattr(signal, 'take_profit_3', signal.take_profit * 2.0),
+
                         'signal_strength': signal.signal_strength,
+
                         'confidence': signal.confidence,
+
                         'timeframe': signal.timeframe,
+
                         'strength': signal.signal_strength,
+
                         'leverage': 5  # Default leverage
+
                     })
 
                     # Double-check AI confidence
@@ -461,6 +534,7 @@ Margin: CROSS
                     elif enhanced_signal and ai_confidence > 0:
                         # Only log occasionally to reduce noise
                         if not hasattr(self, '_last_ai_block_log') or (time.time() - self._last_ai_block_log) > 600:
+
                             self.logger.debug(f"🤖 Signal filtered: AI confidence {ai_confidence:.1f}%")
                             self._last_ai_block_log = time.time()
                 else:
@@ -482,6 +556,7 @@ Margin: CROSS
         """Check and trigger price alerts"""
         try:
             if not hasattr(self, 'price_alerts') or not self.price_alerts:
+
                 return
 
             current_price = await self.trader.get_current_price()
@@ -494,9 +569,11 @@ Margin: CROSS
 
                 for i, alert in enumerate(alerts):
                     if alert.get('triggered', False):
+
                         continue
 
                     target_price = alert['price']
+
                     direction = alert['direction']
 
                     # Check if alert should trigger
@@ -508,6 +585,7 @@ Margin: CROSS
 
                     if should_trigger:
                         alert['triggered'] = True
+
                         triggered_alerts.append((i, alert))
 
                         # Send alert notification
@@ -692,7 +770,9 @@ Use `/alerts` to manage your alerts."""
         status_message = (
             f"🤖 **FXSUSDT.P Futures Bot Status:**\n\n"
             f"• **Uptime:** `{str(uptime).split('.')[0]}`\n"
+
             f"• **Last Signal:** `{self.last_signal_time.strftime('%Y-%m-%d %H:%M:%S UTC') if self.last_signal_time else 'Never'}`\n"
+
             f"• **Signals Sent:** `{self.signal_count}`\n"
             f"• **Scanner Mode:** `{scanner_status}`\n"
             f"• **Target Channel:** `{self.channel_id}`\n"
@@ -716,10 +796,14 @@ Use `/alerts` to manage your alerts."""
             if price:
                 # Get additional ticker data for comprehensive info
                 ticker = await self.trader.get_24hr_ticker_stats('FXSUSDT')
+
                 if ticker:
                     change_percent = float(ticker.get('priceChangePercent', 0))
+
                     high_24h = float(ticker.get('highPrice', 0))
+
                     low_24h = float(ticker.get('lowPrice', 0))
+
                     volume = float(ticker.get('volume', 0))
 
                     direction_emoji = "🟢" if change_percent >= 0 else "🔴"
@@ -754,7 +838,9 @@ Use `/alerts` to manage your alerts."""
                 message = f"""💰 **Account Balance (FXSUSDT Futures):**
 
 • **Total Wallet Balance:** `{balance.get('total_wallet_balance', 0):.2f} USDT`
+
 • **Available Balance:** `{balance.get('available_balance', 0):.2f} USDT`
+
 • **Unrealized PNL:** `{balance.get('total_unrealized_pnl', 0):.2f} USDT`
 
 **📊 Account Type:** USDT-M Futures
@@ -773,13 +859,18 @@ Use `/alerts` to manage your alerts."""
         chat_id = str(update.effective_chat.id)
         try:
             positions = await self.trader.get_positions('FXSUSDT')
+
             if positions:
                 message = "📊 **Open Positions (FXSUSDT.P):**\n\n"
                 for pos in positions:
                     position_amt = float(pos.get('positionAmt', 0))
+
                     entry_price = float(pos.get('entryPrice', 0))
+
                     mark_price = float(pos.get('markPrice', 0))
+
                     unrealized_pnl = float(pos.get('unRealizedProfit', 0))
+
                     percentage = float(pos.get('percentage', 0))
 
                     side = "LONG" if position_amt > 0 else "SHORT" if position_amt < 0 else "NONE"
@@ -787,6 +878,7 @@ Use `/alerts` to manage your alerts."""
                     pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
 
                     message += f"""{side_emoji} **{pos['symbol']}**
+
 • **Side:** `{side}`
 • **Size:** `{abs(position_amt):.4f}`
 • **Entry Price:** `{entry_price:.5f}`
@@ -823,6 +915,7 @@ Use `/alerts` to manage your alerts."""
             f"• **Min Signal Interval:** {self.min_signal_interval_minutes} minutes\n"
             f"• **Target Channel:** `{self.channel_id}`\n"
             f"• **Admin Notifications:** {'Enabled' if self.admin_chat_id else 'Disabled'}\n\n"
+
             "*Note: Modifying settings requires further implementation.*"
         )
         await self.send_message(chat_id, settings_message)
@@ -832,6 +925,7 @@ Use `/alerts` to manage your alerts."""
         """Get general market overview or specific symbol info"""
         chat_id = str(update.effective_chat.id)
         symbol = 'FXSUSDT' # Default to FXSUSDT
+
         if context.args:
             symbol = context.args[0].upper()
 
@@ -840,12 +934,19 @@ Use `/alerts` to manage your alerts."""
             ticker = await self.trader.get_24hr_ticker_stats(symbol)
             if ticker:
                 price = float(ticker.get('lastPrice', 0))
+
                 change = float(ticker.get('priceChange', 0))
+
                 change_percent = float(ticker.get('priceChangePercent', 0))
+
                 high_24h = float(ticker.get('highPrice', 0))
+
                 low_24h = float(ticker.get('lowPrice', 0))
+
                 volume = float(ticker.get('volume', 0))
+
                 quote_volume = float(ticker.get('quoteVolume', 0))
+
                 open_price = float(ticker.get('openPrice', 0))
 
                 direction_emoji = "🟢" if change >= 0 else "🔴"
@@ -900,6 +1001,7 @@ Use `/alerts` to manage your alerts."""
         chat_id = str(update.effective_chat.id)
 
         if len(context.args) >= 1 and context.args[0].upper() == 'AUTO':
+
             # Calculate optimal leverage dynamically
             try:
                 from SignalMaestro.dynamic_position_manager import DynamicPositionManager
@@ -925,6 +1027,7 @@ Use `/alerts` to manage your alerts."""
                 # Calculate optimal leverage
                 optimal_leverage = await position_manager.calculate_optimal_leverage(
                     'FXSUSDT', atr_data, market_regime, account_balance
+
                 )
 
                 message = f"""🎯 **Dynamic Leverage Analysis:**
@@ -933,7 +1036,9 @@ Use `/alerts` to manage your alerts."""
 • **Optimal Leverage:** `{optimal_leverage}x`
 • **Market Regime:** `{market_regime}`
 • **ATR (Weighted):** `{atr_data['weighted_atr']:.6f}`
+
 • **ATR Trend:** `{atr_data.get('atr_trend', 'stable')}`
+
 • **Current Price:** `{current_price:.6f}`
 
 **Regime-Based Recommendations:**
@@ -954,6 +1059,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             return
 
         if len(context.args) >= 2 and context.args[0].upper() == 'FXSUSDT':
+
             symbol = context.args[0].upper()
             try:
                 leverage = int(context.args[1])
@@ -974,6 +1080,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             # Show current leverage
             try:
                 current_leverage = await self.trader.get_leverage('FXSUSDT')
+
                 if current_leverage:
                     await self.send_message(chat_id, f"""⚙️ **Current Leverage Information:**
 
@@ -1101,6 +1208,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             # Parse signal parameters
             action = context.args[0].upper()
             if action not in ['BUY', 'SELL']:
+
                 await self.send_message(chat_id, "❌ Invalid direction. Use BUY or SELL.")
                 return
 
@@ -1164,6 +1272,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 📡 **Sent to:** {self.channel_id}
 🕐 **Time:** {datetime.now().strftime('%H:%M:%S UTC')}""")
+
             else:
                 await self.send_message(chat_id, "❌ Failed to send manual signal. Please check logs for details.")
 
@@ -1191,11 +1300,17 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             total_pnl = 0
             for i, trade in enumerate(trades[:10], 1):
                 side = trade.get('side', 'UNKNOWN')
+
                 price = float(trade.get('price', 0))
+
                 qty = float(trade.get('qty', 0))
+
                 quote_qty = float(trade.get('quoteQty', 0))
+
                 time_ms = int(trade.get('time', 0))
+
                 trade_time = datetime.fromtimestamp(time_ms / 1000).strftime('%m/%d %H:%M')
+
                 commission = float(trade.get('commission', 0))
 
                 side_emoji = "🟢" if side == "BUY" else "🔴"
@@ -1235,6 +1350,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 🤖 **Bot Signal Statistics:**
 • **Signals Sent:** {self.signal_count}
 • **Last Signal:** {self.last_signal_time.strftime('%Y-%m-%d %H:%M:%S UTC') if self.last_signal_time else 'Never'}
+
 • **Bot Uptime:** {datetime.now() - self.bot_start_time}
 
 ⚠️ **Note:** Live trade history requires active trading. This shows bot activity.
@@ -1254,6 +1370,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
         # Initialize alerts storage if not exists
         if not hasattr(self, 'price_alerts'):
+
             self.price_alerts = {}
 
         if not context.args:
@@ -1277,8 +1394,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 alerts_msg = "🔔 **Active Price Alerts (FXSUSDT.P):**\n\n"
                 for i, alert in enumerate(user_alerts, 1):
                     price = alert['price']
+
                     created = alert['created']
+
                     direction = alert.get('direction', 'crosses')
+
                     alerts_msg += f"**{i}.** `{price:.5f}` ({direction}) - Set: {created}\n"
 
                 alerts_msg += f"\n**Total Alerts:** {len(user_alerts)}/5\n\n"
@@ -1287,6 +1407,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             await self.send_message(chat_id, alerts_msg)
 
         elif context.args[0].lower() == 'add':
+
             if len(context.args) < 2:
                 await self.send_message(chat_id, "❌ Usage: `/alerts add [price]`\nExample: `/alerts add 2.10000`")
                 return
@@ -1314,9 +1435,13 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 # Add alert
                 alert = {
                     'price': target_price,
+
                     'direction': direction,
+
                     'created': datetime.now().strftime('%m/%d %H:%M'),
+
                     'triggered': False
+
                 }
 
                 self.price_alerts[chat_id].append(alert)
@@ -1337,6 +1462,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, "❌ Invalid price format. Please provide a valid number.")
 
         elif context.args[0].lower() == 'remove':
+
             if len(context.args) < 2:
                 await self.send_message(chat_id, "❌ Usage: `/alerts remove [index]`\nExample: `/alerts remove 1`")
                 return
@@ -1353,14 +1479,17 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, f"""✅ **Alert Removed**
 
 🗑️ **Removed:** Price alert for `{removed_alert['price']:.5f}`
+
 📊 **Remaining Alerts:** {len(user_alerts)}/5""")
 
             except ValueError:
                 await self.send_message(chat_id, "❌ Invalid index. Please provide a number.")
 
         elif context.args[0].lower() == 'list':
+
             # Same as no args - show all alerts
             await self.cmd_alerts(update, type('MockContext', (), {'args': []})())
+
             return
 
         else:
@@ -1411,6 +1540,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, admin_panel)
 
             elif context.args[0].lower() == 'status':
+
                 # Detailed admin status
                 try:
                     price = await self.trader.get_current_price()
@@ -1420,12 +1550,15 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 🤖 **Bot Status:**
 • **Scanner:** {'🟢 Active' if hasattr(self, 'telegram_app') else '🔴 Inactive'}
+
 • **API Connection:** {'🟢 Connected' if price else '🔴 Disconnected'}
+
 • **Channel:** {self.channel_id}
 • **Rate Limit:** {self.min_signal_interval_minutes:.0f} minutes
 
 💰 **Account Status:**
 • **Balance:** ${balance.get('available_balance', 0):.2f if balance else 'N/A'}
+
 • **Current Price:** {price:.5f if price else 'N/A'}
 
 📈 **Performance:**
@@ -1440,6 +1573,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     await self.send_message(chat_id, f"⚠️ Status check error: {str(e)}")
 
             elif context.args[0].lower() == 'restart':
+
                 await self.send_message(chat_id, "🔄 **Restarting Scanner...**\n\nScanner will be reinitialized.")
                 # Reset timing
                 self.last_signal_time = None
@@ -1447,6 +1581,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, "✅ **Scanner Restarted**\n\nBot is ready for new signals.")
 
             elif context.args[0].lower() == 'config':
+
                 config_msg = f"""⚙️ **Current Configuration**
 
 📡 **Signal Settings:**
@@ -1469,6 +1604,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, config_msg)
 
             elif context.args[0].lower() == 'interval':
+
                 if len(context.args) < 2:
                     await self.send_message(chat_id, "❌ Usage: `/admin interval [minutes]`\nExample: `/admin interval 30`")
                     return
@@ -1486,12 +1622,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     await self.send_message(chat_id, "❌ Invalid number. Please provide minutes as integer.")
 
             elif context.args[0].lower() == 'logs':
+
                 # Show recent activity
                 logs_msg = f"""📜 **Recent Activity Logs**
 
 🕐 **Last 5 Activities:**
 • Scanner initialized at startup
 • {f'Last signal: {self.last_signal_time.strftime("%H:%M:%S")}' if self.last_signal_time else 'No signals sent yet'}
+
 • Commands processed: {sum(self.commands_used.values())}
 • Bot uptime: {str(datetime.now() - self.bot_start_time).split('.')[0]}
 
@@ -1505,6 +1643,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 await self.send_message(chat_id, logs_msg)
 
             elif context.args[0].lower() == 'automation':
+
                 # Show hourly automation status
                 try:
                     from pathlib import Path
@@ -1513,30 +1652,39 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     status_file = Path("SignalMaestro/hourly_automation_status.json")
                     if status_file.exists():
                         with open(status_file, 'r') as f:
+
                             status = json.load(f)
 
                         current_time = datetime.now()
 
                         if status.get('last_run'):
+
                             last_run = datetime.fromisoformat(status['last_run'])
+
                             time_since_last = current_time - last_run
                             last_run_str = f"{last_run.strftime('%H:%M UTC')} ({time_since_last.total_seconds()/3600:.1f}h ago)"
+
                         else:
                             last_run_str = "Never"
 
                         if status.get('next_run'):
+
                             next_run = datetime.fromisoformat(status['next_run'])
+
                             time_to_next = next_run - current_time
                             next_run_str = f"{next_run.strftime('%H:%M UTC')} (in {time_to_next.total_seconds()/3600:.1f}h)"
+
                         else:
                             next_run_str = "Not scheduled"
 
                         automation_status = f"""⏰ **HOURLY AUTOMATION STATUS**
 
 🔄 **Current Status:** {status.get('status', 'Unknown').upper()}
+
 📊 **Last Run:** {last_run_str}
 📈 **Next Run:** {next_run_str}
 🎯 **Cycles Completed:** {status.get('cycles_completed', 0)}
+
 ⚡ **Optimizations Applied:** {status.get('total_optimizations_applied', 0)}
 
 🤖 **Features Active:**
@@ -1546,7 +1694,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 • ✅ Intelligent Updates"""
 
                         if status.get('last_error'):
+
                             error_time = datetime.fromisoformat(status['error_time'])
+
                             time_since_error = current_time - error_time
                             automation_status += f"\n\n⚠️ **Last Error:** {status['last_error'][:100]}...\n📅 **Error Time:** {error_time.strftime('%H:%M UTC')} ({time_since_error.total_seconds()/3600:.1f}h ago)"
 
@@ -1558,6 +1708,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     await self.send_message(chat_id, f"❌ Error checking automation status: {e}")
 
             elif context.args[0].lower() == 'broadcast':
+
                 if len(context.args) < 2:
                     await self.send_message(chat_id, "❌ Usage: `/admin broadcast [message]`")
                     return
@@ -1594,13 +1745,21 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         info = (
             "ℹ️ **FXSUSDT.P Futures Contract Information:**\n\n"
             f"• **Symbol:** `{self.contract_specs['symbol']}`\n"
+
             f"• **Contract Type:** `{self.contract_specs['contract_type']}`\n"
+
             f"• **Settlement Asset:** `{self.contract_specs['settlement_asset']}`\n"
+
             f"• **Margin Type:** `{self.contract_specs['margin_type']}`\n"
+
             f"• **Tick Size:** `{self.contract_specs['tick_size']}`\n"
+
             f"• **Step Size:** `{self.contract_specs['step_size']}`\n"
+
             f"• **Max Leverage:** `{self.contract_specs['max_leverage']}`\n"
+
             f"• **Funding Interval:** `{self.contract_specs['funding_interval']}`\n\n"
+
             "This is a USDT-margined perpetual futures contract on Binance, not a forex pair."
         )
         await self.send_message(chat_id, info)
@@ -1612,15 +1771,25 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         specs = (
             "📜 **FXSUSDT.P Contract Specifications:**\n\n"
             f"• **Symbol:** `{self.contract_specs['symbol']}`\n"
+
             f"• **Base Asset:** `{self.contract_specs['base_asset']}`\n"
+
             f"• **Quote Asset:** `{self.contract_specs['quote_asset']}`\n"
+
             f"• **Contract Type:** `{self.contract_specs['contract_type']}`\n"
+
             f"• **Settlement Asset:** `{self.contract_specs['settlement_asset']}`\n"
+
             f"• **Margin Type:** `{self.contract_specs['margin_type']}`\n"
+
             f"• **Tick Size:** `{self.contract_specs['tick_size']}`\n"
+
             f"• **Lot Size Step:** `{self.contract_specs['step_size']}`\n"
+
             f"• **Max Leverage:** `{self.contract_specs['max_leverage']}`\n"
+
             f"• **Funding Payment Interval:** `{self.contract_specs['funding_interval']}`\n\n"
+
             "FXSUSDT.P is a futures contract, emphasizing its use in derivatives trading."
         )
         await self.send_message(chat_id, specs)
@@ -1631,10 +1800,13 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         chat_id = str(update.effective_chat.id)
         try:
             funding_rate_data = await self.trader.get_funding_rate('FXSUSDT')
+
             if funding_rate_data:
                 rate = funding_rate_data['fundingRate']
+
                 # Calculate next funding time if available
                 next_funding_time = datetime.fromtimestamp(funding_rate_data['fundingTime'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')
+
                 message = (
                     f"💸 **Current Funding Rate (FXSUSDT.P):** `{rate}`\n"
                     f"Next Funding Payment: {next_funding_time}"
@@ -1652,14 +1824,18 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         chat_id = str(update.effective_chat.id)
         try:
             oi_data = await self.trader.get_open_interest('FXSUSDT')
+
             if oi_data:
                 oi = oi_data['openInterest']
+
                 amount_in_quote_asset = oi_data.get('totalQuoteAssetVolume', 'N/A') # May not always be available
+
                 message = (
                     f"📊 **Open Interest (FXSUSDT.P):**\n"
                     f"• **Contracts:** `{oi}`\n"
                 )
                 if amount_in_quote_asset != 'N/A':
+
                      message += f"• **Value (USDT):** `{amount_in_quote_asset}`\n"
                 message += "\n*Note: Open Interest represents the total value of outstanding derivative contracts.*"
                 await self.send_message(chat_id, message)
@@ -1723,6 +1899,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
             if ticker:
                 change_percent = float(ticker.get('priceChangePercent', 0))
+
                 volume = float(ticker.get('volume', 0))
 
                 # Create contextual news based on market data
@@ -1744,6 +1921,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **📊 Technical Outlook:**
 • **Trend:** {'Bullish momentum' if change_percent > 1 else 'Bearish pressure' if change_percent < -1 else 'Sideways consolidation'}
+
 • **Support/Resistance:** Key levels around {(current_price or 0) * 0.98:.5f} / {(current_price or 0) * 1.02:.5f}
 • **Strategy Focus:** {'Breakout plays' if abs(change_percent) < 1 else 'Trend following'}
 
@@ -1754,7 +1932,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **📈 Trading Opportunities:**
 • **Scalping:** {'Favorable' if abs(change_percent) > 0.5 else 'Limited'} due to current volatility
+
 • **Swing Trading:** {'Active' if abs(change_percent) > 2 else 'Patient'} approach recommended
+
 • **Risk Management:** {'Increased caution' if abs(change_percent) > 3 else 'Standard protocols'}
 
 **🕐 Last Updated:** {datetime.now().strftime('%H:%M:%S UTC')}
@@ -1866,18 +2046,24 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 current_capital -= commission_cost
 
                 # Ensure capital doesn't go below a minimum threshold (e.g., to avoid issues with division by zero)
+
                 if current_capital < 1.0: # Arbitrary small amount to prevent major issues
                     current_capital = 1.0 
 
                 trades.append({
                     'trade_num': i + 1,
+
                     'pnl_usd': trade_pnl,
+
                     'capital_after': current_capital,
+
                     'is_win': is_win
+
                 })
 
             # Calculate comprehensive metrics
             winning_trades = sum(1 for t in trades if t['is_win'])
+
             losing_trades = len(trades) - winning_trades
             win_rate = (winning_trades / len(trades)) * 100 if trades else 0
 
@@ -1886,12 +2072,15 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
             # Calculate profit factor
             gross_profit = sum(t['pnl_usd'] for t in trades if t['pnl_usd'] > 0)
+
             gross_loss = abs(sum(t['pnl_usd'] for t in trades if t['pnl_usd'] < 0))
+
             profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
 
             # Calculate Sharpe ratio (simplified)
             # We need a list of returns per trade to calculate std deviation accurately
             trade_returns_usd = [t['pnl_usd'] for t in trades]
+
             if trade_returns_usd:
                 avg_return_usd = np.mean(trade_returns_usd)
                 std_return_usd = np.std(trade_returns_usd)
@@ -1906,6 +2095,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
             # Average trade metrics
             avg_win = np.mean([t['pnl_usd'] for t in trades if t['is_win']]) if winning_trades > 0 else 0
+
             avg_loss = np.mean([t['pnl_usd'] for t in trades if not t['is_win']]) if losing_trades > 0 else 0
 
             # Calculate Max Drawdown
@@ -1913,9 +2103,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             max_drawdown = 0
             for trade in trades:
                 peak_capital = max(peak_capital, trade['capital_after'])
+
                 # Ensure peak_capital is not zero to avoid division by zero
                 if peak_capital > 0:
                     drawdown = ((peak_capital - trade['capital_after']) / peak_capital) * 100
+
                     max_drawdown = max(max_drawdown, drawdown)
                 else:
                     # If peak_capital is zero or negative, drawdown calculation might be unstable
@@ -1924,24 +2116,43 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
             return {
                 'duration_days': duration_days,
+
                 'timeframe': timeframe,
+
                 'initial_capital': initial_capital,
+
                 'final_capital': current_capital,
+
                 'total_pnl': total_pnl,
+
                 'total_return': total_return,
+
                 'total_trades': len(trades),
+
                 'winning_trades': winning_trades,
+
                 'losing_trades': losing_trades,
+
                 'win_rate': win_rate,
+
                 'max_drawdown': max_drawdown,
+
                 'profit_factor': profit_factor,
+
                 'sharpe_ratio': sharpe_ratio,
+
                 'trades_per_day': trades_per_day,
+
                 'avg_win': avg_win,
+
                 'avg_loss': avg_loss,
+
                 'gross_profit': gross_profit,
+
                 'gross_loss': gross_loss,
+
                 'peak_capital': peak_capital
+
             }
 
         except Exception as e:
@@ -1952,11 +2163,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         """Display comprehensive backtest results"""
         try:
             if 'error' in results:
+
                 await self.send_message(chat_id, f"❌ Backtest failed: {results['error']}")
+
                 return
 
             # Determine performance status text
             profit_status = "🟢 PROFITABLE STRATEGY" if results['total_pnl'] >= 0 else "🔴 UNPROFITABLE STRATEGY"
+
             performance_status = "🎯 EXCELLENT PERFORMANCE" if results['win_rate'] > 60 and results['profit_factor'] > 1.5 else "⚠️ NEEDS OPTIMIZATION" if results['profit_factor'] > 1.0 else "❌ POOR PERFORMANCE"
 
             results_message = f"""🧪 **ICHIMOKU SNIPER BACKTEST RESULTS**
@@ -1968,26 +2182,38 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 💰 **Performance Summary:**
 • Initial Capital: ${results['initial_capital']:.2f}
+
 • Final Capital: ${results['final_capital']:.2f}
+
 • Total P&L: ${results['total_pnl']:+.2f} ({results['total_return']:+.1f}%)
+
 • Peak Capital: ${results['peak_capital']:.2f}
 
 📈 **Trade Statistics:**
 • Total Trades: {results['total_trades']}
+
 • Winning Trades: {results['winning_trades']} ({results['win_rate']:.1f}%)
+
 • Losing Trades: {results['losing_trades']} ({100-results['win_rate']:.1f}%)
+
 • Trades per Day: {results['trades_per_day']:.1f}
 
 💎 **Performance Metrics:**
 • Win Rate: {results['win_rate']:.1f}%
+
 • Profit Factor: {results['profit_factor']:.2f}
+
 • Sharpe Ratio: {results['sharpe_ratio']:.2f}
+
 • Max Drawdown: {results['max_drawdown']:.1f}%
 
 📊 **Trade Analysis:**
 • Average Win: +${results['avg_win']:.2f}
+
 • Average Loss: -${abs(results['avg_loss']):.2f}
+
 • Gross Profit: ${results['gross_profit']:.2f}
+
 • Gross Loss: -${abs(results['gross_loss']):.2f}
 
 {profit_status}
@@ -1997,12 +2223,15 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
             # Additional detailed analysis if performance is good
             if results['profit_factor'] > 1.5 and results['total_trades'] > 10: # Only show detailed analysis for substantial results
+
                 analysis_message = f"""
 🎯 **STRATEGY ANALYSIS:**
 
 ✅ **Strengths:**
 • High win rate ({results['win_rate']:.1f}%) indicates good signal quality
+
 • Profit factor of {results['profit_factor']:.2f} shows positive expectancy
+
 • {'Low' if results['max_drawdown'] < 10 else 'Moderate' if results['max_drawdown'] < 20 else 'High'} drawdown of {results['max_drawdown']:.1f}%
 
 📈 **Recommendations:**
@@ -2028,7 +2257,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         """Convert timeframe string to minutes"""
         timeframe_map = {
             '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+
             '1h': 60, '2h': 120, '4h': 240, '6h': 360, '8h': 480, '12h': 720, '1d': 1440
+
         }
         return timeframe_map.get(timeframe, 0) # Return 0 for invalid timeframe
 
@@ -2054,10 +2285,12 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             if len(context.args) >= 2:
                 timeframe_input = context.args[1].lower()
                 valid_timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d']
+
                 if timeframe_input in valid_timeframes:
                     timeframe = timeframe_input
                 else:
                     await self.send_message(chat_id, f"❌ Invalid timeframe: '{context.args[1]}'. Supported timeframes are: {', '.join(valid_timeframes)}")
+
                     return
 
         await self.send_message(chat_id, f"🧪 **Starting Ichimoku Sniper Backtest...**\n\nParameters: {duration_days} days, {timeframe} timeframe.")
@@ -2088,8 +2321,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         original_displacement = self.strategy.displacement
 
         self.strategy.conversion_periods = params['tenkan']
+
         self.strategy.base_periods = params['kijun']
+
         self.strategy.lagging_span2_periods = params['senkou_b']
+
         self.strategy.displacement = params['displacement']
 
         # Simulate signals generation
@@ -2099,11 +2335,13 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         # This is a placeholder and needs a proper indicator calculation and signal logic.
 
         # For demonstration, let's assume a basic signal generation:
+
         # If close > Kijun and Tenkan > Kijun for BUY signal
         # If close < Kijun and Tenkan < Kijun for SELL signal
         # This is NOT the actual Ichimoku Sniper logic, just for parameter testing simulation.
 
         # A more realistic approach would involve re-calculating the strategy's indicators on the fly
+
         # or having a method that accepts parameters and historical data.
 
         # Simplified simulation with basic data structure
@@ -2122,10 +2360,15 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
                 test_signals.append({
                     'profitable': profitable,
+
                     'return_pct': return_pct,
+
                     'entry': 2.13000 + random.uniform(-0.01, 0.01),  # Simulate entry price
+
                     'sl': 2.13000 * (0.98 if profitable else 1.02),
+
                     'tp': 2.13000 * (1.03 if profitable else 0.97)
+
                 })
 
         # Restore original parameters
@@ -2139,7 +2382,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
     def _calculate_profit_factor(self, signals):
         """Calculate profit factor from simulated signals."""
         gross_profit = sum(s['return_pct'] for s in signals if s.get('profitable'))
+
         gross_loss = abs(sum(s['return_pct'] for s in signals if not s.get('profitable')))
+
         return gross_profit / gross_loss if gross_loss > 0 else float('inf')
 
     async def cmd_dynamic_sltp(self, update, context):
@@ -2160,13 +2405,16 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
             direction = context.args[0].upper()
             if direction not in ['LONG', 'SHORT', 'BUY', 'SELL']:
+
                 await self.send_message(chat_id, "❌ Direction must be LONG/BUY or SHORT/SELL")
                 self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
                 return
 
             # Normalize direction
             if direction in ['BUY', 'LONG']:
+
                 direction = 'LONG'
+
             else:
                 direction = 'SHORT'
 
@@ -2190,13 +2438,16 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             # Calculate dynamic SL/TP
             sl_tp_config = await position_manager.calculate_dynamic_sl_tp(
                 'FXSUSDT', direction, current_price, atr_data, market_regime
+
             )
 
             # Format response - safely handle data types
             atr_trend = atr_data.get('atr_trend', 'stable')
+
             atr_trend_str = str(atr_trend).upper() if atr_trend else 'STABLE'
-            
+
             individual_atrs = atr_data.get('individual_atrs', {})
+
             if not isinstance(individual_atrs, dict):
                 individual_atrs = {}
 
@@ -2209,15 +2460,22 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **🛡️ Stop Loss & Take Profit:**
 • **Stop Loss:** `{sl_tp_config['stop_loss']:.6f}`
+
 • **Take Profit 1:** `{sl_tp_config['take_profit_1']:.6f}` (33% position)
+
 • **Take Profit 2:** `{sl_tp_config['take_profit_2']:.6f}` (33% position)
+
 • **Take Profit 3:** `{sl_tp_config['take_profit_3']:.6f}` (34% position)
 
 **📈 Risk Management:**
 • **Risk/Reward Ratio:** `1:{sl_tp_config['risk_reward_ratio']:.2f}`
+
 • **ATR Value:** `{sl_tp_config['atr_used']:.6f}`
+
 • **SL Multiplier:** `{sl_tp_config['sl_multiplier']}x ATR`
+
 • **TP Multiplier:** `{sl_tp_config['tp_multiplier']}x ATR`
+
 • **ATR Trend:** `{atr_trend_str}`
 
 **📊 Multi-Timeframe ATR:**"""
@@ -2231,11 +2489,16 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 **🎯 Trailing Stop:**"""
 
             if sl_tp_config.get('trailing_stop'):
+
                 ts = sl_tp_config['trailing_stop']
+
                 message += f"""
 • **Activation Price:** `{ts['activation_price']:.6f}`
+
 • **Trail Distance:** `{ts['trail_distance']:.6f}`
+
 • **Status:** {'🟢 Active' if ts.get('active') else '⚪ Waiting'}"""
+
             else:
                 message += "\n• **Status:** Disabled"
 
@@ -2283,13 +2546,17 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             # Calculate optimal leverage
             optimal_leverage = await position_manager.calculate_optimal_leverage(
                 'FXSUSDT', atr_data, market_regime, account_balance
+
             )
 
             # Format dashboard
             if ticker:
                 change_percent = float(ticker.get('priceChangePercent', 0))
+
                 volume = float(ticker.get('volume', 0))
+
                 high_24h = float(ticker.get('highPrice', 0))
+
                 low_24h = float(ticker.get('lowPrice', 0))
 
                 direction_emoji = "🟢" if change_percent >= 0 else "🔴"
@@ -2297,9 +2564,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
                 # Safely handle data types
                 atr_trend = atr_data.get('atr_trend', 'stable')
+
                 atr_trend_str = str(atr_trend).upper() if atr_trend else 'STABLE'
-                
+
                 individual_atrs = atr_data.get('individual_atrs', {})
+
                 if not isinstance(individual_atrs, dict):
                     individual_atrs = {}
 
@@ -2314,7 +2583,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **📈 Market Conditions:**
 • **Regime:** `{market_regime.upper() if isinstance(market_regime, str) else 'UNKNOWN'}`
+
 • **ATR (Weighted):** `{atr_data['weighted_atr']:.6f}`
+
 • **ATR Trend:** `{atr_trend_str}`
 • **Volume:** {volume_status} `{volume:,.0f}`
 
@@ -2333,7 +2604,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **🎯 Market Opportunities:**
 • **Scalping:** {'✅ Favorable' if abs(change_percent) > 0.5 else '⚠️ Limited'}
+
 • **Swing Trading:** {'✅ Active' if abs(change_percent) > 2 else '⏸️ Patient approach'}
+
 • **Volatility:** {'🔥 High' if atr_data['weighted_atr'] > 0.0002 else '📊 Normal' if atr_data['weighted_atr'] > 0.0001 else '💤 Low'}
 
 **⏰ Updated:** {datetime.now().strftime('%H:%M:%S UTC')}
@@ -2379,13 +2652,18 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             # Test different parameter combinations
             parameter_sets = [
                 {'tenkan': 9, 'kijun': 26, 'senkou_b': 52, 'displacement': 26},  # Standard
+
                 {'tenkan': 7, 'kijun': 22, 'senkou_b': 44, 'displacement': 22},  # Faster
+
                 {'tenkan': 12, 'kijun': 30, 'senkou_b': 60, 'displacement': 30}, # Slower
+
                 {'tenkan': 10, 'kijun': 24, 'senkou_b': 48, 'displacement': 24}, # Balanced
+
             ]
 
             best_params = None
             best_score = -float('inf')
+
             results = []
 
             for i, params in enumerate(parameter_sets):
@@ -2397,7 +2675,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
                 if signals:
                     win_rate = sum(1 for s in signals if s.get('profitable', False)) / len(signals)
+
                     avg_return = np.mean([s.get('return_pct', 0) for s in signals])
+
                     profit_factor = self._calculate_profit_factor(signals)
 
                     # Combined score: Prioritize win rate, then return, then profit factor
@@ -2405,11 +2685,17 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
                     results.append({
                         'params': params,
+
                         'win_rate': win_rate,
+
                         'avg_return': avg_return,
+
                         'profit_factor': profit_factor,
+
                         'score': score,
+
                         'signals_count': len(signals)
+
                     })
 
                     if score > best_score:
@@ -2419,8 +2705,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     # Handle cases where no signals are generated for a parameter set
                     results.append({
                         'params': params,
+
                         'win_rate': 0, 'avg_return': 0, 'profit_factor': 0,
+
                         'score': -float('inf'), 'signals_count': 0
+
                     })
 
             # Sort results by score for display
@@ -2429,8 +2718,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             if best_params:
                 # Update strategy parameters in the bot instance
                 self.strategy.conversion_periods = best_params['tenkan']
+
                 self.strategy.base_periods = best_params['kijun']
+
                 self.strategy.lagging_span2_periods = best_params['senkou_b']
+
                 self.strategy.displacement = best_params['displacement']
 
                 optimization_msg = f"""
@@ -2438,14 +2730,20 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **✅ Optimized Parameters:**
 • Tenkan Period: {best_params['tenkan']}
+
 • Kijun Period: {best_params['kijun']}
+
 • Senkou Span B: {best_params['senkou_b']}
+
 • Displacement: {best_params['displacement']}
 
 **📊 Performance Metrics (Best Set):**
 • Win Rate: {results[0]['win_rate']*100:.1f}%
+
 • Avg Return: {results[0]['avg_return']:.2f}%
+
 • Profit Factor: {results[0]['profit_factor']:.2f}
+
 • Optimization Score: {best_score:.3f}
 
 **📈 Tested {len(parameter_sets)} parameter combinations**
@@ -2472,7 +2770,6 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             await self.send_message(chat_id, f"❌ Optimization error: {str(e)}")
 
         self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
-
 
     async def handle_webhook_command(self, command: str, chat_id: str, args: Optional[list] = None) -> bool:
         """Handle commands via webhook or direct message"""
@@ -2524,6 +2821,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                     if response.status == 200:
                         result = await response.json()
                         if result.get('ok'):
+
                             self.logger.info(f"✅ Webhook set successfully: {webhook_url}")
                             return True
 
@@ -2679,7 +2977,7 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             for cmd_name, cmd_func in freqtrade_cmds.items():
                 # Remove leading slash for handler registration
                 cmd_key = cmd_name.lstrip('/')
-                
+
                 # Create async wrapper for Freqtrade commands
                 async def freqtrade_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, func=cmd_func):
                     try:
@@ -2733,13 +3031,16 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         chat_id = str(update.effective_chat.id)
         try:
             market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+
             if market_data is None or len(market_data) < 50:
                 await self.send_message(chat_id, "❌ Insufficient data")
                 return
             mi_summary = await self.market_intelligence.get_market_intelligence_summary(market_data)
             msg = f"""📊 MARKET INTELLIGENCE
 Buy/Sell Ratio: {mi_summary.get('volume', {}).get('buy_sell_ratio', 0):.2f}x
+
 Signal: {mi_summary.get('signal', 'neutral').upper()}"""
+
             await self.send_message(chat_id, msg)
         except Exception as e:
             await self.send_message(chat_id, f"❌ Error: {str(e)}")
@@ -2749,6 +3050,7 @@ Signal: {mi_summary.get('signal', 'neutral').upper()}"""
         chat_id = str(update.effective_chat.id)
         try:
             market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+
             if market_data is None or len(market_data) < 50:
                 await self.send_message(chat_id, "❌ Insufficient data")
                 return
@@ -2763,6 +3065,7 @@ Signal: {mi_summary.get('signal', 'neutral').upper()}"""
         chat_id = str(update.effective_chat.id)
         try:
             market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+
             if market_data is None or len(market_data) < 50:
                 await self.send_message(chat_id, "❌ Insufficient data")
                 return
@@ -2782,15 +3085,20 @@ Imbalance: {order_flow.volume_imbalance*100:+.1f}%"""
         chat_id = str(update.effective_chat.id)
         try:
             market_data = await self.trader.get_market_data('FXSUSDT', '1m', 200)
+
             if market_data is None or len(market_data) < 100:
                 await self.send_message(chat_id, "❌ Insufficient data")
                 return
             atas_results = await self.atas_analyzer.analyze_all_indicators(market_data)
             if 'error' in atas_results:
+
                 await self.send_message(chat_id, f"Error: {atas_results['error']}")
+
                 return
             comp = atas_results.get('composite_signal', 'NEUTRAL')
+
             strength = atas_results.get('overall_strength', 0)
+
             msg = f"🔷 ATAS All Indicators\nSignal: {comp}\nStrength: {strength:.1f}%"
             await self.send_message(chat_id, msg)
         except Exception as e:
@@ -2801,6 +3109,7 @@ async def main():
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
     )
     bot = FXSUSDTTelegramBot()
     try:

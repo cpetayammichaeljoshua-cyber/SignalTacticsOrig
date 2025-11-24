@@ -167,10 +167,6 @@ args = "Trading Bot Console"
 task = "workflow.run"
 args = "Trading Bot"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "FXSUSDT Production Bot"
-
 [[workflows.workflow]]
 name = "Trading Bot Console"
 author = "agent"
@@ -273,17 +269,6 @@ args = "python start_fxsusdt_bot_comprehensive_fixed.py"
 [workflows.workflow.metadata]
 outputType = "console"
 
-[[workflows.workflow]]
-name = "FXSUSDT Production Bot"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python3 start_high_frequency_scalping_bot.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
 [[ports]]
 localPort = 3000
 externalPort = 80
@@ -297,4 +282,5 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["sh", "-c", "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_fxsusdt_bot_comprehensive_fixed.py"]
+run = ["python", "start_production_bot.py"]
+deploymentTarget = "vm"

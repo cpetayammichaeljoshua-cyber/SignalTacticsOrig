@@ -17,6 +17,7 @@ import numpy as np
 
 from SignalMaestro.ichimoku_sniper_strategy import IchimokuSniperStrategy, IchimokuSignal
 from SignalMaestro.fxsusdt_trader import FXSUSDTTrader
+from SignalMaestro.dynamic_position_manager import DynamicPositionManager
 from freqtrade_telegram_commands import FreqtradeTelegramCommands
 
 class FXSUSDTTelegramBot:
@@ -2109,11 +2110,13 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 **Example:**
 • `/dynamic_sltp LONG` - Calculate smart SL/TP for long position
 • `/dynamic_sltp SHORT` - Calculate smart SL/TP for short position""")
+                self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
                 return
 
             direction = context.args[0].upper()
             if direction not in ['LONG', 'SHORT', 'BUY', 'SELL']:
                 await self.send_message(chat_id, "❌ Direction must be LONG/BUY or SHORT/SELL")
+                self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
                 return
 
             # Normalize direction
@@ -2122,86 +2125,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             else:
                 direction = 'SHORT'
 
-            from SignalMaestro.smart_dynamic_sltp_system import get_smart_sltp_system
-
             # Get current price
             current_price = await self.trader.get_current_price()
             
             if not current_price:
                 await self.send_message(chat_id, "❌ Could not fetch current price")
+                self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
                 return
             
-            # Get market data for analysis
-            market_data = await self.trader.get_klines('1h', 200)
-            if not market_data or len(market_data) < 100:
-                await self.send_message(chat_id, "❌ Insufficient market data")
-                return
-            
-            # Initialize smart SL/TP system
-            smart_system = get_smart_sltp_system('FXSUSDT')
-            
-            # Analyze order flow
-            order_flow = await smart_system.analyze_order_flow(market_data, current_price)
-            
-            # Detect liquidity zones
-            liquidity_zones = await smart_system.detect_liquidity_zones(market_data, current_price)
-            
-            # Calculate smart SL/TP
-            sltp = await smart_system.calculate_smart_sltp(
-                direction, current_price, market_data, order_flow, liquidity_zones
-            )
-            
-            # Format response with comprehensive analysis
-            message = f"""🎯 **Smart Dynamic SL/TP Analysis**
-
-**📊 Position Details:**
-• **Direction:** {direction}
-• **Entry Price:** `{current_price:.6f}`
-• **Market Regime:** `{sltp.market_regime}`
-• **Confidence:** `{sltp.confidence_score:.1f}%`
-
-**📈 Order Flow Analysis:**
-• **Flow Direction:** {order_flow.direction.value}
-• **Flow Strength:** {order_flow.strength:.1f}%
-• **Volume Imbalance:** {order_flow.volume_imbalance:+.3f}
-• **Aggressive Buy/Sell:** {order_flow.aggressive_buy_ratio:.1%} / {order_flow.aggressive_sell_ratio:.1%}
-
-**🎯 Key Liquidity Zones:**"""
-            
-            for i, zone in enumerate(sltp.dominant_liquidity_zones[:3], 1):
-                zone_emoji = "🔴" if zone.zone_type.value == "resistance" else "🟢"
-                message += f"\n{zone_emoji} **Zone {i}:** {zone.price:.6f} ({zone.zone_type.value}, strength: {zone.strength:.0f})"
-            
-            message += f"""
-
-**🛡️ Smart Stop Loss:**
-• **SL Price:** `{sltp.stop_loss:.6f}`
-• **SL Buffer:** `{sltp.stop_loss_buffer:.6f}`
-• **Reasoning:** {sltp.stop_loss_reasoning}
-
-**🎯 Smart Take Profits:**
-• **TP1 (33%):** `{sltp.take_profit_1:.6f}`
-• **TP2 (33%):** `{sltp.take_profit_2:.6f}`
-• **TP3 (34%):** `{sltp.take_profit_3:.6f}`
-• **Reasoning:** {sltp.tp_reasoning}
-
-**📊 Risk Management:**
-• **Risk/Reward:** `1:{sltp.risk_reward_ratio:.2f}`
-• **Position Multiplier:** `{sltp.position_size_multiplier:.2f}x`
-• **Volatility Adjustment:** `{sltp.volatility_adjustment:.2f}x`
-
-**💡 Trade Quality:** {'✅ EXCELLENT' if sltp.confidence_score > 80 else '🟡 GOOD' if sltp.confidence_score > 65 else '⚠️ FAIR'}
-"""
-            
-            await self.send_message(chat_id, message)
-            
-        except Exception as e:
-            self.logger.error(f"Smart SL/TP command error: {e}")
-            await self.send_message(chat_id, f"❌ Error: {str(e)}")
-            if not current_price:
-                await self.send_message(chat_id, "❌ Could not fetch current price")
-                return
-
             # Initialize position manager
             position_manager = DynamicPositionManager(self.trader)
 
@@ -2216,7 +2147,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 'FXSUSDT', direction, current_price, atr_data, market_regime
             )
 
-            # Format response
+            # Format response - safely handle data types
+            atr_trend = atr_data.get('atr_trend', 'stable')
+            atr_trend_str = str(atr_trend).upper() if atr_trend else 'STABLE'
+            
+            individual_atrs = atr_data.get('individual_atrs', {})
+            if not isinstance(individual_atrs, dict):
+                individual_atrs = {}
+
             message = f"""🎯 **Dynamic SL/TP Analysis**
 
 **📊 Position Details:**
@@ -2235,6 +2173,15 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 • **ATR Value:** `{sl_tp_config['atr_used']:.6f}`
 • **SL Multiplier:** `{sl_tp_config['sl_multiplier']}x ATR`
 • **TP Multiplier:** `{sl_tp_config['tp_multiplier']}x ATR`
+• **ATR Trend:** `{atr_trend_str}`
+
+**📊 Multi-Timeframe ATR:**"""
+
+            for tf, atr_val in individual_atrs.items():
+                if isinstance(atr_val, (int, float)):
+                    message += f"\n• **{tf}:** `{atr_val:.6f}`"
+
+            message += f"""
 
 **🎯 Trailing Stop:**"""
 
@@ -2259,9 +2206,10 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
         except Exception as e:
             self.logger.error(f"Error in cmd_dynamic_sltp: {e}")
-            await self.send_message(chat_id, f"❌ Error calculating dynamic SL/TP: {e}")
-
-        self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
+            await self.send_message(chat_id, f"❌ Error calculating dynamic SL/TP: {str(e)}")
+        
+        finally:
+            self.commands_used[chat_id] = self.commands_used.get(chat_id, 0) + 1
 
     async def cmd_market_dashboard(self, update, context):
         """Display comprehensive market analysis dashboard"""
@@ -2302,6 +2250,14 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 direction_emoji = "🟢" if change_percent >= 0 else "🔴"
                 volume_status = "🔥" if volume > 1000000 else "📊" if volume > 500000 else "💤"
 
+                # Safely handle data types
+                atr_trend = atr_data.get('atr_trend', 'stable')
+                atr_trend_str = str(atr_trend).upper() if atr_trend else 'STABLE'
+                
+                individual_atrs = atr_data.get('individual_atrs', {})
+                if not isinstance(individual_atrs, dict):
+                    individual_atrs = {}
+
                 dashboard = f"""📊 **FXSUSDT Market Dashboard**
 
 **💰 Price Analysis:**
@@ -2312,9 +2268,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 • **24h Range:** `{(high_24h - low_24h):.6f}`
 
 **📈 Market Conditions:**
-• **Regime:** `{market_regime.upper()}`
+• **Regime:** `{market_regime.upper() if isinstance(market_regime, str) else 'UNKNOWN'}`
 • **ATR (Weighted):** `{atr_data['weighted_atr']:.6f}`
-• **ATR Trend:** `{atr_data.get('atr_trend', 'stable').upper()}`
+• **ATR Trend:** `{atr_trend_str}`
 • **Volume:** {volume_status} `{volume:,.0f}`
 
 **⚡ Trading Recommendations:**
@@ -2324,8 +2280,9 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
 
 **📊 Multi-Timeframe ATR:**"""
 
-                for tf, atr_val in atr_data.get('individual_atrs', {}).items():
-                    dashboard += f"\n• **{tf}:** `{atr_val:.6f}`"
+                for tf, atr_val in individual_atrs.items():
+                    if isinstance(atr_val, (int, float)):
+                        dashboard += f"\n• **{tf}:** `{atr_val:.6f}`"
 
                 dashboard += f"""
 
@@ -2681,6 +2638,10 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 # Create async wrapper for Freqtrade commands
                 async def freqtrade_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, func=cmd_func):
                     try:
+                        if not update or not update.effective_chat:
+                            self.logger.error("Invalid update object in freqtrade_handler")
+                            return
+                        
                         chat_id = update.effective_chat.id
                         args = context.args or []
                         result = await func(chat_id, args)
@@ -2688,8 +2649,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                             await self.send_message(str(chat_id), result)
                     except Exception as e:
                         self.logger.error(f"Freqtrade command error: {e}")
-                        if update.message:
-                            await update.message.reply_text(f"❌ Error: {str(e)}")
+                        if update and update.message:
+                            try:
+                                await update.message.reply_text(f"❌ Error: {str(e)}")
+                            except Exception as reply_error:
+                                self.logger.error(f"Failed to send error message: {reply_error}")
                 
                 application.add_handler(CommandHandler(cmd_key, freqtrade_handler))
                 self.logger.debug(f"Registered Freqtrade command: {cmd_name}")

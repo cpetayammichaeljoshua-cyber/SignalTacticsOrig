@@ -167,6 +167,10 @@ args = "Trading Bot Console"
 task = "workflow.run"
 args = "Trading Bot"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "FXSUSDT Trading Bot"
+
 [[workflows.workflow]]
 name = "Trading Bot Console"
 author = "agent"
@@ -265,6 +269,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_fxsusdt_bot_comprehensive_fixed.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "FXSUSDT Trading Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python SignalMaestro/start_fxsusdt_bot_comprehensive_fixed.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

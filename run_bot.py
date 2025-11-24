@@ -5,11 +5,18 @@ Simple Bot Launcher - Handles imports properly
 import asyncio
 import sys
 import os
+from typing import Optional
 
 # Add SignalMaestro to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'SignalMaestro'))
+signal_maestro_path = os.path.join(os.path.dirname(__file__), 'SignalMaestro')
+sys.path.insert(0, signal_maestro_path)
 
-from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+try:
+    from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+except ImportError as e:
+    print(f"Error importing bot: {e}")
+    sys.exit(1)
+
 import logging
 
 logging.basicConfig(

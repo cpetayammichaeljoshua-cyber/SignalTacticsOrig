@@ -142,11 +142,11 @@ class SmartDynamicSLTPSystem:
             if len(market_data) < self.order_flow_config['volume_lookback']:
                 return self._fallback_order_flow(current_price)
             
-            # Extract OHLCV data
-            high = market_data['high'].values
-            low = market_data['low'].values
-            close = market_data['close'].values
-            volume = market_data['volume'].values
+            # Extract OHLCV data as proper numpy arrays
+            high = np.asarray(market_data['high'].values, dtype=np.float64)
+            low = np.asarray(market_data['low'].values, dtype=np.float64)
+            close = np.asarray(market_data['close'].values, dtype=np.float64)
+            volume = np.asarray(market_data['volume'].values, dtype=np.float64)
             
             # Calculate volume delta (buy vs sell pressure)
             buy_volume = []
@@ -179,7 +179,7 @@ class SmartDynamicSLTPSystem:
             sell_volume = np.array(sell_volume)
             
             # Calculate aggressive orders (high volume candles)
-            avg_volume = np.mean(volume[-50:])
+            avg_volume = float(np.mean(volume[-50:]))
             aggressive_threshold = avg_volume * self.order_flow_config['absorption_threshold']
             
             aggressive_buy = np.sum(buy_volume[-20:] > aggressive_threshold)
@@ -252,13 +252,14 @@ class SmartDynamicSLTPSystem:
         absorption_zones = []
         
         try:
-            close = market_data['close'].values
-            high = market_data['high'].values
-            low = market_data['low'].values
+            close = np.asarray(market_data['close'].values, dtype=np.float64)
+            high = np.asarray(market_data['high'].values, dtype=np.float64)
+            low = np.asarray(market_data['low'].values, dtype=np.float64)
             
             for i in range(10, len(market_data)):
                 # High volume but small price range = absorption
-                volume_surge = (buy_volume[i] + sell_volume[i]) > np.mean(buy_volume + sell_volume) * 1.5
+                avg_combined = float(np.mean(buy_volume + sell_volume))
+                volume_surge = (buy_volume[i] + sell_volume[i]) > avg_combined * 1.5
                 price_range = (high[i] - low[i]) / close[i]
                 
                 if volume_surge and price_range < 0.003:  # Less than 0.3% range
@@ -280,10 +281,10 @@ class SmartDynamicSLTPSystem:
         rejection_zones = []
         
         try:
-            close = market_data['close'].values
-            high = market_data['high'].values
-            low = market_data['low'].values
-            open_price = market_data['open'].values
+            close = np.asarray(market_data['close'].values, dtype=np.float64)
+            high = np.asarray(market_data['high'].values, dtype=np.float64)
+            low = np.asarray(market_data['low'].values, dtype=np.float64)
+            open_price = np.asarray(market_data['open'].values, dtype=np.float64)
             
             for i in range(10, len(market_data)):
                 # Long wicks indicate rejection
@@ -316,10 +317,10 @@ class SmartDynamicSLTPSystem:
         try:
             liquidity_zones = []
             
-            high = market_data['high'].values
-            low = market_data['low'].values
-            close = market_data['close'].values
-            volume = market_data['volume'].values
+            high = np.asarray(market_data['high'].values, dtype=np.float64)
+            low = np.asarray(market_data['low'].values, dtype=np.float64)
+            close = np.asarray(market_data['close'].values, dtype=np.float64)
+            volume = np.asarray(market_data['volume'].values, dtype=np.float64)
             
             # Find swing highs and lows (potential liquidity zones)
             swing_highs = []
@@ -332,8 +333,8 @@ class SmartDynamicSLTPSystem:
                     touches = sum(1 for j in range(max(0, i-20), min(len(high), i+20))
                                 if abs(high[j] - high[i]) / high[i] < 0.001)
                     
-                    zone_volume = np.sum(volume[max(0, i-5):min(len(volume), i+5)])
-                    avg_volume = np.mean(volume)
+                    zone_volume = float(np.sum(volume[max(0, i-5):min(len(volume), i+5)]))
+                    avg_volume = float(np.mean(volume))
                     
                     if zone_volume > avg_volume * self.liquidity_config['volume_threshold']:
                         swing_highs.append({
@@ -349,8 +350,8 @@ class SmartDynamicSLTPSystem:
                     touches = sum(1 for j in range(max(0, i-20), min(len(low), i+20))
                                 if abs(low[j] - low[i]) / low[i] < 0.001)
                     
-                    zone_volume = np.sum(volume[max(0, i-5):min(len(volume), i+5)])
-                    avg_volume = np.mean(volume)
+                    zone_volume = float(np.sum(volume[max(0, i-5):min(len(volume), i+5)]))
+                    avg_volume = float(np.mean(volume))
                     
                     if zone_volume > avg_volume * self.liquidity_config['volume_threshold']:
                         swing_lows.append({
@@ -361,10 +362,11 @@ class SmartDynamicSLTPSystem:
                         })
             
             # Create liquidity zones from swing points
+            avg_vol = float(np.mean(volume))
             for swing in swing_highs:
                 if swing['touches'] >= self.liquidity_config['min_touches']:
                     strength = min(100, (swing['touches'] * 20 + 
-                                       (swing['volume'] / np.mean(volume)) * 30))
+                                       (swing['volume'] / avg_vol) * 30))
                     
                     liquidity_zones.append(LiquidityZone(
                         price=swing['price'],
@@ -379,7 +381,7 @@ class SmartDynamicSLTPSystem:
             for swing in swing_lows:
                 if swing['touches'] >= self.liquidity_config['min_touches']:
                     strength = min(100, (swing['touches'] * 20 + 
-                                       (swing['volume'] / np.mean(volume)) * 30))
+                                       (swing['volume'] / avg_vol) * 30))
                     
                     liquidity_zones.append(LiquidityZone(
                         price=swing['price'],
@@ -414,9 +416,9 @@ class SmartDynamicSLTPSystem:
             market_regime = await self._detect_market_regime(market_data)
             
             # Calculate volatility adjustment
-            atr = self._calculate_atr(market_data['high'].values, 
-                                     market_data['low'].values,
-                                     market_data['close'].values)
+            atr = self._calculate_atr(np.asarray(market_data['high'].values, dtype=np.float64), 
+                                     np.asarray(market_data['low'].values, dtype=np.float64),
+                                     np.asarray(market_data['close'].values, dtype=np.float64))
             atr_pct = (atr / entry_price) * 100
             volatility_adjustment = max(0.8, min(1.5, atr_pct / 0.02))
             
@@ -650,9 +652,9 @@ class SmartDynamicSLTPSystem:
     async def _detect_market_regime(self, market_data: pd.DataFrame) -> str:
         """Detect current market regime"""
         try:
-            close = market_data['close'].values
-            high = market_data['high'].values
-            low = market_data['low'].values
+            close = np.asarray(market_data['close'].values, dtype=np.float64)
+            high = np.asarray(market_data['high'].values, dtype=np.float64)
+            low = np.asarray(market_data['low'].values, dtype=np.float64)
             
             # ADX for trend strength
             adx = self._calculate_adx(high, low, close)
@@ -662,7 +664,7 @@ class SmartDynamicSLTPSystem:
             atr_pct = (atr / close[-1]) * 100
             
             # Price trend
-            sma_20 = np.mean(close[-20:])
+            sma_20 = float(np.mean(close[-20:]))
             trend = (close[-1] - sma_20) / sma_20
             
             if adx > self.regime_thresholds['trending_adx']:

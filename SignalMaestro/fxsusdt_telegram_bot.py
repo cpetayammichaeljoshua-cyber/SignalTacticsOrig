@@ -2678,6 +2678,22 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
             except Exception as start_error:
                 self.logger.warning(f"Application start warning: {start_error}")
 
+            # Create background task for market scanning (runs every 2 minutes)
+            async def background_market_scanner():
+                """Concurrent market scanner running every 2 minutes"""
+                last_scan = time.time()
+                while True:
+                    try:
+                        if time.time() - last_scan >= 120:  # 2 minutes
+                            await self.scan_and_signal()
+                            last_scan = time.time()
+                    except Exception as scan_error:
+                        self.logger.error(f"Background scan error: {scan_error}")
+                    await asyncio.sleep(10)  # Check every 10 seconds if 2 minutes passed
+            
+            # Schedule the background scanner as a concurrent task
+            scanner_task = asyncio.create_task(background_market_scanner())
+
             # Start polling with proper error handling
             try:
                 if hasattr(application, 'updater') and application.updater:

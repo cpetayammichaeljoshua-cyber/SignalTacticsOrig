@@ -158,7 +158,7 @@ class FXSUSDTTelegramBot:
         self.rate_limit_hours = 24  # 24-hour tracking window
         self.max_signals_per_period = 1  # Maximum 1 signal per period
         self.signal_timestamps = []
-        self.min_signal_interval_minutes = 0.75  # 1M SCALPING: 45 seconds between signals
+        self.min_signal_interval_minutes = 2  # HIGH-FREQUENCY: 2 minutes
 
         # FXSUSDT contract specifications
         self.contract_specs = {
@@ -200,20 +200,20 @@ class FXSUSDTTelegramBot:
         return max(0, int(remaining))
 
     def can_send_signal(self) -> bool:
-        """Check if we can send a signal based on rate limiting - 1m scalping optimized"""
+        """Check if we can send a signal based on rate limiting - Only 1 trade at a time"""
         now = datetime.now()
 
-        # 1M SCALPING: 45-second minimum between signals
-        cooldown_seconds = self.min_signal_interval_minutes * 60
+        # For 1 trade at a time, we need a longer cooldown
+        cooldown_minutes = 30  # 30 minutes between signals
 
         if self.signal_timestamps:
             # Get the most recent signal time
             last_signal_time = max(self.signal_timestamps)
             time_since_last = now - last_signal_time
 
-            if time_since_last.total_seconds() < cooldown_seconds:
-                remaining_seconds = cooldown_seconds - time_since_last.total_seconds()
-                self.logger.debug(f"⏳ Rate limit active, {remaining_seconds:.0f}s remaining")
+            if time_since_last.total_seconds() < cooldown_minutes * 60:
+                remaining_seconds = (cooldown_minutes * 60) - time_since_last.total_seconds()
+                self.logger.info(f"⏳ Rate limit active, {remaining_seconds:.0f}s remaining (1 trade per {cooldown_minutes}min)")
                 return False
 
         # Clean old timestamps (keep only last 24 hours for tracking)
@@ -433,17 +433,19 @@ Margin: CROSS
 
         for signal in signals:
             try:
-                # 1M SCALPING: Accept 1m and 5m signals
-                allowed_timeframes = ["1m", "5m"]
-                if signal.timeframe not in allowed_timeframes:
-                    self.logger.warning(f"⏭️ Signal timeframe {signal.timeframe} not optimized for scalping")
+                # STRICT TIMEFRAME FILTER - Block all timeframes less than 30m
+                allowed_timeframe = "30m"
+                if signal.timeframe != allowed_timeframe:
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal timeframe {signal.timeframe} is not 30m")
+                    self.logger.info(f"   Only {allowed_timeframe} signals are allowed")
                     continue
 
-                # CONFIDENCE FILTER - Optimized for 1m scalping
-                confidence_threshold = 72.0  # Slightly lower for 1m agility
+                # STRICT CONFIDENCE FILTER - Block trades < 75%
+                confidence_threshold = 75.0
 
                 if signal.confidence < confidence_threshold:
-                    self.logger.info(f"⏭️ Signal confidence {signal.confidence:.1f}% below {confidence_threshold}% threshold, skipping")
+                    self.logger.warning(f"🚫 TRADE BLOCKED - Signal confidence {signal.confidence:.1f}% below 75% threshold")
+                    self.logger.info(f"   Symbol: {signal.symbol}, Action: {signal.action}, Price: {signal.entry_price:.5f}")
                     continue
 
                 # Rate limiting check
@@ -718,11 +720,11 @@ Use `/alerts` to manage your alerts."""
             return
 
         # Send startup notification
-        await self.send_status_update("🚀 FXSUSDT.P Ichimoku Sniper Bot started\n📊 Monitoring 1-minute timeframe\n⚡ Fast scalping mode ACTIVE\n🎯 Ready for high-frequency signals")
+        await self.send_status_update("🚀 FXSUSDT.P Ichimoku Sniper Bot started\n📊 Monitoring 30-minute timeframe\n🎯 Ready for signals")
 
-        # Dynamic scan intervals optimized for 1m scalping
-        base_scan_interval = 30   # 30 seconds base
-        fast_scan_interval = 15   # 15 seconds during active periods
+        # Dynamic scan intervals based on market activity
+        base_scan_interval = 120  # 2 minutes base
+        fast_scan_interval = 60   # 1 minute during active periods
         current_interval = base_scan_interval
 
         try:
@@ -1936,8 +1938,8 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
         """Get recent trading volume for FXSUSDT.P"""
         chat_id = str(update.effective_chat.id)
         try:
-            # Fetch recent klines to calculate volume (1m scalping data)
-            klines = await self.trader.get_klines('1m', limit=240) # Last 4 hours of 1m data
+            # Fetch recent klines to calculate volume
+            klines = await self.trader.get_30m_klines(limit=50) # Last 25 hours
             if klines:
                 total_volume = sum(float(k[5]) for k in klines) # Volume is the 6th element (index 5)
                 total_quote_volume = sum(float(k[7]) for k in klines) # Quote Asset Volume (USDT) is the 8th element (index 7)
@@ -1945,11 +1947,11 @@ Use `/leverage FXSUSDT {optimal_leverage}` to apply this leverage."""
                 avg_quote_volume = total_quote_volume / len(klines)
 
                 message = (
-                    f"📈 **Volume Analysis (FXSUSDT.P - Last 4 Hours):**\n\n"
+                    f"📈 **Volume Analysis (FXSUSDT.P - Last 25 Hours):**\n\n"
                     f"• **Total Volume (Contracts):** `{total_volume:,.2f}`\n"
-                    f"• **Average Volume (Contracts/1m):** `{avg_volume:,.2f}`\n"
+                    f"• **Average Volume (Contracts/30m):** `{avg_volume:,.2f}`\n"
                     f"• **Total Volume (USDT):** `{total_quote_volume:,.2f}`\n"
-                    f"• **Average Volume (USDT/1m):** `{avg_quote_volume:,.2f}`"
+                    f"• **Average Volume (USDT/30m):** `{avg_quote_volume:,.2f}`"
                 )
                 await self.send_message(chat_id, message)
             else:

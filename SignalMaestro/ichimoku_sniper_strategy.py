@@ -40,18 +40,17 @@ class IchimokuSniperStrategy:
         self.displacement = 20
         self.ema_periods = 200
 
-        # Stop loss and take profit percentages - OPTIMIZED FOR 1M SCALPING
-        # Much tighter for rapid entries/exits with micro-liquidities
-        self.stop_loss_percent = 0.45   # Tight 0.45% SL for 1m
-        self.take_profit_percent = 1.05  # 1.05% TP for 1m scalping
+        # Stop loss and take profit percentages
+        self.stop_loss_percent = 1.75
+        self.take_profit_percent = 3.25
 
-        # Multi-timeframe settings - OPTIMIZED FOR 1M SCALPING
-        self.timeframes = ["1m", "5m"]  # 1m primary + 5m confirmation
-        self.primary_timeframe = "1m"
+        # Multi-timeframe settings - ONLY 30m timeframe
+        self.timeframes = ["30m"]  # Block all timeframes less than 30m
+        self.primary_timeframe = "30m"
 
-        # Signal filtering - Optimized for 1m scalping
-        self.min_signal_strength = 70.0  # Slightly lower for 1m agility
-        self.min_confidence = 72.0       # Minimum 72% confidence for 1m
+        # Signal filtering - Strict for 30m only
+        self.min_signal_strength = 75.0  # Higher threshold for quality
+        self.min_confidence = 75.0       # Minimum 75% confidence
 
         self.logger.info("✅ Ichimoku Sniper Strategy initialized with Pine Script parameters")
 

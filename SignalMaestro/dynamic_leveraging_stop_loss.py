@@ -35,22 +35,22 @@ class DynamicLeveragingStopLoss:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Configuration - 1M SCALPING OPTIMIZED
+        # Configuration
         self.config = {
-            'default_percentage_below': 0.004,  # 0.4% for 1m (was 1.5%)
-            'min_leverage': 5,  # Lower min for 1m scalping
-            'max_leverage': 50,  # Lower max for risk management
-            'high_volatility_threshold': 0.008,  # Adjusted for 1m
-            'low_volatility_threshold': 0.002,  # Adjusted for 1m
-            'min_confidence': 65.0,
+            'default_percentage_below': 0.015,  # 1.5% default
+            'min_leverage': 10,
+            'max_leverage': 75,
+            'high_volatility_threshold': 0.025,  # 2.5% ATR
+            'low_volatility_threshold': 0.008,   # 0.8% ATR
+            'min_confidence': 60.0,
             'max_confidence': 100.0
         }
         
-        # Leverage adjustment factors - 1M SCALPING OPTIMIZED
+        # Leverage adjustment factors
         self.leverage_factors = {
-            'high_volatility': {'leverage_mult': 0.6, 'pct_below_mult': 1.5},  # Tighter SL in volatile
+            'high_volatility': {'leverage_mult': 0.7, 'pct_below_mult': 1.3},
             'medium_volatility': {'leverage_mult': 1.0, 'pct_below_mult': 1.0},
-            'low_volatility': {'leverage_mult': 1.3, 'pct_below_mult': 0.7}  # Looser in calm market
+            'low_volatility': {'leverage_mult': 1.2, 'pct_below_mult': 0.8}
         }
         
         # Market regime factors

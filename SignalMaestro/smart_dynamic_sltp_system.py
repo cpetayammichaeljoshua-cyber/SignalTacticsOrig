@@ -95,32 +95,32 @@ class SmartDynamicSLTPSystem:
         self.logger = logging.getLogger(__name__)
         self.symbol = symbol
         
-        # Order flow parameters - 1M SCALPING OPTIMIZED
+        # Order flow parameters
         self.order_flow_config = {
-            'volume_lookback': 30,  # 30 candles = 30 minutes for 1m
-            'delta_sensitivity': 0.75,  # Higher sensitivity for micro-moves
-            'absorption_threshold': 1.2,  # Lower threshold for 1m precision
-            'aggressive_ratio_threshold': 0.55,  # More sensitive
-            'cumulative_delta_periods': 20  # Shorter lookback
+            'volume_lookback': 100,
+            'delta_sensitivity': 0.65,
+            'absorption_threshold': 1.5,
+            'aggressive_ratio_threshold': 0.6,
+            'cumulative_delta_periods': 50
         }
         
-        # Liquidity zone detection - 1M SCALPING OPTIMIZED
+        # Liquidity zone detection
         self.liquidity_config = {
             'min_touches': 2,
-            'zone_width_pct': 0.001,  # 0.1% zone width (tighter for 1m)
-            'volume_threshold': 1.2,  # More aggressive zone detection
-            'strength_decay_hours': 4,  # Faster decay for 1m
-            'max_zones': 8  # Fewer but more relevant zones
+            'zone_width_pct': 0.002,  # 0.2% zone width
+            'volume_threshold': 1.3,
+            'strength_decay_hours': 24,
+            'max_zones': 10
         }
         
-        # SL/TP optimization - 1M SCALPING OPTIMIZED
+        # SL/TP optimization
         self.sltp_config = {
-            'min_risk_reward': 1.3,  # Lower for 1m rapid exits
-            'optimal_risk_reward': 1.8,  # More aggressive profit taking
-            'max_risk_reward': 2.5,  # Cap at 2.5 for 1m
-            'sl_buffer_pct': 0.0005,  # 0.05% buffer (tighter)
-            'tp_scale_factor': 1.1,  # More aggressive scaling
-            'volatility_multiplier': 0.8  # Reduce volatility impact for 1m
+            'min_risk_reward': 1.8,
+            'optimal_risk_reward': 2.5,
+            'max_risk_reward': 4.0,
+            'sl_buffer_pct': 0.0015,  # 0.15% buffer beyond key level
+            'tp_scale_factor': 1.2,
+            'volatility_multiplier': 1.0
         }
         
         # Market regime detection
@@ -470,9 +470,9 @@ class SmartDynamicSLTPSystem:
                 take_profit_1=tp1,
                 take_profit_2=tp2,
                 take_profit_3=tp3,
-                tp1_percentage=45.0,  # 1M SCALPING: Take 45% at TP1 for quick profit
-                tp2_percentage=35.0,  # Take 35% at TP2
-                tp3_percentage=20.0,  # Take 20% at TP3 (final extension)
+                tp1_percentage=33.0,
+                tp2_percentage=33.0,
+                tp3_percentage=34.0,
                 tp_reasoning=tp_reasoning,
                 risk_reward_ratio=risk_reward_ratio,
                 position_size_multiplier=position_multiplier,
@@ -627,10 +627,10 @@ class SmartDynamicSLTPSystem:
             tp2 = entry_price + (atr * 2.3)
             reasoning += " | Ranging: Quick-profit mode"
         
-        # Ensure TP3 > TP2 > TP1 > Entry (sanity check) - OPTIMIZED FOR 1M
-        tp1 = max(tp1, entry_price + (atr * 0.3))  # Tighter TP1 for 1m
-        tp2 = max(tp2, tp1 + (atr * 0.2))  # Tighter TP2 for 1m
-        tp3 = max(tp3, tp2 + (atr * 0.3))  # Tighter TP3 for 1m
+        # Ensure TP3 > TP2 > TP1 > Entry (sanity check)
+        tp1 = max(tp1, entry_price + (atr * 0.5))
+        tp2 = max(tp2, tp1 + (atr * 0.3))
+        tp3 = max(tp3, tp2 + (atr * 0.5))
         
         return tp1, tp2, tp3, reasoning
     
@@ -703,10 +703,10 @@ class SmartDynamicSLTPSystem:
             tp2 = entry_price - (atr * 2.3)
             reasoning += " | Ranging: Quick-profit mode"
         
-        # Ensure TP3 < TP2 < TP1 < Entry (sanity check for SHORT) - OPTIMIZED FOR 1M
-        tp1 = min(tp1, entry_price - (atr * 0.3))  # Tighter TP1 for 1m
-        tp2 = min(tp2, tp1 - (atr * 0.2))  # Tighter TP2 for 1m
-        tp3 = min(tp3, tp2 - (atr * 0.3))  # Tighter TP3 for 1m
+        # Ensure TP3 < TP2 < TP1 < Entry (sanity check for SHORT)
+        tp1 = min(tp1, entry_price - (atr * 0.5))
+        tp2 = min(tp2, tp1 - (atr * 0.3))
+        tp3 = min(tp3, tp2 - (atr * 0.5))
         
         return tp1, tp2, tp3, reasoning
     
@@ -808,27 +808,26 @@ class SmartDynamicSLTPSystem:
         )
     
     def _fallback_sltp(self, direction: str, entry_price: float) -> SmartSLTP:
-        """Fallback SL/TP calculation - 1M SCALPING OPTIMIZED"""
-        # Much tighter for 1m scalping
-        sl_distance = entry_price * 0.004  # 0.4% SL (was 1.5%)
-        tp_distance = entry_price * 0.010  # 1.0% TP (was 3.5%)
+        """Fallback SL/TP calculation"""
+        sl_distance = entry_price * 0.015
+        tp_distance = entry_price * 0.035
         
         if direction.upper() in ['LONG', 'BUY']:
             return SmartSLTP(
                 entry_price=entry_price,
                 stop_loss=entry_price - sl_distance,
-                stop_loss_buffer=sl_distance * 0.05,
-                stop_loss_reasoning="1M Scalping: Tight ATR-based",
-                take_profit_1=entry_price + tp_distance * 0.45,  # 45% at TP1
-                take_profit_2=entry_price + tp_distance * 0.80,  # 35% at TP2
-                take_profit_3=entry_price + tp_distance,         # 20% at TP3
-                tp1_percentage=45.0,
-                tp2_percentage=35.0,
-                tp3_percentage=20.0,
-                tp_reasoning="1M Scalping: Fast profit taking",
-                risk_reward_ratio=2.5,
-                position_size_multiplier=0.8,
-                confidence_score=60.0,
+                stop_loss_buffer=sl_distance * 0.1,
+                stop_loss_reasoning="Conservative ATR-based",
+                take_profit_1=entry_price + tp_distance * 0.5,
+                take_profit_2=entry_price + tp_distance * 0.8,
+                take_profit_3=entry_price + tp_distance,
+                tp1_percentage=33.0,
+                tp2_percentage=33.0,
+                tp3_percentage=34.0,
+                tp_reasoning="Conservative ATR-scaled",
+                risk_reward_ratio=2.0,
+                position_size_multiplier=0.7,
+                confidence_score=50.0,
                 order_flow_direction=OrderFlowDirection.NEUTRAL,
                 dominant_liquidity_zones=[],
                 market_regime="unknown",
@@ -838,18 +837,18 @@ class SmartDynamicSLTPSystem:
             return SmartSLTP(
                 entry_price=entry_price,
                 stop_loss=entry_price + sl_distance,
-                stop_loss_buffer=sl_distance * 0.05,
-                stop_loss_reasoning="1M Scalping: Tight ATR-based",
-                take_profit_1=entry_price - tp_distance * 0.45,  # 45% at TP1
-                take_profit_2=entry_price - tp_distance * 0.80,  # 35% at TP2
-                take_profit_3=entry_price - tp_distance,         # 20% at TP3
-                tp1_percentage=45.0,
-                tp2_percentage=35.0,
-                tp3_percentage=20.0,
-                tp_reasoning="1M Scalping: Fast profit taking",
-                risk_reward_ratio=2.5,
-                position_size_multiplier=0.8,
-                confidence_score=60.0,
+                stop_loss_buffer=sl_distance * 0.1,
+                stop_loss_reasoning="Conservative ATR-based",
+                take_profit_1=entry_price - tp_distance * 0.5,
+                take_profit_2=entry_price - tp_distance * 0.8,
+                take_profit_3=entry_price - tp_distance,
+                tp1_percentage=33.0,
+                tp2_percentage=33.0,
+                tp3_percentage=34.0,
+                tp_reasoning="Conservative ATR-scaled",
+                risk_reward_ratio=2.0,
+                position_size_multiplier=0.7,
+                confidence_score=50.0,
                 order_flow_direction=OrderFlowDirection.NEUTRAL,
                 dominant_liquidity_zones=[],
                 market_regime="unknown",

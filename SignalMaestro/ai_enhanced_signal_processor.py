@@ -132,41 +132,16 @@ class AIEnhancedSignalProcessor:
             if ai_confidence > 1.0:
                 ai_confidence = ai_confidence / 100.0
             
-            # ENHANCED: Dynamic confidence adjustment with adaptive thresholds
-            signal_strength = ai_analysis.get('signal_strength', 0)
-            market_sentiment = ai_analysis.get('market_sentiment', 'neutral').lower()
-            risk_level = ai_analysis.get('risk_level', 'medium').lower()
+            # Apply minimum confidence boost for valid signals
+            if ai_confidence > 0 and ai_confidence < 0.75:
+                # Boost confidence for signals that show potential
+                signal_strength = ai_analysis.get('signal_strength', 0)
+                if signal_strength > 70:
+                    ai_confidence = max(0.75, ai_confidence * 1.1)
+                    self.logger.info(f"🤖 AI confidence boosted to {ai_confidence:.1%} based on signal strength")
             
-            # Adaptive threshold based on market conditions and sentiment
-            base_threshold = 0.72  # Slightly lower for more signal generation
-            
-            # Sentiment-based adjustment
-            if market_sentiment == 'bullish':
-                sentiment_boost = 0.03
-            elif market_sentiment == 'bearish':
-                sentiment_boost = 0.02  # Slightly less boost for bearish
-            else:
-                sentiment_boost = 0.0
-            
-            # Risk-based adjustment
-            if risk_level == 'low':
-                risk_adjustment = 0.02
-            elif risk_level == 'high':
-                risk_adjustment = -0.05  # Penalty for high risk
-            else:
-                risk_adjustment = 0.0
-            
-            adaptive_threshold = base_threshold + sentiment_boost + risk_adjustment
-            
-            # Apply confidence boost intelligently
-            if ai_confidence < adaptive_threshold and signal_strength > 65:
-                # Boost weak signals with strong strength
-                boost_amount = min(0.08, adaptive_threshold - ai_confidence)
-                ai_confidence = ai_confidence + boost_amount
-                self.logger.info(f"🤖 AI confidence enhanced to {ai_confidence:.1%} (strength: {signal_strength}, sentiment: {market_sentiment})")
-            
-            if ai_confidence < adaptive_threshold:
-                self.logger.warning(f"🚫 AI confidence {ai_confidence:.1%} below adaptive threshold {adaptive_threshold:.1%}")
+            if ai_confidence < 0.75:  # 75% threshold
+                self.logger.warning(f"🚫 AI confidence {ai_confidence:.1%} below 75% threshold - signal blocked")
                 return None
             
             # Enhance signal with AI insights

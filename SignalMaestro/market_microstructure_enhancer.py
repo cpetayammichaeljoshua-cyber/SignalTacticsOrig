@@ -87,33 +87,13 @@ class MarketMicrostructureEnhancer:
                     confidence_boost += footprint_boost
                     reasoning.append(f"Footprint {footprint_type}: +{footprint_boost:.1f}%")
             
-            # Validation check: Direction alignment with IMPROVED logic
-            base_dir = base_signal.get('direction', 'NEUTRAL')
-            market_dir = market_signal['direction']
-            
-            # Calculate alignment strength based on confidence levels
-            direction_alignment = market_dir == base_dir
-            
-            # If aligned, use FULL boost; if conflicting, apply smart penalty
+            # Validation check: Direction alignment
+            direction_alignment = market_signal['direction'] == base_signal.get('direction')
             if direction_alignment:
-                reasoning.append("✅ Direction perfectly aligned with market microstructure")
+                reasoning.append("✅ Direction aligned with market microstructure")
             else:
-                # Smart divergence handling: weak divergence = minor penalty, strong = major penalty
-                dom_strength = dom_metrics.get('strength', 0.0)
-                tape_momentum = abs(tape_analysis.get('momentum', 0.0))
-                
-                # Check if it's a weak divergence (low confidence microstructure signal)
-                microstructure_confidence = market_signal.get('confidence', 50.0)
-                if microstructure_confidence < 40:
-                    # Weak microstructure signal - lighter penalty
-                    penalty = -5
-                    reasoning.append("⚠️ Light divergence (weak microstructure) - minor adjustment")
-                else:
-                    # Strong divergence - needs attention
-                    penalty = -15
-                    reasoning.append("⚠️ Strong divergence detected - base signal conflicts with market structure")
-                
-                confidence_boost = max(confidence_boost + penalty, -20)
+                reasoning.append("⚠️ Direction divergence from microstructure")
+                confidence_boost = max(confidence_boost - 10, -20)  # Penalty for divergence
             
             # Calculate final confidence
             base_confidence = base_signal.get('confidence', 50.0)

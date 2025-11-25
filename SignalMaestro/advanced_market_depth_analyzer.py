@@ -245,45 +245,28 @@ class AdvancedMarketDepthAnalyzer:
             sell_aggression = (sell_vol / (total_vol + 0.001)) * 100
             momentum = (buy_vol - sell_vol) / (total_vol + 0.001) * 100
             
-            # Calculate historical average using pure Python (no numpy) - ALWAYS for confidence
-            hist_vols = []
-            try:
-                for tape_data in list(self.tape_history)[-10:]:  # Longer history for better accuracy
-                    if isinstance(tape_data, (int, float)) and tape_data > 0:
-                        hist_vols.append(float(tape_data))
-            except:
-                pass
-            
-            # ENHANCED Pattern detection - pure Python with better accuracy
-            # Calculate aggression ratios
-            buy_ratio = buy_vol / (total_vol + 0.001)
-            sell_ratio = sell_vol / (total_vol + 0.001)
-            
-            # More nuanced pattern detection based on pure Python arithmetic
-            if buy_ratio > 0.65:  # 65%+ buys = aggressive buying
+            # Pattern detection - pure Python calculation
+            if buy_vol > sell_vol * 1.5:
                 pattern = TapePattern.AGGRESSIVE_BUYING
                 profile = "buy_heavy"
-            elif sell_ratio > 0.65:  # 65%+ sells = aggressive selling
+            elif sell_vol > buy_vol * 1.5:
                 pattern = TapePattern.AGGRESSIVE_SELLING
                 profile = "sell_heavy"
-            elif buy_ratio > 0.55:  # 55-65% = moderate buying
-                pattern = TapePattern.AGGRESSIVE_BUYING  # Still buying pressure
-                profile = "buy_lean"
-            elif sell_ratio > 0.55:  # 55-65% = moderate selling
-                pattern = TapePattern.AGGRESSIVE_SELLING  # Still selling pressure
-                profile = "sell_lean"
             else:
-                # Pure Python volume comparison
+                # Calculate historical average using pure Python (no numpy)
+                hist_vols = []
+                try:
+                    for tape_data in list(self.tape_history)[-5:]:
+                        if isinstance(tape_data, (int, float)):
+                            hist_vols.append(float(tape_data))
+                except:
+                    pass
+                
                 if hist_vols:
                     hist_avg = sum(hist_vols) / len(hist_vols)
-                    volume_ratio = total_vol / hist_avg if hist_avg > 0 else 1.0
-                    
-                    if volume_ratio < 0.4:
+                    if total_vol < hist_avg * 0.5:
                         pattern = TapePattern.QUIET
-                        profile = "low_volume"
-                    elif volume_ratio > 1.8:
-                        pattern = TapePattern.MIXED_ACTIVITY  # High volume but balanced
-                        profile = "high_volume_balanced"
+                        profile = "balanced"
                     else:
                         pattern = TapePattern.MIXED_ACTIVITY
                         profile = "balanced"
@@ -291,25 +274,16 @@ class AdvancedMarketDepthAnalyzer:
                     pattern = TapePattern.MIXED_ACTIVITY
                     profile = "balanced"
             
-            # ENHANCED Trend direction with better thresholds
-            if momentum > 35:
-                trend = "STRONG_UP"
-            elif momentum > 15:
+            # Trend direction
+            if momentum > 20:
                 trend = "UP"
-            elif momentum < -35:
-                trend = "STRONG_DOWN"
-            elif momentum < -15:
+            elif momentum < -20:
                 trend = "DOWN"
             else:
                 trend = "NEUTRAL"
             
-            # ENHANCED Confidence calculation - pure Python based on multiple factors
-            volume_confidence = min((total_vol / (max(hist_vols) + 0.001) if hist_vols else 1.0) * 50, 100.0)
-            momentum_confidence = min((abs(momentum) / 50.0) * 100, 100.0)  # Normalize to 50% threshold
-            pattern_confidence = 100.0 if pattern in [TapePattern.AGGRESSIVE_BUYING, TapePattern.AGGRESSIVE_SELLING] else 60.0
-            
-            # Blended confidence - pure Python weighted average
-            confidence = (momentum_confidence * 0.5 + pattern_confidence * 0.3 + volume_confidence * 0.2)
+            # Confidence
+            confidence = min((abs(momentum) / 100) * 100, 100.0)
             
             # Store volume as float
             self.tape_history.append(float(total_vol))
@@ -552,26 +526,3 @@ def get_market_depth_analyzer(symbol: str = "FXSUSDT") -> AdvancedMarketDepthAna
     if _market_depth_analyzer is None:
         _market_depth_analyzer = AdvancedMarketDepthAnalyzer(symbol)
     return _market_depth_analyzer
-
-
-# ENHANCED ERROR RECOVERY AND FALLBACKS
-def safe_calculate_average(values):
-    """Safe average calculation with error handling"""
-    try:
-        if not values or len(values) == 0:
-            return 0.0
-        valid_values = [float(v) for v in values if isinstance(v, (int, float)) and v > 0]
-        return sum(valid_values) / len(valid_values) if valid_values else 0.0
-    except:
-        return 0.0
-
-
-def safe_ratio(numerator, denominator, default=0.0):
-    """Safe ratio calculation avoiding division by zero"""
-    try:
-        if denominator == 0 or denominator is None:
-            return default
-        result = float(numerator) / float(denominator)
-        return max(0.0, min(result, 1.0))  # Clamp between 0-1
-    except:
-        return default

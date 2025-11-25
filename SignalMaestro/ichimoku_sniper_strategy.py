@@ -40,9 +40,10 @@ class IchimokuSniperStrategy:
         self.displacement = 20
         self.ema_periods = 200
 
-        # Stop loss and take profit percentages
-        self.stop_loss_percent = 1.75
-        self.take_profit_percent = 3.25
+        # Stop loss and take profit percentages - OPTIMIZED FOR 1M SCALPING
+        # Much tighter for rapid entries/exits with micro-liquidities
+        self.stop_loss_percent = 0.45   # Tight 0.45% SL for 1m
+        self.take_profit_percent = 1.05  # 1.05% TP for 1m scalping
 
         # Multi-timeframe settings - OPTIMIZED FOR 1M SCALPING
         self.timeframes = ["1m", "5m"]  # 1m primary + 5m confirmation

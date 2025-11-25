@@ -552,3 +552,26 @@ def get_market_depth_analyzer(symbol: str = "FXSUSDT") -> AdvancedMarketDepthAna
     if _market_depth_analyzer is None:
         _market_depth_analyzer = AdvancedMarketDepthAnalyzer(symbol)
     return _market_depth_analyzer
+
+
+# ENHANCED ERROR RECOVERY AND FALLBACKS
+def safe_calculate_average(values):
+    """Safe average calculation with error handling"""
+    try:
+        if not values or len(values) == 0:
+            return 0.0
+        valid_values = [float(v) for v in values if isinstance(v, (int, float)) and v > 0]
+        return sum(valid_values) / len(valid_values) if valid_values else 0.0
+    except:
+        return 0.0
+
+
+def safe_ratio(numerator, denominator, default=0.0):
+    """Safe ratio calculation avoiding division by zero"""
+    try:
+        if denominator == 0 or denominator is None:
+            return default
+        result = float(numerator) / float(denominator)
+        return max(0.0, min(result, 1.0))  # Clamp between 0-1
+    except:
+        return default

@@ -44,13 +44,13 @@ class IchimokuSniperStrategy:
         self.stop_loss_percent = 1.75
         self.take_profit_percent = 3.25
 
-        # Multi-timeframe settings - ONLY 30m timeframe
-        self.timeframes = ["30m"]  # Block all timeframes less than 30m
-        self.primary_timeframe = "30m"
+        # Multi-timeframe settings - OPTIMIZED FOR 1M SCALPING
+        self.timeframes = ["1m", "5m"]  # 1m primary + 5m confirmation
+        self.primary_timeframe = "1m"
 
-        # Signal filtering - Strict for 30m only
-        self.min_signal_strength = 75.0  # Higher threshold for quality
-        self.min_confidence = 75.0       # Minimum 75% confidence
+        # Signal filtering - Optimized for 1m scalping
+        self.min_signal_strength = 70.0  # Slightly lower for 1m agility
+        self.min_confidence = 72.0       # Minimum 72% confidence for 1m
 
         self.logger.info("✅ Ichimoku Sniper Strategy initialized with Pine Script parameters")
 

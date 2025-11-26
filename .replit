@@ -92,13 +92,16 @@ task = "shell.exec"
 args = "python start_ultimate_bot.py"
 
 [[workflows.workflow]]
-name = "ML-Enhanced Trading Bot"
-author = 34160275
+name = "Ultimate Trading Bot"
+author = "agent"
 mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_ml_enhanced_bot.py"
+args = "python start_ultimate_bot.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[workflows.workflow]]
 name = "Adaptive ML Trading Bot"
@@ -153,15 +156,6 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python start_ultimate_bot.py"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Trading Bot"
 
 [[workflows.workflow]]
 name = "FXSUSDT Ichimoku Bot"
@@ -244,15 +238,13 @@ task = "shell.exec"
 args = "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python start_fxsusdt_bot_comprehensive_fixed.py"
 
 [[workflows.workflow]]
-name = "Trading Bot"
+name = "Project"
+mode = "parallel"
 author = "agent"
 
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_fxsusdt_bot_comprehensive_fixed.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
+task = "workflow.run"
+args = "Ultimate Trading Bot"
 
 [[ports]]
 localPort = 3000

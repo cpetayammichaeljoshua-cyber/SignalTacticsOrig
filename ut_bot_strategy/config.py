@@ -12,9 +12,9 @@ from typing import Optional
 @dataclass
 class UTBotConfig:
     """UT Bot Alerts indicator configuration"""
-    key_value: float = 1.0
-    atr_period: int = 10
-    use_heikin_ashi: bool = False
+    key_value: float = 2.0
+    atr_period: int = 6
+    use_heikin_ashi: bool = True
     ema_period: int = 1
 
 
@@ -22,7 +22,7 @@ class UTBotConfig:
 class STCConfig:
     """STC indicator configuration (modified settings from video)"""
     length: int = 80
-    fast_length: int = 27
+    fast_length: int = 26
     slow_length: int = 50
     aaa_factor: float = 0.5
 

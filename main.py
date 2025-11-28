@@ -42,8 +42,8 @@ def print_banner():
 ║  Risk:Reward: 1:1.5                                         ║
 ║                                                              ║
 ║  Indicator Settings:                                         ║
-║  - UT Bot: Key=1, ATR=10                                    ║
-║  - STC: Length=80, Fast=27, Slow=50                         ║
+║  - UT Bot: Key=2, ATR=6, Heikin Ashi=ON                     ║
+║  - STC: Length=80, Fast=26, Slow=50                         ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)

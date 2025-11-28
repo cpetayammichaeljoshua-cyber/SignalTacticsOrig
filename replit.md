@@ -49,15 +49,15 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 ### Indicator Settings
 
 **UT Bot Alerts (Pine Script Converted):**
-- Key Value (Sensitivity): 1.0
-- ATR Period: 10
-- Use Heikin Ashi: Optional (default off)
+- Key Value (Sensitivity): 2.0
+- ATR Period: 6
+- Use Heikin Ashi: Enabled (ON)
 
 **STC Indicator (Modified from original):**
 - Length: 80 (changed from 12)
-- Fast Length: 27 (changed from 26)
-- Slow Length: 50 (unchanged)
-- Smoothing Factor: 0.5
+- Fast Length: 26
+- Slow Length: 50
+- Smoothing Factor (AAA): 0.5
 
 ## Project Structure
 

@@ -9,22 +9,27 @@ import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Callable
+from typing import Optional, List, Dict, Callable, Any
 import pandas as pd
 import numpy as np
+
+BINANCE_AVAILABLE = False
+BinanceAPIException: Any = Exception
 
 try:
     from binance.client import Client
     from binance.exceptions import BinanceAPIException
     BINANCE_AVAILABLE = True
 except ImportError:
-    BINANCE_AVAILABLE = False
+    Client = None
+
+CCXT_AVAILABLE = False
 
 try:
     import ccxt
     CCXT_AVAILABLE = True
 except ImportError:
-    CCXT_AVAILABLE = False
+    ccxt = None
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +91,9 @@ class BinanceDataFetcher:
         
         self._initialize_client()
     
-    def _initialize_client(self):
+    def _initialize_client(self) -> None:
         """Initialize the Binance client"""
-        if BINANCE_AVAILABLE and self.api_key and self.api_secret:
+        if BINANCE_AVAILABLE and self.api_key and self.api_secret and Client:
             try:
                 self.client = Client(self.api_key, self.api_secret)
                 logger.info("Binance client initialized successfully")
@@ -96,7 +101,7 @@ class BinanceDataFetcher:
                 logger.warning(f"Failed to initialize Binance client: {e}")
                 self.client = None
         
-        if CCXT_AVAILABLE:
+        if CCXT_AVAILABLE and ccxt:
             try:
                 self.ccxt_client = ccxt.binance({
                     'apiKey': self.api_key,
@@ -109,7 +114,7 @@ class BinanceDataFetcher:
                 logger.warning(f"Failed to initialize CCXT client: {e}")
                 self.ccxt_client = None
     
-    def fetch_historical_data(self, limit: int = 500, start_time: Optional[datetime] = None) -> pd.DataFrame:
+    def fetch_historical_data(self, limit: int = 500, start_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
         """
         Fetch historical OHLCV data
         
@@ -118,7 +123,7 @@ class BinanceDataFetcher:
             start_time: Optional start time for historical data
             
         Returns:
-            DataFrame with OHLCV data
+            DataFrame with OHLCV data or None
         """
         try:
             if self.ccxt_client:

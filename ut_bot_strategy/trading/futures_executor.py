@@ -10,12 +10,17 @@ Handles all trading operations on Binance Futures:
 
 import logging
 import asyncio
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 
 logger = logging.getLogger(__name__)
+
+try:
+    import ccxt.async_support as ccxt_async
+except ImportError:
+    ccxt_async = None
 
 
 @dataclass
@@ -93,9 +98,11 @@ class FuturesExecutor:
     async def initialize(self) -> bool:
         """Initialize the trading clients"""
         try:
-            import ccxt.async_support as ccxt
+            if not ccxt_async:
+                logger.error("CCXT async module not available")
+                return False
             
-            self._ccxt_client = ccxt.binance({
+            self._ccxt_client = ccxt_async.binance({
                 'apiKey': self.api_key,
                 'secret': self.api_secret,
                 'sandbox': self.testnet,
@@ -113,12 +120,15 @@ class FuturesExecutor:
             
         except Exception as e:
             logger.error(f"Failed to initialize futures executor: {e}")
+            self._ccxt_client = None
             return False
     
-    async def _load_market_info(self):
+    async def _load_market_info(self) -> None:
         """Load market precision and limits"""
         try:
-            markets = await self._ccxt_client.load_markets()
+            if not self._ccxt_client:
+                return
+            markets: Dict[str, Any] = await self._ccxt_client.load_markets()
             if self.symbol in markets:
                 market = markets[self.symbol]
                 self.quantity_precision = market.get('precision', {}).get('amount', 3)
@@ -140,14 +150,17 @@ class FuturesExecutor:
         factor = 10 ** self.price_precision
         return float(round(price * factor) / factor)
     
-    async def get_account_balance(self) -> Dict:
+    async def get_account_balance(self) -> Dict[str, float]:
         """Get futures account balance"""
         if not self._initialized:
             await self.initialize()
         
         try:
-            balance = await self._ccxt_client.fetch_balance()
-            usdt_balance = balance.get('USDT', {})
+            if not self._ccxt_client:
+                return {'total': 0.0, 'free': 0.0, 'used': 0.0}
+                
+            balance: Dict[str, Any] = await self._ccxt_client.fetch_balance()
+            usdt_balance: Dict[str, Any] = balance.get('USDT', {})
             
             return {
                 'total': float(usdt_balance.get('total', 0)),
@@ -156,7 +169,7 @@ class FuturesExecutor:
             }
         except Exception as e:
             logger.error(f"Failed to get account balance: {e}")
-            return {'total': 0, 'free': 0, 'used': 0}
+            return {'total': 0.0, 'free': 0.0, 'used': 0.0}
     
     async def set_leverage(self, leverage: int) -> bool:
         """Set leverage for the symbol"""
@@ -164,6 +177,9 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
+            if not self._ccxt_client:
+                return False
+                
             await self._ccxt_client.set_leverage(leverage, self.symbol)
             logger.info(f"Leverage set to {leverage}x for {self.symbol}")
             return True
@@ -177,6 +193,9 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
+            if not self._ccxt_client:
+                return False
+                
             margin_type = 'ISOLATED' if isolated else 'CROSSED'
             await self._ccxt_client.set_margin_mode(margin_type, self.symbol)
             logger.info(f"Margin type set to {margin_type} for {self.symbol}")
@@ -193,7 +212,10 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
-            positions = await self._ccxt_client.fetch_positions([self.symbol])
+            if not self._ccxt_client:
+                return None
+                
+            positions: List[Dict[str, Any]] = await self._ccxt_client.fetch_positions([self.symbol])
             for pos in positions:
                 if pos['symbol'] == self.symbol and float(pos.get('contracts', 0)) != 0:
                     return PositionInfo(
@@ -204,7 +226,7 @@ class FuturesExecutor:
                         mark_price=float(pos.get('markPrice', 0)),
                         unrealized_pnl=float(pos.get('unrealizedPnl', 0)),
                         leverage=int(pos.get('leverage', 1)),
-                        margin_type=pos.get('marginType', 'isolated'),
+                        margin_type=str(pos.get('marginType', 'isolated')),
                         liquidation_price=float(pos.get('liquidationPrice', 0))
                     )
             return None
@@ -233,6 +255,9 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
+            if not self._ccxt_client:
+                return OrderResult(success=False, symbol=self.symbol, side=side, message="Client not initialized")
+                
             quantity = self._round_quantity(quantity)
             
             if quantity < self.min_quantity:
@@ -241,9 +266,9 @@ class FuturesExecutor:
                     message=f"Quantity {quantity} below minimum {self.min_quantity}"
                 )
             
-            params = {'reduceOnly': reduce_only} if reduce_only else {}
+            params: Dict[str, Any] = {'reduceOnly': reduce_only} if reduce_only else {}
             
-            order = await self._ccxt_client.create_market_order(
+            order: Dict[str, Any] = await self._ccxt_client.create_market_order(
                 symbol=self.symbol,
                 side=side.lower(),
                 amount=quantity,
@@ -254,13 +279,13 @@ class FuturesExecutor:
             
             return OrderResult(
                 success=True,
-                order_id=order.get('id'),
+                order_id=str(order.get('id', '')),
                 symbol=self.symbol,
                 side=side,
                 order_type='MARKET',
                 quantity=quantity,
                 price=float(order.get('average', 0)),
-                status=order.get('status', 'FILLED'),
+                status=str(order.get('status', 'FILLED')),
                 message="Order executed successfully",
                 timestamp=datetime.now()
             )
@@ -295,10 +320,13 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
+            if not self._ccxt_client:
+                return OrderResult(success=False, symbol=self.symbol, side=side, message="Client not initialized")
+                
             quantity = self._round_quantity(quantity)
             stop_price = self._round_price(stop_price)
             
-            order = await self._ccxt_client.create_order(
+            order: Dict[str, Any] = await self._ccxt_client.create_order(
                 symbol=self.symbol,
                 type='STOP_MARKET',
                 side=side.lower(),
@@ -313,13 +341,13 @@ class FuturesExecutor:
             
             return OrderResult(
                 success=True,
-                order_id=order.get('id'),
+                order_id=str(order.get('id', '')),
                 symbol=self.symbol,
                 side=side,
                 order_type='STOP_MARKET',
                 quantity=quantity,
                 price=stop_price,
-                status=order.get('status', 'NEW'),
+                status=str(order.get('status', 'NEW')),
                 message="Stop loss placed",
                 timestamp=datetime.now()
             )
@@ -354,10 +382,13 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
+            if not self._ccxt_client:
+                return OrderResult(success=False, symbol=self.symbol, side=side, message="Client not initialized")
+                
             quantity = self._round_quantity(quantity)
             take_profit_price = self._round_price(take_profit_price)
             
-            order = await self._ccxt_client.create_order(
+            order: Dict[str, Any] = await self._ccxt_client.create_order(
                 symbol=self.symbol,
                 type='TAKE_PROFIT_MARKET',
                 side=side.lower(),
@@ -372,13 +403,13 @@ class FuturesExecutor:
             
             return OrderResult(
                 success=True,
-                order_id=order.get('id'),
+                order_id=str(order.get('id', '')),
                 symbol=self.symbol,
                 side=side,
                 order_type='TAKE_PROFIT_MARKET',
                 quantity=quantity,
                 price=take_profit_price,
-                status=order.get('status', 'NEW'),
+                status=str(order.get('status', 'NEW')),
                 message="Take profit placed",
                 timestamp=datetime.now()
             )
@@ -463,6 +494,9 @@ class FuturesExecutor:
             await self.initialize()
         
         try:
+            if not self._ccxt_client:
+                return False
+                
             await self._ccxt_client.cancel_all_orders(self.symbol)
             logger.info(f"All orders cancelled for {self.symbol}")
             return True

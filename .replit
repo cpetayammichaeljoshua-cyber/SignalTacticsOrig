@@ -83,18 +83,6 @@ task = "shell.exec"
 args = "python start_daemon.py"
 
 [[workflows.workflow]]
-name = "Ultimate Trading Bot"
-author = "agent"
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_ultimate_bot.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow]]
 name = "Adaptive ML Trading Bot"
 author = 34160275
 mode = "sequential"

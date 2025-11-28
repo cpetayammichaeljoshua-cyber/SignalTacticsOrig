@@ -1,138 +1,140 @@
-# FXSUSDT Trading Bot - Production Deployment ✅
+# UT Bot + STC Trading Signal Bot - Production Deployment ✅
 
 ## Project Overview
-Advanced cryptocurrency trading bot for FXSUSDT perpetual futures on Binance with:
-- Ichimoku Sniper strategy with dynamic parameters
-- Advanced order flow and market microstructure analysis
-- Dynamic leveraging stop loss with percentage below trigger
-- Smart dynamic SL/TP positioning based on liquidity zones
-- Telegram command integration with comprehensive controls
-- Multi-timeframe ATR analysis for market regime detection
-- Position sizing and leverage optimization
+Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe combining:
+- **UT Bot Alerts**: ATR-based trailing stop indicator for entry signals
+- **STC (Schaff Trend Cycle)**: Momentum oscillator for trend confirmation
+- Telegram signal notifications with rich formatting
+- Automatic stop loss and take profit calculation
+- Risk management with 1:1.5 reward ratio
 
-## Recent Changes (Latest) - November 24, 2025
+## Recent Changes (Latest) - November 28, 2025
 
-### ✅ Production-Critical Fixes - ALL RESOLVED
-- **Fixed Tape Analysis Error**: Replaced numpy operations with pure Python arithmetic to eliminate dtype incompatibility
-- **Fixed Footprint Analysis Error**: Added safe OHLCV column handling (high, low, close, open, volume)
-- **Enhanced Error Handling**: Comprehensive fallback mechanisms for all market data calculations
-- **Type Safety**: Eliminated all mixed dtype issues in calculations
-- **Production Status**: ✅ Bot running 24/7 with ZERO critical errors
-- **Market Microstructure**: ✅ DOM, Tape, and Footprint analysis all working flawlessly
+### ✅ New UT Bot + STC Strategy Implementation
+- **UT Bot Alerts Indicator**: Converted from TradingView Pine Script to Python
+- **STC Indicator**: Implemented with modified settings (Length=80, Fast=27, Slow=50)
+- **Signal Engine**: Combined indicator logic with complete strategy rules
+- **Telegram Integration**: Rich formatted signals with entry, SL, TP
+- **Binance Data Fetcher**: Real-time ETH/USDT 5m data from Binance
+- **Continuous Monitoring**: Async orchestrator for 24/7 operation
 
 ## Architecture
 
-### Core Components
-1. **FXSUSDTTelegramBot** - Main telegram interface and command system with 50+ commands
-2. **DynamicLeveragingSL** - Advanced dynamic stop loss with leverage-based sizing
-3. **IchimokuSniperStrategy** - Core trading strategy with ichimoku indicators
-4. **FXSUSDTTrader** - Binance API wrapper for order execution
-5. **DynamicPositionManager** - Position sizing and leverage optimization
-6. **SmartDynamicSLTPSystem** - Liquidity zone detection and SL/TP calculation
-7. **MarketMicrostructureEnhancer** - DOM, tape, footprint analysis
-8. **AdvancedMarketDepthAnalyzer** - Order book and liquidity analysis ✅ FULLY OPERATIONAL
+### Core Components (UT Bot + STC Strategy)
+1. **UTBotAlerts** - ATR-based trailing stop indicator (converted from Pine Script)
+2. **STCIndicator** - Schaff Trend Cycle oscillator with modified settings
+3. **SignalEngine** - Combines indicators for signal generation
+4. **BinanceDataFetcher** - Real-time OHLCV data from Binance
+5. **TelegramSignalBot** - Rich formatted signal notifications
+6. **TradingOrchestrator** - Main bot controller and monitoring loop
 
-### Market Intelligence Features
-- ✅ **Order Flow Analysis**: DOM depth, aggressive buy/sell detection
-- ✅ **Liquidity Zone Detection**: Support/resistance at micro-structure level
-- ✅ **Market Regime Detection**: ADX, Bollinger Bands, RSI classification
-- ✅ **Multi-Timeframe ATR**: Weighted ATR across 1m, 5m, 15m, 30m
-- ✅ **Dynamic Leverage SL**: Percentage-based stops with leverage optimization
-- ✅ **Trailing Stop Management**: Profit-based trailing with customizable activation
-- ✅ **Bookmap Integration**: Order flow heatmaps and institutional activity
-- ✅ **Tape Analysis**: Time & Sales with aggressive buy/sell detection (FIXED)
-- ✅ **Footprint Analysis**: Volume profile and absorption/exhaustion patterns (FIXED)
+### Strategy Rules
+**LONG Entry Conditions:**
+- ✅ UT Bot issues BUY signal (price crosses above trailing stop)
+- ✅ STC line is GREEN color
+- ✅ STC line is pointing UPWARD
+- ✅ STC value is BELOW 75
 
-### Telegram Commands (Advanced Trading)
-**Market Info:**
-- `/price` - Current FXSUSDT price with 24h stats
-- `/balance` - Account balance and available margin
-- `/position` - Active position details
-- `/dashboard` - Comprehensive market analysis dashboard
+**SHORT Entry Conditions:**
+- ✅ UT Bot issues SELL signal (price crosses below trailing stop)
+- ✅ STC line is RED color
+- ✅ STC line is pointing DOWNWARD
+- ✅ STC value is ABOVE 25
 
-**Trading Signals & Analysis:**
-- `/signal` - Generate new trading signal
-- `/dynamic_sltp LONG/SHORT` - Calculate smart SL/TP levels
-- `/dynamic_sl LONG/SHORT [pct] [leverage]` - Dynamic leveraging stop loss
-- `/orderflow` - Order flow imbalance analysis
-- `/bookmap` - Bookmap DOM and institutional activity
-- `/atas` - ATAS professional indicators analysis
-- `/market_intel` - Comprehensive market intelligence
-- `/insider` - Insider activity detection
+**Risk Management:**
+- ✅ Stop Loss: Recent swing low (LONG) or swing high (SHORT)
+- ✅ Take Profit: 1.5x the risk amount (R:R = 1:1.5)
+- ✅ Swing lookback: 5 bars for SL placement
 
-**Bot Management:**
-- `/status` - Bot health and performance metrics
-- `/optimize` - Run strategy parameter optimization
-- `/backtest` - Backtest current strategy
-- `/history` - Signal history and performance
+### Indicator Settings
 
-## Fixed Issues (Production-Critical)
+**UT Bot Alerts (Pine Script Converted):**
+- Key Value (Sensitivity): 1.0
+- ATR Period: 10
+- Use Heikin Ashi: Optional (default off)
 
-### ✅ Issue 1: Tape Analysis - TypeError with np.sum()
-**Error**: `TypeError: the resolved dtypes are not compatible with add.reduce. Resolved (dtype('<U8'), dtype('<U8'), dtype('<U16'))`
-**Root Cause**: Numpy operations on mixed dtype data (Unicode strings + floats)
-**Fix**: Replaced all numpy calculations with pure Python arithmetic (sum/divide) to avoid dtype conversion issues
+**STC Indicator (Modified from original):**
+- Length: 80 (changed from 12)
+- Fast Length: 27 (changed from 26)
+- Slow Length: 50 (unchanged)
+- Smoothing Factor: 0.5
 
-### ✅ Issue 2: Footprint Analysis - KeyError 'high'
-**Error**: `KeyError: 'high'`
-**Root Cause**: DataFrame missing OHLCV columns in some market data sources
-**Fix**: Added safe column checking with sensible defaults (current_price) for all OHLCV columns
+## Project Structure
 
-### ✅ Issue 3: Type Safety
-**Issue**: Mixed numpy dtypes causing calculation failures
-**Fix**: Explicit type handling and pure Python arithmetic where possible
-
-## Production Deployment Status
-
-| Component | Status | Details |
-|-----------|--------|---------|
-| **Tape Analysis** | ✅ WORKING | Pure Python, pattern detection operational |
-| **Footprint Analysis** | ✅ WORKING | All OHLCV columns handled with safe fallbacks |
-| **DOM Analysis** | ✅ WORKING | Order book depth analysis operational |
-| **Bot Process** | ✅ RUNNING | 24/7 continuous monitoring and trading |
-| **Type Safety** | ✅ VERIFIED | No dtype incompatibilities |
-| **Signal Generation** | ✅ WORKING | Ichimoku + AI + Market Microstructure |
-| **Error Handling** | ✅ ROBUST | Comprehensive fallback mechanisms |
+```
+ut_bot_strategy/
+├── __init__.py           # Package initialization
+├── config.py             # Configuration settings
+├── orchestrator.py       # Main bot controller
+├── indicators/
+│   ├── __init__.py
+│   ├── ut_bot_alerts.py  # UT Bot indicator
+│   └── stc_indicator.py  # STC indicator
+├── engine/
+│   ├── __init__.py
+│   └── signal_engine.py  # Signal generation logic
+├── data/
+│   ├── __init__.py
+│   └── binance_fetcher.py # Binance data fetching
+└── telegram/
+    ├── __init__.py
+    └── telegram_bot.py   # Telegram notifications
+main.py                   # Entry point
+```
 
 ## Setup & Deployment
 
 ### 1. Set Replit Secrets
 Required environment variables:
 - `TELEGRAM_BOT_TOKEN` - Your Telegram bot token
+- `TELEGRAM_CHAT_ID` - Target chat ID for signals
 - `BINANCE_API_KEY` - Binance API key
 - `BINANCE_API_SECRET` - Binance API secret
 
-Optional:
-- `ADMIN_CHAT_ID` - Admin notifications
-- `CHANNEL_ID` - Broadcasting channel
-
-### 2. Run Production Bot
+### 2. Run the Bot
 ```bash
-python start_fxsusdt_bot_comprehensive_fixed.py
+python main.py
 ```
 
-### 3. Commands Available
+## Signal Format Example
+
 ```
-/signal - Generate trading signal
-/dynamic_sl LONG - Dynamic stop loss with % below trigger
-/balance - Check balance
-/status - Bot health
-/dashboard - Market analysis
+🟢 UT BOT + STC SIGNAL 🟢
+
+📈 Direction: LONG
+💱 Pair: ETH/USDT
+⏰ Timeframe: 5m
+
+━━━━━━━━━━━━━━━━━━━━━
+
+💰 Entry Price: $3,450.25
+🛑 Stop Loss: $3,420.50
+🎯 Take Profit: $3,494.88
+
+━━━━━━━━━━━━━━━━━━━━━
+
+📊 Risk: 0.86%
+🎲 Risk:Reward: 1:1.5
+
+CONFIRMATION:
+✅ UT Bot LONG Signal
+✅ STC Green ↑
+✅ All conditions met
 ```
 
 ## Performance Notes
-- Strategy: 60% win rate in simulations
-- Profit factor: 1.8-2.2 average
-- Dynamic leverage adapts to market volatility
-- Optimal SL placement based on liquidity zones
-- Support for both scalping and swing trading modes
+- Based on "Quantum Trading Strategy" with 55% win rate in backtests
+- Modified STC settings (80/27/50) for better confirmation
+- Swing-based stop loss placement for optimal risk management
+- 1:1.5 Risk:Reward ratio for positive expectancy
 
 ## Final Production Status
 
-✅ **All Production Errors Fixed**
-✅ **Bot Running 24/7 Successfully**
-✅ **Market Microstructure Analysis** - DOM, Tape, Footprint working perfectly
-✅ **Signal Generation** - 100% operational with AI enhancement
-✅ **ZERO Critical Errors** - All issues comprehensively resolved
+✅ **UT Bot Alerts Indicator**: Fully converted from Pine Script
+✅ **STC Indicator**: Implemented with modified settings
+✅ **Signal Engine**: Complete strategy logic implemented
+✅ **Telegram Integration**: Rich formatted notifications
+✅ **Binance Data**: Real-time 5m ETH/USDT data
+✅ **Continuous Monitoring**: 24/7 async operation
 
-**🚀 Bot is fully deployed and production-ready!**
+**🚀 UT Bot + STC Signal Bot is fully deployed and production-ready!**

@@ -193,7 +193,7 @@ class TelegramSignalBot:
 🎲 Risk:Reward: 1:1.5
 
 <b>Settings:</b>
-• UT Bot Key: 1.0, ATR Period: 10
+• UT Bot Key: 2.0, ATR Period: 6
 • STC Length: 80, Fast: 27, Slow: 50
 • Swing Lookback: 5 bars
 

@@ -5,6 +5,7 @@ Coordinates all components:
 - Data fetching from Binance
 - Indicator calculations
 - Signal generation
+- Auto-leverage trading execution
 - Telegram notifications
 - Continuous monitoring loop
 """
@@ -21,6 +22,8 @@ from .config import Config, load_config
 from .data.binance_fetcher import BinanceDataFetcher
 from .engine.signal_engine import SignalEngine
 from .telegram.telegram_bot import TelegramSignalBot
+from .trading.leverage_calculator import LeverageCalculator
+from .trading.futures_executor import FuturesExecutor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,11 +88,37 @@ class TradingOrchestrator:
             chat_id=self.config.telegram_chat_id
         )
         
+        leverage_config = self.config.trading.leverage
+        self.leverage_calculator = LeverageCalculator(
+            min_leverage=leverage_config.min_leverage,
+            max_leverage=leverage_config.max_leverage,
+            base_leverage=leverage_config.base_leverage,
+            risk_per_trade_percent=leverage_config.risk_per_trade_percent,
+            max_position_percent=leverage_config.max_position_percent,
+            volatility_low_threshold=leverage_config.volatility_low_threshold,
+            volatility_high_threshold=leverage_config.volatility_high_threshold,
+            signal_strength_multiplier=leverage_config.signal_strength_multiplier
+        )
+        
+        self.futures_executor = FuturesExecutor(
+            api_key=self.config.binance_api_key,
+            api_secret=self.config.binance_api_secret,
+            symbol=self.config.trading.symbol
+        )
+        
+        self.auto_trading_enabled = leverage_config.enabled
+        self.use_isolated_margin = leverage_config.use_isolated_margin
+        self._current_position = None
+        self._trade_count = 0
+        
         logger.info("Trading Orchestrator initialized")
         logger.info(f"Symbol: {self.config.trading.symbol}")
         logger.info(f"Timeframe: {self.config.trading.timeframe}")
         logger.info(f"UT Bot settings: Key={self.config.ut_bot.key_value}, ATR={self.config.ut_bot.atr_period}")
         logger.info(f"STC settings: Length={self.config.stc.length}, Fast={self.config.stc.fast_length}, Slow={self.config.stc.slow_length}")
+        logger.info(f"Auto-trading: {'ENABLED' if self.auto_trading_enabled else 'DISABLED'}")
+        if self.auto_trading_enabled:
+            logger.info(f"Leverage range: {leverage_config.min_leverage}x-{leverage_config.max_leverage}x")
     
     def _can_send_signal(self) -> bool:
         """Check if we can send a new signal (respecting cooldown)"""
@@ -110,12 +139,12 @@ class TradingOrchestrator:
         interval = timedelta(minutes=self.config.bot.market_update_interval_minutes)
         return datetime.now() - self._last_market_update > interval
     
-    async def fetch_and_process(self) -> Optional[Dict]:
+    async def fetch_and_process(self) -> tuple:
         """
         Fetch data and process for signals
         
         Returns:
-            Signal dictionary if valid signal found, None otherwise
+            Tuple of (signal, dataframe) if valid signal found, (None, None) otherwise
         """
         try:
             df = self.data_fetcher.fetch_historical_data(
@@ -124,7 +153,7 @@ class TradingOrchestrator:
             
             if df is None or len(df) < self.config.trading.min_candles_required:
                 logger.warning(f"Insufficient data: {len(df) if df is not None else 0} candles")
-                return None
+                return None, None
             
             logger.debug(f"Fetched {len(df)} candles, latest: {df.index[-1]}")
             
@@ -132,7 +161,7 @@ class TradingOrchestrator:
             
             if signal and self._can_send_signal():
                 logger.info(f"Valid {signal['type']} signal generated!")
-                return signal
+                return signal, df
             elif signal:
                 logger.info(f"Signal generated but in cooldown period")
             
@@ -141,7 +170,7 @@ class TradingOrchestrator:
                 await self.telegram_bot.send_market_update(state)
                 self._last_market_update = datetime.now()
             
-            return None
+            return None, df
             
         except Exception as e:
             self._error_count += 1
@@ -150,20 +179,105 @@ class TradingOrchestrator:
             if self._error_count <= 3:
                 await self.telegram_bot.send_error(str(e), "Data fetch/process error")
             
+            return None, None
+    
+    async def execute_trade(self, signal: Dict, df) -> Optional[Dict]:
+        """
+        Execute auto-leverage trade based on signal
+        
+        Args:
+            signal: Trading signal
+            df: DataFrame with price data for ATR calculation
+            
+        Returns:
+            Trade execution result or None
+        """
+        try:
+            if not await self.futures_executor.initialize():
+                logger.error("Failed to initialize futures executor")
+                return None
+            
+            balance = await self.futures_executor.get_account_balance()
+            available_balance = balance.get('free', 0)
+            
+            if available_balance < 10:
+                logger.warning(f"Insufficient balance: ${available_balance:.2f}")
+                return None
+            
+            current_price = signal.get('entry_price', 0)
+            atr = df['high'].iloc[-14:].max() - df['low'].iloc[-14:].min()
+            atr = atr / 14
+            
+            leverage_result = self.leverage_calculator.calculate_optimal_leverage(
+                signal=signal,
+                account_balance=available_balance,
+                current_price=current_price,
+                atr=atr
+            )
+            
+            is_valid, validation_msg = self.leverage_calculator.validate_trade(
+                leverage_result=leverage_result,
+                account_balance=available_balance,
+                min_order_size=0.001
+            )
+            
+            if not is_valid:
+                logger.warning(f"Trade validation failed: {validation_msg}")
+                return None
+            
+            logger.info(f"Executing trade: {leverage_result.leverage}x leverage, {leverage_result.position_size:.4f} ETH")
+            
+            trade_result = await self.futures_executor.execute_trade(
+                signal=signal,
+                leverage=leverage_result.leverage,
+                quantity=leverage_result.position_size,
+                use_isolated=self.use_isolated_margin
+            )
+            
+            if trade_result.get('success'):
+                self._trade_count += 1
+                self._current_position = {
+                    'direction': signal.get('direction'),
+                    'entry_price': trade_result['entry'].price,
+                    'quantity': leverage_result.position_size,
+                    'leverage': leverage_result.leverage,
+                    'stop_loss': signal.get('stop_loss'),
+                    'take_profit': signal.get('take_profit'),
+                    'timestamp': datetime.now()
+                }
+                logger.info(f"Trade executed successfully! Total trades: {self._trade_count}")
+            
+            return {
+                'trade_result': trade_result,
+                'leverage_result': leverage_result,
+                'balance': available_balance
+            }
+            
+        except Exception as e:
+            logger.error(f"Error executing trade: {e}")
             return None
     
-    async def process_signal(self, signal: Dict) -> bool:
+    async def process_signal(self, signal: Dict, df=None) -> bool:
         """
-        Process and send a trading signal
+        Process and send a trading signal, optionally execute trade
         
         Args:
             signal: Signal dictionary
+            df: DataFrame for trade execution (optional)
             
         Returns:
             True if signal was sent successfully
         """
         try:
-            success = await self.telegram_bot.send_signal(signal)
+            trade_info = None
+            if self.auto_trading_enabled and df is not None:
+                existing_position = await self.futures_executor.get_position()
+                if existing_position:
+                    logger.info(f"Existing {existing_position.side} position, skipping new trade")
+                else:
+                    trade_info = await self.execute_trade(signal, df)
+            
+            success = await self.telegram_bot.send_signal(signal, trade_info)
             
             if success:
                 self._last_signal_time = datetime.now()
@@ -181,10 +295,10 @@ class TradingOrchestrator:
     
     async def run_cycle(self):
         """Run a single monitoring cycle"""
-        signal = await self.fetch_and_process()
+        signal, df = await self.fetch_and_process()
         
         if signal:
-            await self.process_signal(signal)
+            await self.process_signal(signal, df)
     
     async def run(self):
         """
@@ -240,6 +354,7 @@ class TradingOrchestrator:
             await self.telegram_bot.send_shutdown_notification(reason)
         
         await self.telegram_bot.close()
+        await self.futures_executor.close()
         logger.info("Bot shutdown complete")
     
     def stop(self):

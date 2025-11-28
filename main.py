@@ -35,15 +35,17 @@ def print_banner():
     """Print startup banner"""
     banner = """
 ╔══════════════════════════════════════════════════════════════╗
-║           UT BOT + STC TRADING SIGNAL BOT                   ║
+║      UT BOT + STC AUTO-LEVERAGE TRADING BOT                 ║
 ║                                                              ║
 ║  Strategy: UT Bot Alerts + Schaff Trend Cycle               ║
 ║  Pair: ETH/USDT | Timeframe: 5 minutes                      ║
-║  Risk:Reward: 1:1.5                                         ║
+║  Risk:Reward: 1:1.5 | Auto-Trading: ENABLED                 ║
 ║                                                              ║
 ║  Indicator Settings:                                         ║
 ║  - UT Bot: Key=2, ATR=6, Heikin Ashi=ON                     ║
-║  - STC: Length=80, Fast=26, Slow=50                         ║
+║  - STC: Length=80, Fast=27, Slow=50                         ║
+║                                                              ║
+║  Leverage: Dynamic 1x-20x based on volatility               ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)

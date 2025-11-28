@@ -22,9 +22,25 @@ class UTBotConfig:
 class STCConfig:
     """STC indicator configuration (modified settings from video)"""
     length: int = 80
-    fast_length: int = 26
+    fast_length: int = 27
     slow_length: int = 50
     aaa_factor: float = 0.5
+
+
+@dataclass
+class LeverageConfig:
+    """Auto-leverage trading configuration"""
+    enabled: bool = True
+    min_leverage: int = 1
+    max_leverage: int = 20
+    base_leverage: int = 5
+    risk_per_trade_percent: float = 2.0
+    max_position_percent: float = 50.0
+    use_isolated_margin: bool = True
+    auto_adjust_by_volatility: bool = True
+    volatility_low_threshold: float = 1.0
+    volatility_high_threshold: float = 3.0
+    signal_strength_multiplier: bool = True
 
 
 @dataclass
@@ -37,6 +53,7 @@ class TradingConfig:
     min_risk_percent: float = 0.1
     max_risk_percent: float = 5.0
     min_candles_required: int = 100
+    leverage: LeverageConfig = field(default_factory=LeverageConfig)
 
 
 @dataclass

@@ -270,17 +270,76 @@ Reason: {reason}
         logger.error("Failed to send message after all retries")
         return False
     
-    async def send_signal(self, signal: Dict) -> bool:
+    def _format_trade_execution(self, trade_info: Dict) -> str:
+        """
+        Format trade execution details
+        
+        Args:
+            trade_info: Trade execution info from orchestrator
+            
+        Returns:
+            Formatted trade execution section
+        """
+        if not trade_info:
+            return ""
+        
+        trade_result = trade_info.get('trade_result', {})
+        leverage_result = trade_info.get('leverage_result')
+        balance = trade_info.get('balance', 0)
+        
+        if not trade_result.get('success'):
+            return f"""
+━━━━━━━━━━━━━━━━━━━━━
+
+⚠️ <b>AUTO-TRADE FAILED</b>
+{trade_result.get('message', 'Unknown error')}
+"""
+        
+        leverage = leverage_result.leverage if leverage_result else 0
+        position_size = leverage_result.position_size if leverage_result else 0
+        position_value = leverage_result.position_value if leverage_result else 0
+        margin = leverage_result.margin_required if leverage_result else 0
+        confidence = leverage_result.confidence if leverage_result else 0
+        
+        entry_order = trade_result.get('entry', {})
+        sl_order = trade_result.get('stop_loss', {})
+        tp_order = trade_result.get('take_profit', {})
+        
+        return f"""
+━━━━━━━━━━━━━━━━━━━━━
+
+🤖 <b>AUTO-TRADE EXECUTED</b>
+
+⚡ <b>Leverage:</b> {leverage}x
+📊 <b>Position Size:</b> {position_size:.4f} ETH
+💵 <b>Position Value:</b> ${position_value:,.2f}
+💰 <b>Margin Used:</b> ${margin:,.2f}
+📈 <b>Confidence:</b> {confidence*100:.1f}%
+
+<b>ORDERS:</b>
+✅ Entry: {'Filled' if entry_order.success else 'Failed'}
+🛑 Stop Loss: {'Set' if sl_order.success else 'Failed'}
+🎯 Take Profit: {'Set' if tp_order.success else 'Failed'}
+
+💳 <b>Account Balance:</b> ${balance:,.2f}
+"""
+    
+    async def send_signal(self, signal: Dict, trade_info: Optional[Dict] = None) -> bool:
         """
         Send trading signal to Telegram
         
         Args:
             signal: Signal dictionary from SignalEngine
+            trade_info: Optional trade execution info
             
         Returns:
             True if sent successfully
         """
         message = self._format_signal_message(signal)
+        
+        if trade_info:
+            message += self._format_trade_execution(trade_info)
+        
         return await self.send_message(message, disable_notification=False)
     
     async def send_market_update(self, state: Dict) -> bool:

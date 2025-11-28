@@ -55,9 +55,24 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 
 **STC Indicator (Modified from original):**
 - Length: 80 (changed from 12)
-- Fast Length: 26
+- Fast Length: 27
 - Slow Length: 50
 - Smoothing Factor (AAA): 0.5
+
+### Auto-Leverage Trading System
+
+**Leverage Configuration:**
+- Min Leverage: 1x
+- Max Leverage: 20x
+- Base Leverage: 5x
+- Risk Per Trade: 2%
+- Max Position: 50% of balance
+
+**Dynamic Leverage Calculation:**
+- Volatility-adjusted: Lower leverage in high volatility
+- Signal strength multiplier: Higher confidence = higher leverage
+- Automatic position sizing based on stop loss distance
+- Isolated margin for risk protection
 
 ## Project Structure
 
@@ -76,6 +91,10 @@ ut_bot_strategy/
 ├── data/
 │   ├── __init__.py
 │   └── binance_fetcher.py # Binance data fetching
+├── trading/
+│   ├── __init__.py
+│   ├── leverage_calculator.py  # Auto-leverage calculation
+│   └── futures_executor.py     # Binance Futures trading
 └── telegram/
     ├── __init__.py
     └── telegram_bot.py   # Telegram notifications

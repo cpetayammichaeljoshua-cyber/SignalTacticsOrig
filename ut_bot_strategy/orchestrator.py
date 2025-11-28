@@ -355,6 +355,7 @@ class TradingOrchestrator:
         
         await self.telegram_bot.close()
         await self.futures_executor.close()
+        self.data_fetcher.close()
         logger.info("Bot shutdown complete")
     
     def stop(self):

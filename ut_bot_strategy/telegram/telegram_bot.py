@@ -55,7 +55,11 @@ class TelegramSignalBot:
     async def close(self):
         """Close the aiohttp session"""
         if self._session and not self._session.closed:
-            await self._session.close()
+            try:
+                await self._session.close()
+                logger.info("Telegram bot session closed")
+            except Exception as e:
+                logger.warning(f"Error closing session: {e}")
     
     def _format_price(self, price: float) -> str:
         """Format price with appropriate decimals"""
@@ -300,6 +304,7 @@ Reason: {reason}
         position_value = leverage_result.position_value if leverage_result else 0
         margin = leverage_result.margin_required if leverage_result else 0
         confidence = leverage_result.confidence if leverage_result else 0
+        reason = leverage_result.reason if leverage_result else ""
         
         entry_order = trade_result.get('entry', {})
         sl_order = trade_result.get('stop_loss', {})
@@ -315,6 +320,9 @@ Reason: {reason}
 💵 <b>Position Value:</b> ${position_value:,.2f}
 💰 <b>Margin Used:</b> ${margin:,.2f}
 📈 <b>Confidence:</b> {confidence*100:.1f}%
+
+<b>LEVERAGE CALCULATION:</b>
+{reason}
 
 <b>ORDERS:</b>
 ✅ Entry: {'Filled' if entry_order.success else 'Failed'}

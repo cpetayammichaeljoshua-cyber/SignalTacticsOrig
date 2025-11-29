@@ -271,11 +271,15 @@ class TradingOrchestrator:
         try:
             trade_info = None
             if self.auto_trading_enabled and df is not None:
-                existing_position = await self.futures_executor.get_position()
-                if existing_position:
-                    logger.info(f"Existing {existing_position.side} position, skipping new trade")
-                else:
-                    trade_info = await self.execute_trade(signal, df)
+                try:
+                    existing_position = await self.futures_executor.get_position()
+                    if existing_position:
+                        logger.info(f"Existing {existing_position.side} position, skipping new trade")
+                    else:
+                        trade_info = await self.execute_trade(signal, df)
+                except Exception as trade_error:
+                    logger.warning(f"Could not execute trade: {trade_error}")
+                    trade_info = None
             
             success = await self.telegram_bot.send_signal(signal, trade_info)
             

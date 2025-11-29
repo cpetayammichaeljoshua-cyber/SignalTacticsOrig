@@ -102,16 +102,32 @@ class FuturesExecutor:
                 logger.error("CCXT async module not available")
                 return False
             
+            if not self.api_key or not self.api_secret:
+                logger.error("Binance API credentials not configured")
+                return False
+            
             self._ccxt_client = ccxt_async.binance({
                 'apiKey': self.api_key,
                 'secret': self.api_secret,
                 'sandbox': self.testnet,
                 'options': {
                     'defaultType': 'future',
-                    'adjustForTimeDifference': True
+                    'adjustForTimeDifference': True,
+                    'enableRateLimit': True,
+                    'recvWindow': 10000
                 },
+                'timeout': 30000,
                 'enableRateLimit': True
             })
+            
+            logger.info("Testing Binance API credentials...")
+            try:
+                balance = await self._ccxt_client.fetch_balance()
+                logger.info("Binance API credentials validated successfully")
+            except Exception as auth_error:
+                logger.error(f"Binance authentication failed: {auth_error}")
+                self._ccxt_client = None
+                return False
             
             await self._load_market_info()
             self._initialized = True

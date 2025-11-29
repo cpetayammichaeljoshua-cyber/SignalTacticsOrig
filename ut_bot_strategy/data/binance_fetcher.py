@@ -136,7 +136,7 @@ class BinanceDataFetcher:
             logger.error(f"Error fetching historical data: {e}")
             raise
     
-    def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> pd.DataFrame:
+    def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
         """Fetch data using CCXT library"""
         try:
             since = None
@@ -167,7 +167,7 @@ class BinanceDataFetcher:
             logger.error(f"CCXT fetch error: {e}")
             raise
     
-    def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> pd.DataFrame:
+    def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
         """Fetch data using python-binance library"""
         try:
             klines = self.client.get_klines(

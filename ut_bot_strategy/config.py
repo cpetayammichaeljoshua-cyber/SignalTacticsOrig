@@ -30,7 +30,7 @@ class STCConfig:
 @dataclass
 class LeverageConfig:
     """Auto-leverage trading configuration"""
-    enabled: bool = True
+    enabled: bool = False
     min_leverage: int = 1
     max_leverage: int = 20
     base_leverage: int = 5

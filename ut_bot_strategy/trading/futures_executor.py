@@ -504,13 +504,15 @@ class FuturesExecutor:
             logger.error(f"Failed to cancel orders: {e}")
             return False
     
-    async def close(self):
+    async def close(self) -> None:
         """Clean up resources"""
-        if self._ccxt_client:
-            try:
-                await self._ccxt_client.close()
-            except Exception as e:
-                logger.warning(f"Error closing CCXT client: {e}")
-            finally:
-                self._ccxt_client = None
-                logger.info("Futures executor closed")
+        try:
+            if self._ccxt_client:
+                try:
+                    await self._ccxt_client.close()
+                    logger.info("CCXT client closed")
+                except Exception as e:
+                    logger.warning(f"Error closing CCXT client: {e}")
+        finally:
+            self._ccxt_client = None
+            logger.info("Futures executor closed")

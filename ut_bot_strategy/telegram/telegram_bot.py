@@ -52,14 +52,17 @@ class TelegramSignalBot:
             self._session = aiohttp.ClientSession()
         return self._session
     
-    async def close(self):
-        """Close the aiohttp session"""
-        if self._session and not self._session.closed:
+    async def close(self) -> None:
+        """Close the aiohttp session and cleanup connectors"""
+        if self._session:
             try:
                 await self._session.close()
+                await asyncio.sleep(0.3)
                 logger.info("Telegram bot session closed")
             except Exception as e:
                 logger.warning(f"Error closing session: {e}")
+            finally:
+                self._session = None
     
     def _format_price(self, price: float) -> str:
         """Format price with appropriate decimals"""

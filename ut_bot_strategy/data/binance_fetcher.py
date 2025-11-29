@@ -315,14 +315,19 @@ class BinanceDataFetcher:
         
         return max(0, seconds_until)
     
-    def close(self):
+    async def close(self) -> None:
         """Close all clients and release resources"""
-        if self.ccxt_client:
-            try:
-                self.ccxt_client.close()
-                logger.info("CCXT client closed successfully")
-            except Exception as e:
-                logger.warning(f"Error closing CCXT client: {e}")
-        self.ccxt_client = None
-        self.client = None
-        logger.info("BinanceDataFetcher closed")
+        try:
+            if self.ccxt_client:
+                try:
+                    if hasattr(self.ccxt_client, 'close'):
+                        result = self.ccxt_client.close()
+                        if hasattr(result, '__await__'):
+                            await result
+                    logger.info("CCXT client closed successfully")
+                except Exception as e:
+                    logger.warning(f"Error closing CCXT client: {e}")
+        finally:
+            self.ccxt_client = None
+            self.client = None
+            logger.info("BinanceDataFetcher closed")

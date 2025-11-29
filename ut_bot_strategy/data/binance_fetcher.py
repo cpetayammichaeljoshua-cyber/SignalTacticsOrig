@@ -9,8 +9,9 @@ import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Callable, Any
+from typing import Optional, List, Dict, Callable, Any, Union
 import pandas as pd
+from pandas import DataFrame
 import numpy as np
 
 BINANCE_AVAILABLE = False
@@ -114,7 +115,7 @@ class BinanceDataFetcher:
                 logger.warning(f"Failed to initialize CCXT client: {e}")
                 self.ccxt_client = None
     
-    def fetch_historical_data(self, limit: int = 500, start_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+    def fetch_historical_data(self, limit: int = 500, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """
         Fetch historical OHLCV data
         
@@ -136,7 +137,7 @@ class BinanceDataFetcher:
             logger.error(f"Error fetching historical data: {e}")
             raise
     
-    def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+    def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """Fetch data using CCXT library"""
         try:
             since = None
@@ -167,7 +168,7 @@ class BinanceDataFetcher:
             logger.error(f"CCXT fetch error: {e}")
             raise
     
-    def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+    def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """Fetch data using python-binance library"""
         try:
             klines = self.client.get_klines(

@@ -102,6 +102,8 @@ class TelegramSignalBot:
         else:
             time_str = str(timestamp)
         
+        leverage_section = self._format_leverage_section(signal)
+        
         message = f"""
 {emoji} <b>UT BOT + STC SIGNAL</b> {emoji}
 
@@ -125,6 +127,10 @@ class TelegramSignalBot:
 <b>INDICATOR VALUES:</b>
 📉 <b>STC:</b> {stc_value:.2f}
 📏 <b>ATR:</b> {atr:.4f}
+
+━━━━━━━━━━━━━━━━━━━━━
+
+{leverage_section}
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -276,6 +282,22 @@ Reason: {reason}
         
         logger.error("Failed to send message after all retries")
         return False
+    
+    def _format_leverage_section(self, signal: Dict) -> str:
+        """Format leverage and margin details from signal"""
+        leverage_config = signal.get('leverage_config', {})
+        recommended_lev = leverage_config.get('base_leverage', 5)
+        auto_lev = signal.get('recommended_leverage', recommended_lev)
+        margin_type = leverage_config.get('margin_type', 'CROSS')
+        auto_margin = leverage_config.get('auto_add_margin', True)
+        
+        return f"""
+⚡ <b>LEVERAGE & MARGIN:</b>
+• Recommended: {recommended_lev}x
+• Auto Leverage: {auto_lev}x
+• Margin Type: {margin_type}
+• Cross Margin: {'✅ Enabled' if margin_type == 'CROSS' else '❌ Disabled'}
+• Auto Add Margin: {'✅ Active' if auto_margin else '❌ Inactive'}"""
     
     def _format_trade_execution(self, trade_info: Dict) -> str:
         """

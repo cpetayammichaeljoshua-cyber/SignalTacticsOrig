@@ -36,11 +36,13 @@ class LeverageConfig:
     base_leverage: int = 5
     risk_per_trade_percent: float = 2.0
     max_position_percent: float = 50.0
-    use_isolated_margin: bool = True
+    use_isolated_margin: bool = False
+    margin_type: str = "CROSS"
     auto_adjust_by_volatility: bool = True
     volatility_low_threshold: float = 1.0
     volatility_high_threshold: float = 3.0
     signal_strength_multiplier: bool = True
+    auto_add_margin: bool = True
 
 
 @dataclass

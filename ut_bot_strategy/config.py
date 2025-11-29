@@ -32,8 +32,8 @@ class LeverageConfig:
     """Auto-leverage trading configuration"""
     enabled: bool = False
     min_leverage: int = 1
-    max_leverage: int = 20
-    base_leverage: int = 5
+    max_leverage: int = 25
+    base_leverage: int = 12
     risk_per_trade_percent: float = 2.0
     max_position_percent: float = 50.0
     use_isolated_margin: bool = False

@@ -11,19 +11,24 @@ from typing import Tuple, Optional
 def calculate_wma(data: pd.Series, period: int) -> pd.Series:
     """Calculate Weighted Moving Average"""
     weights = np.arange(1, period + 1)
-    return data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
+    wma = data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
+    return wma.bfill().ffill().fillna(data)
 
 
 def calculate_hma(data: pd.Series, period: int) -> pd.Series:
-    """Calculate Hull Moving Average"""
-    half_period = period // 2
-    sqrt_period = int(np.sqrt(period))
+    """Calculate Hull Moving Average with NaN handling"""
+    half_period = max(1, period // 2)
+    sqrt_period = max(1, int(np.sqrt(period)))
     
     wma_half = calculate_wma(data, half_period)
     wma_full = calculate_wma(data, period)
     
     raw_hma = 2 * wma_half - wma_full
+    raw_hma = raw_hma.fillna(data)  # Fallback to close if calculation produces NaN
     hma = calculate_wma(raw_hma, sqrt_period)
+    
+    # Final NaN handling - forward fill then backward fill
+    hma = hma.ffill().bfill().fillna(data)
     
     return hma
 
@@ -86,16 +91,22 @@ class HullSuite:
         """
         color = pd.Series('gray', index=df.index)
         
+        # Fill any NaN values first
+        hma_34 = df['hma_34'].fillna(df['close'])
+        hma_55 = df['hma_55'].fillna(df['close'])
+        hma_89 = df['hma_89'].fillna(df['close'])
+        hma_200 = df['hma_200'].fillna(df['close'])
+        
         # Uptrend: HMA 34 > HMA 55 > HMA 89 > HMA 200
-        uptrend = (df['hma_34'] > df['hma_55']) & \
-                  (df['hma_55'] > df['hma_89']) & \
-                  (df['hma_89'] > df['hma_200'])
+        uptrend = (hma_34 > hma_55) & \
+                  (hma_55 > hma_89) & \
+                  (hma_89 > hma_200)
         color[uptrend] = 'green'
         
         # Downtrend: HMA 34 < HMA 55 < HMA 89 < HMA 200
-        downtrend = (df['hma_34'] < df['hma_55']) & \
-                    (df['hma_55'] < df['hma_89']) & \
-                    (df['hma_89'] < df['hma_200'])
+        downtrend = (hma_34 < hma_55) & \
+                    (hma_55 < hma_89) & \
+                    (hma_89 < hma_200)
         color[downtrend] = 'red'
         
         return color
@@ -122,14 +133,20 @@ class HullSuite:
             return 0.0
         
         # Calculate trend strength based on HMA separation
-        hma_34 = latest.get('hma_34', 0)
-        hma_200 = latest.get('hma_200', 0)
-        price = latest.get('close', 0)
+        hma_34 = float(latest.get('hma_34', 0)) if not pd.isna(latest.get('hma_34')) else 0.0
+        hma_200 = float(latest.get('hma_200', 0)) if not pd.isna(latest.get('hma_200')) else 0.0
+        price = float(latest.get('close', 0))
         
+        # Use close as fallback if HMA is 0
         if hma_200 == 0:
+            hma_200 = price
+        if hma_34 == 0:
+            hma_34 = price
+        
+        if hma_200 == 0 or price == 0:
             return 0.0
         
         separation_pct = abs(hma_34 - hma_200) / hma_200
         strength = min(separation_pct / 0.05, 1.0)  # Normalize to 1.0
         
-        return strength
+        return float(strength)

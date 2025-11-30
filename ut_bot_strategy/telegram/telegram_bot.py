@@ -308,18 +308,29 @@ Reason: {reason}
     def _format_hull_section(self, signal: Dict) -> str:
         """Format Hull Suite indicator details"""
         hull_color = signal.get('hull_color', 'gray')
-        hull_strength = signal.get('hull_strength', 0)
-        hull_support = signal.get('hull_support', 0)
-        hull_resistance = signal.get('hull_resistance', 0)
+        hull_strength = float(signal.get('hull_strength', 0))
+        hull_support = float(signal.get('hull_support', 0)) if signal.get('hull_support') is not None else 0
+        hull_resistance = float(signal.get('hull_resistance', 0)) if signal.get('hull_resistance') is not None else 0
         
         color_emoji = "🟢" if hull_color == "green" else "🔴" if hull_color == "red" else "⚫"
+        
+        # Handle NaN/invalid values with try-except
+        try:
+            support_str = f"${hull_support:.4f}" if hull_support > 0 and hull_support == hull_support else "$0.0000"
+        except (ValueError, TypeError):
+            support_str = "$0.0000"
+        
+        try:
+            resistance_str = f"${hull_resistance:.4f}" if hull_resistance > 0 and hull_resistance == hull_resistance else "$0.0000"
+        except (ValueError, TypeError):
+            resistance_str = "$0.0000"
         
         return f"""
 📊 <b>HULL SUITE CONFIRMATION:</b>
 • Trend: {color_emoji} {hull_color.upper()}
 • Strength: {hull_strength*100:.1f}%
-• Support (HMA55): ${hull_support:.4f}
-• Resistance (HMA200): ${hull_resistance:.4f}"""
+• Support (HMA55): {support_str}
+• Resistance (HMA200): {resistance_str}"""
     
     def _format_trade_execution(self, trade_info: Dict) -> str:
         """

@@ -17,7 +17,6 @@ import numpy as np
 
 from ..indicators.ut_bot_alerts import UTBotAlerts
 from ..indicators.stc_indicator import STCIndicator
-from ..indicators.hull_suite import HullSuite
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +70,6 @@ class SignalEngine:
             slow_length=stc_slow_length
         )
         
-        self.hull_suite = HullSuite(
-            hma_200_length=200,
-            hma_89_length=89,
-            hma_55_length=55,
-            hma_34_length=34
-        )
-        
         self.swing_lookback = swing_lookback
         self.risk_reward_ratio = risk_reward_ratio
         self.min_risk_percent = min_risk_percent
@@ -101,9 +93,7 @@ class SignalEngine:
         
         df_combined = self.stc.calculate(df_ut)
         
-        df_hull = self.hull_suite.calculate(df_combined)
-        
-        return df_hull
+        return df_combined
     
     def find_swing_high(self, df: pd.DataFrame, lookback: Optional[int] = None) -> float:
         """
@@ -334,7 +324,6 @@ class SignalEngine:
             risk_percent = self.calculate_risk_percent(entry_price, stop_loss)
             
             if self.min_risk_percent <= risk_percent <= self.max_risk_percent:
-                hull_strength = self.hull_suite.get_signal_strength(df_calculated)
                 signal = {
                     'type': 'LONG',
                     'symbol': 'ETH/USDT',
@@ -352,11 +341,6 @@ class SignalEngine:
                     'ut_trailing_stop': float(latest.get('trailing_stop', 0)),
                     'atr': float(latest.get('atr', 0)),
                     'reason': long_check['reason'],
-                    'hull_trend': latest.get('hull_trend', 0),
-                    'hull_color': latest.get('hull_color', 'gray'),
-                    'hull_strength': hull_strength,
-                    'hull_support': float(latest.get('hma_55', 0)),
-                    'hull_resistance': float(latest.get('hma_200', 0)),
                     'recommended_leverage': 16,
                     'leverage_config': {
                         'base_leverage': 12,
@@ -373,7 +357,6 @@ class SignalEngine:
             risk_percent = self.calculate_risk_percent(entry_price, stop_loss)
             
             if self.min_risk_percent <= risk_percent <= self.max_risk_percent:
-                hull_strength = self.hull_suite.get_signal_strength(df_calculated)
                 signal = {
                     'type': 'SHORT',
                     'symbol': 'ETH/USDT',
@@ -391,11 +374,6 @@ class SignalEngine:
                     'ut_trailing_stop': float(latest.get('trailing_stop', 0)),
                     'atr': float(latest.get('atr', 0)),
                     'reason': short_check['reason'],
-                    'hull_trend': latest.get('hull_trend', 0),
-                    'hull_color': latest.get('hull_color', 'gray'),
-                    'hull_strength': hull_strength,
-                    'hull_support': float(latest.get('hma_55', 0)),
-                    'hull_resistance': float(latest.get('hma_200', 0)),
                     'recommended_leverage': 16,
                     'leverage_config': {
                         'base_leverage': 12,

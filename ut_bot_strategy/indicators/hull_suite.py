@@ -87,66 +87,53 @@ class HullSuite:
     def _get_hull_color(self, df: pd.DataFrame) -> pd.Series:
         """
         Determine Hull Suite color (trend direction)
-        Green = Uptrend, Red = Downtrend, Gray = Neutral
+        Always returns GREEN or RED based on fast vs slow HMA comparison
         """
-        color = pd.Series('gray', index=df.index)
-        
         # Fill any NaN values first
-        hma_34 = df['hma_34'].fillna(df['close'])
-        hma_55 = df['hma_55'].fillna(df['close'])
-        hma_89 = df['hma_89'].fillna(df['close'])
-        hma_200 = df['hma_200'].fillna(df['close'])
+        hma_34 = df['hma_34'].bfill().ffill().fillna(df['close'])
+        hma_200 = df['hma_200'].bfill().ffill().fillna(df['close'])
+        close_price = df['close']
         
-        # Uptrend: HMA 34 > HMA 55 > HMA 89 > HMA 200
-        uptrend = (hma_34 > hma_55) & \
-                  (hma_55 > hma_89) & \
-                  (hma_89 > hma_200)
-        color[uptrend] = 'green'
-        
-        # Downtrend: HMA 34 < HMA 55 < HMA 89 < HMA 200
-        downtrend = (hma_34 < hma_55) & \
-                    (hma_55 < hma_89) & \
-                    (hma_89 < hma_200)
-        color[downtrend] = 'red'
+        # Simple, reliable logic: Compare fast HMA to slow HMA
+        # GREEN if fast (34) > slow (200), RED otherwise
+        # This guarantees no GRAY - always a definite direction
+        color = pd.Series('green', index=df.index)
+        color[hma_34 <= hma_200] = 'red'
         
         return color
     
     def _get_hull_trend(self, df: pd.DataFrame) -> pd.Series:
-        """Get Hull trend direction: 1 = up, -1 = down, 0 = neutral"""
-        trend = pd.Series(0, index=df.index, dtype=int)
-        trend[df['hull_color'] == 'green'] = 1
+        """Get Hull trend direction: 1 = up, -1 = down (always one or other)"""
+        trend = pd.Series(1, index=df.index, dtype=int)  # Default to 1 (GREEN)
         trend[df['hull_color'] == 'red'] = -1
         return trend
     
     def get_signal_strength(self, df: pd.DataFrame) -> float:
         """
         Get Hull Suite signal strength (0-1)
-        Higher values indicate stronger trend
+        Based on HMA34 vs HMA200 separation - always returns value (never 0)
         """
         if len(df) < 1:
-            return 0.0
+            return 0.5
         
         latest = df.iloc[-1]
-        color = latest.get('hull_color', 'gray')
-        
-        if color == 'gray':
-            return 0.0
         
         # Calculate trend strength based on HMA separation
-        hma_34 = float(latest.get('hma_34', 0)) if not pd.isna(latest.get('hma_34')) else 0.0
-        hma_200 = float(latest.get('hma_200', 0)) if not pd.isna(latest.get('hma_200')) else 0.0
+        hma_34 = float(latest.get('hma_34', 0)) if latest.get('hma_34') is not None else 0.0
+        hma_200 = float(latest.get('hma_200', 0)) if latest.get('hma_200') is not None else 0.0
         price = float(latest.get('close', 0))
         
         # Use close as fallback if HMA is 0
-        if hma_200 == 0:
+        if hma_200 == 0 or hma_200 != hma_200:  # Check for NaN with != comparison
             hma_200 = price
-        if hma_34 == 0:
+        if hma_34 == 0 or hma_34 != hma_34:
             hma_34 = price
         
         if hma_200 == 0 or price == 0:
-            return 0.0
+            return 0.5  # Default to 50% strength if no data
         
         separation_pct = abs(hma_34 - hma_200) / hma_200
         strength = min(separation_pct / 0.05, 1.0)  # Normalize to 1.0
         
-        return float(strength)
+        # Ensure minimum 15% strength for visible signals
+        return max(float(strength), 0.15)

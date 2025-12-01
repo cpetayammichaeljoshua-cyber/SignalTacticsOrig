@@ -272,7 +272,8 @@ class SignalEngine:
             conditions['ut_sell_signal'] or conditions['ut_below_stop'],
             conditions['stc_red'],
             conditions['stc_down'],
-            conditions['stc_above_25']
+            conditions['stc_above_25'],
+            conditions['hull_red']
         ])
         
         primary_signal = conditions['ut_sell_signal']
@@ -297,6 +298,8 @@ class SignalEngine:
                 failed.append('STC not pointing up')
             if not conditions.get('stc_below_75'):
                 failed.append('STC above 75')
+            if not conditions.get('hull_green'):
+                failed.append('Hull Suite not green')
         else:
             if not conditions.get('ut_sell_signal'):
                 failed.append('No UT Bot SELL signal')
@@ -306,6 +309,8 @@ class SignalEngine:
                 failed.append('STC not pointing down')
             if not conditions.get('stc_above_25'):
                 failed.append('STC below 25')
+            if not conditions.get('hull_red'):
+                failed.append('Hull Suite not red')
         
         if not failed:
             return 'All conditions met'

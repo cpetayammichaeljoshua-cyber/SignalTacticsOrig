@@ -180,6 +180,7 @@ class SignalEngine:
         2. STC is GREEN color
         3. STC is pointing UP
         4. STC value is below 75
+        5. HULL SUITE is GREEN (NEW CONFIRMATION)
         
         Args:
             df: DataFrame with calculated indicators
@@ -199,19 +200,23 @@ class SignalEngine:
         stc_color = latest.get('stc_color', 'neutral')
         stc_slope = latest.get('stc_slope', 'neutral')
         
+        hull_color = latest.get('hull_color', 'red')
+        
         conditions = {
             'ut_buy_signal': bool(ut_buy_signal),
             'ut_above_stop': bool(ut_above_stop),
             'stc_green': stc_color == 'green',
             'stc_up': stc_slope == 'up',
-            'stc_below_75': float(stc_value) < 75 if not pd.isna(stc_value) else False
+            'stc_below_75': float(stc_value) < 75 if not pd.isna(stc_value) else False,
+            'hull_green': hull_color == 'green'
         }
         
         all_conditions_met = all([
             conditions['ut_buy_signal'] or conditions['ut_above_stop'],
             conditions['stc_green'],
             conditions['stc_up'],
-            conditions['stc_below_75']
+            conditions['stc_below_75'],
+            conditions['hull_green']
         ])
         
         primary_signal = conditions['ut_buy_signal']
@@ -232,6 +237,7 @@ class SignalEngine:
         2. STC is RED color
         3. STC is pointing DOWN
         4. STC value is above 25
+        5. HULL SUITE is RED (NEW CONFIRMATION)
         
         Args:
             df: DataFrame with calculated indicators
@@ -251,12 +257,15 @@ class SignalEngine:
         stc_color = latest.get('stc_color', 'neutral')
         stc_slope = latest.get('stc_slope', 'neutral')
         
+        hull_color = latest.get('hull_color', 'green')
+        
         conditions = {
             'ut_sell_signal': bool(ut_sell_signal),
             'ut_below_stop': bool(ut_below_stop),
             'stc_red': stc_color == 'red',
             'stc_down': stc_slope == 'down',
-            'stc_above_25': float(stc_value) > 25 if not pd.isna(stc_value) else False
+            'stc_above_25': float(stc_value) > 25 if not pd.isna(stc_value) else False,
+            'hull_red': hull_color == 'red'
         }
         
         all_conditions_met = all([

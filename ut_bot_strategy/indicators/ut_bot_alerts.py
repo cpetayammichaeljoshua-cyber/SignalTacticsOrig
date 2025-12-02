@@ -11,26 +11,27 @@ Settings:
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, Any
 
 Series = pd.Series
 DataFrame = pd.DataFrame
 
 
-def calculate_atr(high: Series, low: Series, close: Series, period: int = 10) -> Series:
+def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 10) -> pd.Series:
     """Calculate Average True Range (ATR)"""
     high_low = high - low
     high_close = np.abs(high - close.shift(1))
     low_close = np.abs(low - close.shift(1))
     
-    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = true_range.rolling(window=period).mean()
+    true_range_df = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range: pd.Series = true_range_df.max(axis=1)
+    atr: pd.Series = true_range.rolling(window=period).mean()
     
     return atr
 
 
-def calculate_heikin_ashi(open_price: Series, high: Series, 
-                          low: Series, close: Series) -> Tuple[Series, Series, Series, Series]:
+def calculate_heikin_ashi(open_price: pd.Series, high: pd.Series, 
+                          low: pd.Series, close: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     """Calculate Heikin Ashi candles"""
     ha_close = (open_price + high + low + close) / 4
     
@@ -40,15 +41,18 @@ def calculate_heikin_ashi(open_price: Series, high: Series,
     for i in range(1, len(open_price)):
         ha_open.iloc[i] = (ha_open.iloc[i-1] + ha_close.iloc[i-1]) / 2
     
-    ha_high = pd.concat([high, ha_open, ha_close], axis=1).max(axis=1)
-    ha_low = pd.concat([low, ha_open, ha_close], axis=1).min(axis=1)
+    ha_high_df = pd.concat([high, ha_open, ha_close], axis=1)
+    ha_low_df = pd.concat([low, ha_open, ha_close], axis=1)
+    ha_high: pd.Series = ha_high_df.max(axis=1)
+    ha_low: pd.Series = ha_low_df.min(axis=1)
     
     return ha_open, ha_high, ha_low, ha_close
 
 
-def calculate_ema(data: Series, period: int) -> Series:
+def calculate_ema(data: pd.Series, period: int) -> pd.Series:
     """Calculate Exponential Moving Average"""
-    return data.ewm(span=period, adjust=False).mean()
+    result: pd.Series = data.ewm(span=period, adjust=False).mean()
+    return result
 
 
 class UTBotAlerts:
@@ -92,17 +96,22 @@ class UTBotAlerts:
         """
         result = df.copy()
         
+        open_series: pd.Series = df['open']
+        high_series: pd.Series = df['high']
+        low_series: pd.Series = df['low']
+        close_series: pd.Series = df['close']
+        
         if self.use_heikin_ashi:
             ha_open, ha_high, ha_low, ha_close = calculate_heikin_ashi(
-                df['open'], df['high'], df['low'], df['close']
+                open_series, high_series, low_series, close_series
             )
             src = ha_close
             high = ha_high
             low = ha_low
         else:
-            src = df['close']
-            high = df['high']
-            low = df['low']
+            src = close_series
+            high = high_series
+            low = low_series
         
         xatr = calculate_atr(high, low, src, self.atr_period)
         n_loss = self.key_value * xatr
@@ -148,7 +157,7 @@ class UTBotAlerts:
                 else:
                     position.iloc[i] = prev_pos
         
-        ema = calculate_ema(src, self.ema_period)
+        ema: pd.Series = calculate_ema(src, self.ema_period)
         above = (src > trailing_stop) & (src.shift(1) <= trailing_stop.shift(1))
         below = (src < trailing_stop) & (src.shift(1) >= trailing_stop.shift(1))
         

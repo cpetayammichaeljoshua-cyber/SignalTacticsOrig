@@ -11,12 +11,13 @@ Modified settings as per strategy requirements:
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Any
 
 
 def calculate_ema(data: pd.Series, period: int) -> pd.Series:
     """Calculate Exponential Moving Average"""
-    return data.ewm(span=period, adjust=False).mean()
+    result: pd.Series = data.ewm(span=period, adjust=False).mean()
+    return result
 
 
 class STCIndicator:
@@ -60,8 +61,8 @@ class STCIndicator:
         Returns:
             Tuple of (lowest, highest) over the period
         """
-        lowest = data.rolling(window=length).min()
-        highest = data.rolling(window=length).max()
+        lowest: pd.Series = data.rolling(window=length).min()
+        highest: pd.Series = data.rolling(window=length).max()
         return lowest, highest
     
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -80,7 +81,7 @@ class STCIndicator:
             - stc_prev: Previous STC value
         """
         result = df.copy()
-        close = df['close']
+        close: pd.Series = df['close']
         
         macd_diff = self._calculate_macd_diff(close)
         

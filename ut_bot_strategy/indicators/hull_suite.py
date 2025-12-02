@@ -5,20 +5,21 @@ Combines Hull Moving Averages for trend confirmation and support/resistance
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, Any
 
 DataFrame = pd.DataFrame
 Series = pd.Series
 
 
-def calculate_wma(data: Series, period: int) -> Series:
+def calculate_wma(data: pd.Series, period: int) -> pd.Series:
     """Calculate Weighted Moving Average"""
     weights = np.arange(1, period + 1)
-    wma = data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
-    return wma.bfill().ffill().fillna(data)
+    wma_raw = data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
+    wma: pd.Series = wma_raw.bfill().ffill().fillna(data)
+    return wma
 
 
-def calculate_hma(data: Series, period: int) -> Series:
+def calculate_hma(data: pd.Series, period: int) -> pd.Series:
     """Calculate Hull Moving Average with NaN handling"""
     half_period = max(1, period // 2)
     sqrt_period = max(1, int(np.sqrt(period)))
@@ -27,11 +28,10 @@ def calculate_hma(data: Series, period: int) -> Series:
     wma_full = calculate_wma(data, period)
     
     raw_hma = 2 * wma_half - wma_full
-    raw_hma = raw_hma.fillna(data)  # Fallback to close if calculation produces NaN
-    hma = calculate_wma(raw_hma, sqrt_period)
+    raw_hma = raw_hma.fillna(data)
+    hma_raw = calculate_wma(raw_hma, sqrt_period)
     
-    # Final NaN handling - forward fill then backward fill
-    hma = hma.ffill().bfill().fillna(data)
+    hma: pd.Series = hma_raw.ffill().bfill().fillna(data)
     
     return hma
 
@@ -71,9 +71,8 @@ class HullSuite:
             DataFrame with added Hull Suite columns
         """
         df = df.copy()
-        close = df['close']
+        close: pd.Series = df['close']
         
-        # Calculate Hull Moving Averages
         df['hma_200'] = calculate_hma(close, self.hma_200_length)
         df['hma_89'] = calculate_hma(close, self.hma_89_length)
         df['hma_55'] = calculate_hma(close, self.hma_55_length)

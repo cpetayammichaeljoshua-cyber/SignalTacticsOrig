@@ -175,8 +175,8 @@ class FuturesExecutor:
             if not self._ccxt_client:
                 return {'total': 0.0, 'free': 0.0, 'used': 0.0}
                 
-            balance: Dict[str, Any] = await self._ccxt_client.fetch_balance()
-            usdt_balance: Dict[str, Any] = balance.get('USDT', {})
+            balance_data = await self._ccxt_client.fetch_balance()
+            usdt_balance = balance_data.get('USDT', {}) if isinstance(balance_data, dict) else {}
             
             return {
                 'total': float(usdt_balance.get('total', 0)),
@@ -231,7 +231,7 @@ class FuturesExecutor:
             if not self._ccxt_client:
                 return None
                 
-            positions: List[Dict[str, Any]] = await self._ccxt_client.fetch_positions([self.symbol])
+            positions = await self._ccxt_client.fetch_positions([self.symbol])
             for pos in positions:
                 if pos['symbol'] == self.symbol and float(pos.get('contracts', 0)) != 0:
                     return PositionInfo(
@@ -282,11 +282,12 @@ class FuturesExecutor:
                     message=f"Quantity {quantity} below minimum {self.min_quantity}"
                 )
             
-            params: Dict[str, Any] = {'reduceOnly': reduce_only} if reduce_only else {}
+            params = {'reduceOnly': reduce_only} if reduce_only else {}
+            order_side = 'buy' if side.upper() == 'BUY' else 'sell'
             
-            order: Dict[str, Any] = await self._ccxt_client.create_market_order(
+            order = await self._ccxt_client.create_market_order(
                 symbol=self.symbol,
-                side=side.lower(),
+                side=order_side,
                 amount=quantity,
                 params=params
             )
@@ -342,11 +343,13 @@ class FuturesExecutor:
             quantity = self._round_quantity(quantity)
             stop_price = self._round_price(stop_price)
             
-            order: Dict[str, Any] = await self._ccxt_client.create_order(
+            order_side = 'buy' if side.upper() == 'BUY' else 'sell'
+            order = await self._ccxt_client.create_order(
                 symbol=self.symbol,
                 type='STOP_MARKET',
-                side=side.lower(),
+                side=order_side,
                 amount=quantity,
+                price=None,
                 params={
                     'stopPrice': stop_price,
                     'reduceOnly': True
@@ -404,11 +407,13 @@ class FuturesExecutor:
             quantity = self._round_quantity(quantity)
             take_profit_price = self._round_price(take_profit_price)
             
-            order: Dict[str, Any] = await self._ccxt_client.create_order(
+            order_side = 'buy' if side.upper() == 'BUY' else 'sell'
+            order = await self._ccxt_client.create_order(
                 symbol=self.symbol,
                 type='TAKE_PROFIT_MARKET',
-                side=side.lower(),
+                side=order_side,
                 amount=quantity,
+                price=None,
                 params={
                     'stopPrice': take_profit_price,
                     'reduceOnly': True

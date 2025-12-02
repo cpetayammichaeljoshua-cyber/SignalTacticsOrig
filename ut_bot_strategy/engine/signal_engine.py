@@ -180,7 +180,6 @@ class SignalEngine:
         2. STC is GREEN color
         3. STC is pointing UP
         4. STC value is below 75
-        5. HULL SUITE is GREEN (NEW CONFIRMATION)
         
         Args:
             df: DataFrame with calculated indicators
@@ -200,23 +199,19 @@ class SignalEngine:
         stc_color = latest.get('stc_color', 'neutral')
         stc_slope = latest.get('stc_slope', 'neutral')
         
-        hull_color = latest.get('hull_color', 'red')
-        
         conditions = {
             'ut_buy_signal': bool(ut_buy_signal),
             'ut_above_stop': bool(ut_above_stop),
             'stc_green': stc_color == 'green',
             'stc_up': stc_slope == 'up',
-            'stc_below_75': float(stc_value) < 75 if not pd.isna(stc_value) else False,
-            'hull_green': hull_color == 'green'
+            'stc_below_75': float(stc_value) < 75 if not pd.isna(stc_value) else False
         }
         
         all_conditions_met = all([
             conditions['ut_buy_signal'] or conditions['ut_above_stop'],
             conditions['stc_green'],
             conditions['stc_up'],
-            conditions['stc_below_75'],
-            conditions['hull_green']
+            conditions['stc_below_75']
         ])
         
         primary_signal = conditions['ut_buy_signal']
@@ -237,7 +232,6 @@ class SignalEngine:
         2. STC is RED color
         3. STC is pointing DOWN
         4. STC value is above 25
-        5. HULL SUITE is RED (NEW CONFIRMATION)
         
         Args:
             df: DataFrame with calculated indicators
@@ -257,23 +251,19 @@ class SignalEngine:
         stc_color = latest.get('stc_color', 'neutral')
         stc_slope = latest.get('stc_slope', 'neutral')
         
-        hull_color = latest.get('hull_color', 'green')
-        
         conditions = {
             'ut_sell_signal': bool(ut_sell_signal),
             'ut_below_stop': bool(ut_below_stop),
             'stc_red': stc_color == 'red',
             'stc_down': stc_slope == 'down',
-            'stc_above_25': float(stc_value) > 25 if not pd.isna(stc_value) else False,
-            'hull_red': hull_color == 'red'
+            'stc_above_25': float(stc_value) > 25 if not pd.isna(stc_value) else False
         }
         
         all_conditions_met = all([
             conditions['ut_sell_signal'] or conditions['ut_below_stop'],
             conditions['stc_red'],
             conditions['stc_down'],
-            conditions['stc_above_25'],
-            conditions['hull_red']
+            conditions['stc_above_25']
         ])
         
         primary_signal = conditions['ut_sell_signal']
@@ -298,8 +288,6 @@ class SignalEngine:
                 failed.append('STC not pointing up')
             if not conditions.get('stc_below_75'):
                 failed.append('STC above 75')
-            if not conditions.get('hull_green'):
-                failed.append('Hull Suite not green')
         else:
             if not conditions.get('ut_sell_signal'):
                 failed.append('No UT Bot SELL signal')
@@ -309,8 +297,6 @@ class SignalEngine:
                 failed.append('STC not pointing down')
             if not conditions.get('stc_above_25'):
                 failed.append('STC below 25')
-            if not conditions.get('hull_red'):
-                failed.append('Hull Suite not red')
         
         if not failed:
             return 'All conditions met'
@@ -334,12 +320,7 @@ class SignalEngine:
         
         latest = df_calculated.iloc[-1]
         index_value = df_calculated.index[-1]
-        if isinstance(index_value, datetime):
-            current_time = index_value
-        elif hasattr(index_value, 'to_pydatetime'):
-            current_time = index_value.to_pydatetime()
-        else:
-            current_time = datetime.now()
+        current_time = index_value if isinstance(index_value, datetime) else datetime.fromtimestamp(index_value.timestamp()) if hasattr(index_value, 'timestamp') else datetime.now()
         entry_price = float(latest['close'])
         
         long_check = self.check_long_conditions(df_calculated)

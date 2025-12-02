@@ -5,18 +5,14 @@ Combines Hull Moving Averages for trend confirmation and support/resistance
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, Union, Any
-
-DataFrame = pd.DataFrame
-Series = pd.Series
+from typing import Tuple, Optional
 
 
 def calculate_wma(data: pd.Series, period: int) -> pd.Series:
     """Calculate Weighted Moving Average"""
     weights = np.arange(1, period + 1)
-    wma_raw = data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
-    wma: pd.Series = wma_raw.bfill().ffill().fillna(data)
-    return wma
+    wma = data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
+    return wma.bfill().ffill().fillna(data)
 
 
 def calculate_hma(data: pd.Series, period: int) -> pd.Series:
@@ -28,10 +24,11 @@ def calculate_hma(data: pd.Series, period: int) -> pd.Series:
     wma_full = calculate_wma(data, period)
     
     raw_hma = 2 * wma_half - wma_full
-    raw_hma = raw_hma.fillna(data)
-    hma_raw = calculate_wma(raw_hma, sqrt_period)
+    raw_hma = raw_hma.fillna(data)  # Fallback to close if calculation produces NaN
+    hma = calculate_wma(raw_hma, sqrt_period)
     
-    hma: pd.Series = hma_raw.ffill().bfill().fillna(data)
+    # Final NaN handling - forward fill then backward fill
+    hma = hma.ffill().bfill().fillna(data)
     
     return hma
 
@@ -60,7 +57,7 @@ class HullSuite:
         self.hma_55_length = hma_55_length
         self.hma_34_length = hma_34_length
     
-    def calculate(self, df: DataFrame) -> DataFrame:
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate Hull Suite indicators
         
@@ -71,8 +68,9 @@ class HullSuite:
             DataFrame with added Hull Suite columns
         """
         df = df.copy()
-        close: pd.Series = df['close']
+        close = df['close']
         
+        # Calculate Hull Moving Averages
         df['hma_200'] = calculate_hma(close, self.hma_200_length)
         df['hma_89'] = calculate_hma(close, self.hma_89_length)
         df['hma_55'] = calculate_hma(close, self.hma_55_length)
@@ -86,7 +84,7 @@ class HullSuite:
         
         return df
     
-    def _get_hull_color(self, df: DataFrame) -> Series:
+    def _get_hull_color(self, df: pd.DataFrame) -> pd.Series:
         """
         Determine Hull Suite color (trend direction)
         Always returns GREEN or RED based on fast vs slow HMA comparison
@@ -104,13 +102,13 @@ class HullSuite:
         
         return color
     
-    def _get_hull_trend(self, df: DataFrame) -> Series:
+    def _get_hull_trend(self, df: pd.DataFrame) -> pd.Series:
         """Get Hull trend direction: 1 = up, -1 = down (always one or other)"""
         trend = pd.Series(1, index=df.index, dtype=int)  # Default to 1 (GREEN)
         trend[df['hull_color'] == 'red'] = -1
         return trend
     
-    def get_signal_strength(self, df: DataFrame) -> float:
+    def get_signal_strength(self, df: pd.DataFrame) -> float:
         """
         Get Hull Suite signal strength (0-1)
         Based on HMA34 vs HMA200 separation - always returns value (never 0)

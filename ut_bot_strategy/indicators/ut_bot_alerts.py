@@ -11,10 +11,7 @@ Settings:
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, Union, Any
-
-Series = pd.Series
-DataFrame = pd.DataFrame
+from typing import Tuple, Optional
 
 
 def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 10) -> pd.Series:
@@ -23,9 +20,8 @@ def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int
     high_close = np.abs(high - close.shift(1))
     low_close = np.abs(low - close.shift(1))
     
-    true_range_df = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range: pd.Series = true_range_df.max(axis=1)
-    atr: pd.Series = true_range.rolling(window=period).mean()
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = true_range.rolling(window=period).mean()
     
     return atr
 
@@ -41,18 +37,15 @@ def calculate_heikin_ashi(open_price: pd.Series, high: pd.Series,
     for i in range(1, len(open_price)):
         ha_open.iloc[i] = (ha_open.iloc[i-1] + ha_close.iloc[i-1]) / 2
     
-    ha_high_df = pd.concat([high, ha_open, ha_close], axis=1)
-    ha_low_df = pd.concat([low, ha_open, ha_close], axis=1)
-    ha_high: pd.Series = ha_high_df.max(axis=1)
-    ha_low: pd.Series = ha_low_df.min(axis=1)
+    ha_high = pd.concat([high, ha_open, ha_close], axis=1).max(axis=1)
+    ha_low = pd.concat([low, ha_open, ha_close], axis=1).min(axis=1)
     
     return ha_open, ha_high, ha_low, ha_close
 
 
 def calculate_ema(data: pd.Series, period: int) -> pd.Series:
     """Calculate Exponential Moving Average"""
-    result: pd.Series = data.ewm(span=period, adjust=False).mean()
-    return result
+    return data.ewm(span=period, adjust=False).mean()
 
 
 class UTBotAlerts:
@@ -78,7 +71,7 @@ class UTBotAlerts:
         self.use_heikin_ashi = use_heikin_ashi
         self.ema_period = ema_period
     
-    def calculate(self, df: DataFrame) -> DataFrame:
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate UT Bot Alerts signals
         
@@ -96,22 +89,17 @@ class UTBotAlerts:
         """
         result = df.copy()
         
-        open_series: pd.Series = df['open']
-        high_series: pd.Series = df['high']
-        low_series: pd.Series = df['low']
-        close_series: pd.Series = df['close']
-        
         if self.use_heikin_ashi:
             ha_open, ha_high, ha_low, ha_close = calculate_heikin_ashi(
-                open_series, high_series, low_series, close_series
+                df['open'], df['high'], df['low'], df['close']
             )
             src = ha_close
             high = ha_high
             low = ha_low
         else:
-            src = close_series
-            high = high_series
-            low = low_series
+            src = df['close']
+            high = df['high']
+            low = df['low']
         
         xatr = calculate_atr(high, low, src, self.atr_period)
         n_loss = self.key_value * xatr
@@ -157,7 +145,7 @@ class UTBotAlerts:
                 else:
                     position.iloc[i] = prev_pos
         
-        ema: pd.Series = calculate_ema(src, self.ema_period)
+        ema = calculate_ema(src, self.ema_period)
         above = (src > trailing_stop) & (src.shift(1) <= trailing_stop.shift(1))
         below = (src < trailing_stop) & (src.shift(1) >= trailing_stop.shift(1))
         

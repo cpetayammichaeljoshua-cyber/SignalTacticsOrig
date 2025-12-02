@@ -140,9 +140,6 @@ class BinanceDataFetcher:
     def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """Fetch data using CCXT library"""
         try:
-            if self.ccxt_client is None:
-                raise Exception("CCXT client not initialized")
-            
             since = None
             if start_time:
                 since = int(start_time.timestamp() * 1000)
@@ -154,15 +151,14 @@ class BinanceDataFetcher:
                 limit=limit
             )
             
-            df = pd.DataFrame(ohlcv)
-            df.columns = pd.Index(['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
             
             for col in ['open', 'high', 'low', 'close', 'volume']:
                 df[col] = df[col].astype(float)
             
-            self._cache = df.copy()
+            self._cache = df
             self._cache_time = datetime.now()
             
             logger.info(f"Fetched {len(df)} candles via CCXT")
@@ -175,17 +171,13 @@ class BinanceDataFetcher:
     def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """Fetch data using python-binance library"""
         try:
-            if self.client is None:
-                raise Exception("Binance client not initialized")
-            
             klines = self.client.get_klines(
                 symbol=self.symbol,
                 interval=self.interval,
                 limit=limit
             )
             
-            df = pd.DataFrame(klines)
-            df.columns = pd.Index([
+            df = pd.DataFrame(klines, columns=[
                 'timestamp', 'open', 'high', 'low', 'close', 'volume',
                 'close_time', 'quote_volume', 'trades', 'taker_buy_base',
                 'taker_buy_quote', 'ignore'
@@ -198,7 +190,7 @@ class BinanceDataFetcher:
             for col in df.columns:
                 df[col] = df[col].astype(float)
             
-            self._cache = df.copy()
+            self._cache = df
             self._cache_time = datetime.now()
             
             logger.info(f"Fetched {len(df)} candles via python-binance")
@@ -220,7 +212,7 @@ class BinanceDataFetcher:
         """
         try:
             df = self.fetch_historical_data(limit=2)
-            if df is not None and len(df) >= 2:
+            if len(df) >= 2:
                 latest = df.iloc[-2]
                 return {
                     'timestamp': df.index[-2],
@@ -238,11 +230,10 @@ class BinanceDataFetcher:
     def get_current_price(self) -> Optional[float]:
         """Get current market price"""
         try:
-            if self.ccxt_client is not None:
+            if self.ccxt_client:
                 ticker = self.ccxt_client.fetch_ticker(self.symbol.replace('USDT', '/USDT'))
-                last_price = ticker.get('last')
-                return float(last_price) if last_price is not None else None
-            elif self.client is not None:
+                return float(ticker['last'])
+            elif self.client:
                 ticker = self.client.get_symbol_ticker(symbol=self.symbol)
                 return float(ticker['price'])
             return None
@@ -280,7 +271,7 @@ class BinanceDataFetcher:
         
         return ha_df
     
-    def get_cached_or_fresh_data(self, limit: int = 500, force_refresh: bool = False) -> Optional[pd.DataFrame]:
+    def get_cached_or_fresh_data(self, limit: int = 500, force_refresh: bool = False) -> pd.DataFrame:
         """
         Get data from cache if valid, otherwise fetch fresh data
         
@@ -289,7 +280,7 @@ class BinanceDataFetcher:
             force_refresh: Force fresh data fetch
             
         Returns:
-            DataFrame with OHLCV data or None
+            DataFrame with OHLCV data
         """
         now = datetime.now()
         
@@ -328,11 +319,10 @@ class BinanceDataFetcher:
     async def close(self) -> None:
         """Close all clients and release resources"""
         try:
-            if self.ccxt_client is not None:
+            if self.ccxt_client:
                 try:
-                    close_method = getattr(self.ccxt_client, 'close', None)
-                    if close_method is not None:
-                        result = close_method()
+                    if hasattr(self.ccxt_client, 'close'):
+                        result = self.ccxt_client.close()
                         if hasattr(result, '__await__'):
                             await result
                     logger.info("CCXT client closed successfully")

@@ -8,9 +8,19 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 - Automatic stop loss and take profit calculation
 - Risk management with 1:1.5 reward ratio
 
-## Recent Changes (Latest) - November 28, 2025
+## Recent Changes (Latest) - December 02, 2025
 
-### ✅ New UT Bot + STC Strategy Implementation
+### Production Bug Fixes & Code Quality Improvements
+- **Type Annotation Fixes**: Fixed 40+ type annotation issues across 6 core files for improved code quality
+- **Critical Order Type Fix**: Restored STOP_MARKET and TAKE_PROFIT_MARKET order types in FuturesExecutor
+- **Pandas Type Safety**: Added proper type handling for Series/DataFrame operations
+- **Null Safety**: Enhanced null checks in BinanceDataFetcher and CCXT client handling
+- **DateTime Handling**: Fixed index datetime conversion in SignalEngine
+- **Order Side Normalization**: Proper BUY/SELL to buy/sell conversion for CCXT compatibility
+
+## Previous Changes - November 28, 2025
+
+### UT Bot + STC Strategy Implementation
 - **UT Bot Alerts Indicator**: Converted from TradingView Pine Script to Python
 - **STC Indicator**: Implemented with modified settings (Length=80, Fast=27, Slow=50)
 - **Signal Engine**: Combined indicator logic with complete strategy rules

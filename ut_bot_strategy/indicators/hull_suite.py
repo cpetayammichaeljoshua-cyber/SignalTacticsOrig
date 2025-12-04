@@ -5,20 +5,17 @@ Combines Hull Moving Averages for trend confirmation and support/resistance
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, Union
-
-DataFrame = pd.DataFrame
-Series = pd.Series
+from typing import Tuple, Optional
 
 
-def calculate_wma(data: Series, period: int) -> Series:
+def calculate_wma(data: pd.Series, period: int) -> pd.Series:
     """Calculate Weighted Moving Average"""
     weights = np.arange(1, period + 1)
     wma = data.rolling(period).apply(lambda x: (x * weights).sum() / weights.sum(), raw=False)
     return wma.bfill().ffill().fillna(data)
 
 
-def calculate_hma(data: Series, period: int) -> Series:
+def calculate_hma(data: pd.Series, period: int) -> pd.Series:
     """Calculate Hull Moving Average with NaN handling"""
     half_period = max(1, period // 2)
     sqrt_period = max(1, int(np.sqrt(period)))
@@ -60,7 +57,7 @@ class HullSuite:
         self.hma_55_length = hma_55_length
         self.hma_34_length = hma_34_length
     
-    def calculate(self, df: DataFrame) -> DataFrame:
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate Hull Suite indicators
         
@@ -87,7 +84,7 @@ class HullSuite:
         
         return df
     
-    def _get_hull_color(self, df: DataFrame) -> Series:
+    def _get_hull_color(self, df: pd.DataFrame) -> pd.Series:
         """
         Determine Hull Suite color (trend direction)
         Always returns GREEN or RED based on fast vs slow HMA comparison
@@ -105,13 +102,13 @@ class HullSuite:
         
         return color
     
-    def _get_hull_trend(self, df: DataFrame) -> Series:
+    def _get_hull_trend(self, df: pd.DataFrame) -> pd.Series:
         """Get Hull trend direction: 1 = up, -1 = down (always one or other)"""
         trend = pd.Series(1, index=df.index, dtype=int)  # Default to 1 (GREEN)
         trend[df['hull_color'] == 'red'] = -1
         return trend
     
-    def get_signal_strength(self, df: DataFrame) -> float:
+    def get_signal_strength(self, df: pd.DataFrame) -> float:
         """
         Get Hull Suite signal strength (0-1)
         Based on HMA34 vs HMA200 separation - always returns value (never 0)

@@ -11,13 +11,10 @@ Settings:
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, Union
-
-Series = pd.Series
-DataFrame = pd.DataFrame
+from typing import Tuple, Optional
 
 
-def calculate_atr(high: Series, low: Series, close: Series, period: int = 10) -> Series:
+def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 10) -> pd.Series:
     """Calculate Average True Range (ATR)"""
     high_low = high - low
     high_close = np.abs(high - close.shift(1))
@@ -29,8 +26,8 @@ def calculate_atr(high: Series, low: Series, close: Series, period: int = 10) ->
     return atr
 
 
-def calculate_heikin_ashi(open_price: Series, high: Series, 
-                          low: Series, close: Series) -> Tuple[Series, Series, Series, Series]:
+def calculate_heikin_ashi(open_price: pd.Series, high: pd.Series, 
+                          low: pd.Series, close: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     """Calculate Heikin Ashi candles"""
     ha_close = (open_price + high + low + close) / 4
     
@@ -46,7 +43,7 @@ def calculate_heikin_ashi(open_price: Series, high: Series,
     return ha_open, ha_high, ha_low, ha_close
 
 
-def calculate_ema(data: Series, period: int) -> Series:
+def calculate_ema(data: pd.Series, period: int) -> pd.Series:
     """Calculate Exponential Moving Average"""
     return data.ewm(span=period, adjust=False).mean()
 
@@ -74,7 +71,7 @@ class UTBotAlerts:
         self.use_heikin_ashi = use_heikin_ashi
         self.ema_period = ema_period
     
-    def calculate(self, df: DataFrame) -> DataFrame:
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate UT Bot Alerts signals
         

@@ -11,16 +11,20 @@ requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.12.15",
     "aiosqlite>=0.21.0",
+    "auquan-toolbox",
     "ccxt>=4.5.0",
     "flask>=3.1.1",
     "matplotlib>=3.10.5",
     "numpy>=2.3.2",
+    "openai",
     "pandas>=2.3.1",
     "pandas-ta>=0.3.14b0",
     "psutil>=7.0.0",
     "python-binance>=1.0.29",
     "python-telegram-bot==20.7",
+    "requests",
     "scikit-learn>=1.7.1",
+    "setuptools",
 ]
 
 [[tool.uv.index]]

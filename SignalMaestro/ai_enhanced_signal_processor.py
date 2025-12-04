@@ -22,7 +22,7 @@ sys.path.insert(0, str(parent_dir))
 try:
     import sys
     sys.path.insert(0, str(parent_dir))
-    from openai import analyze_trading_signal, analyze_sentiment, get_openai_status
+    from openai_legacy_handler import analyze_trading_signal, analyze_sentiment, get_openai_status
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False

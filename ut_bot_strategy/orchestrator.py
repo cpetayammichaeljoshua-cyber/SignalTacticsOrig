@@ -271,11 +271,15 @@ class TradingOrchestrator:
         try:
             trade_info = None
             if self.auto_trading_enabled and df is not None:
-                existing_position = await self.futures_executor.get_position()
-                if existing_position:
-                    logger.info(f"Existing {existing_position.side} position, skipping new trade")
-                else:
-                    trade_info = await self.execute_trade(signal, df)
+                try:
+                    existing_position = await self.futures_executor.get_position()
+                    if existing_position:
+                        logger.info(f"Existing {existing_position.side} position, skipping new trade")
+                    else:
+                        trade_info = await self.execute_trade(signal, df)
+                except Exception as trade_error:
+                    logger.warning(f"Could not execute trade: {trade_error}")
+                    trade_info = None
             
             success = await self.telegram_bot.send_signal(signal, trade_info)
             
@@ -339,7 +343,7 @@ class TradingOrchestrator:
         finally:
             await self.shutdown()
     
-    async def shutdown(self, reason: str = "Manual shutdown"):
+    async def shutdown(self, reason: str = "Manual shutdown") -> None:
         """
         Gracefully shutdown the bot
         
@@ -350,11 +354,28 @@ class TradingOrchestrator:
         self.running = False
         self._shutdown_event.set()
         
-        if self.config.bot.enable_shutdown_notification:
-            await self.telegram_bot.send_shutdown_notification(reason)
+        try:
+            if self.config.bot.enable_shutdown_notification:
+                await self.telegram_bot.send_shutdown_notification(reason)
+        except Exception as e:
+            logger.warning(f"Error sending shutdown notification: {e}")
         
-        await self.telegram_bot.close()
-        await self.futures_executor.close()
+        try:
+            await self.telegram_bot.close()
+        except Exception as e:
+            logger.warning(f"Error closing telegram bot: {e}")
+        
+        try:
+            await self.futures_executor.close()
+        except Exception as e:
+            logger.warning(f"Error closing futures executor: {e}")
+        
+        try:
+            await self.data_fetcher.close()
+        except Exception as e:
+            logger.warning(f"Error closing data fetcher: {e}")
+        
+        await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")
     
     def stop(self):

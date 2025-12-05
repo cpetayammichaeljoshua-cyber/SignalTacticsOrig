@@ -52,10 +52,17 @@ class TelegramSignalBot:
             self._session = aiohttp.ClientSession()
         return self._session
     
-    async def close(self):
-        """Close the aiohttp session"""
-        if self._session and not self._session.closed:
-            await self._session.close()
+    async def close(self) -> None:
+        """Close the aiohttp session and cleanup connectors"""
+        if self._session:
+            try:
+                await self._session.close()
+                await asyncio.sleep(0.3)
+                logger.info("Telegram bot session closed")
+            except Exception as e:
+                logger.warning(f"Error closing session: {e}")
+            finally:
+                self._session = None
     
     def _format_price(self, price: float) -> str:
         """Format price with appropriate decimals"""
@@ -95,6 +102,8 @@ class TelegramSignalBot:
         else:
             time_str = str(timestamp)
         
+        leverage_section = self._format_leverage_section(signal)
+        
         message = f"""
 {emoji} <b>UT BOT + STC SIGNAL</b> {emoji}
 
@@ -118,6 +127,10 @@ class TelegramSignalBot:
 <b>INDICATOR VALUES:</b>
 📉 <b>STC:</b> {stc_value:.2f}
 📏 <b>ATR:</b> {atr:.4f}
+
+━━━━━━━━━━━━━━━━━━━━━
+
+{leverage_section}
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -193,7 +206,7 @@ class TelegramSignalBot:
 🎲 Risk:Reward: 1:1.5
 
 <b>Settings:</b>
-• UT Bot Key: 1.0, ATR Period: 10
+• UT Bot Key: 2.0, ATR Period: 6
 • STC Length: 80, Fast: 27, Slow: 50
 • Swing Lookback: 5 bars
 
@@ -270,6 +283,22 @@ Reason: {reason}
         logger.error("Failed to send message after all retries")
         return False
     
+    def _format_leverage_section(self, signal: Dict) -> str:
+        """Format leverage and margin details from signal"""
+        leverage_config = signal.get('leverage_config', {})
+        recommended_lev = leverage_config.get('base_leverage', 5)
+        auto_lev = signal.get('recommended_leverage', recommended_lev)
+        margin_type = leverage_config.get('margin_type', 'CROSS')
+        auto_margin = leverage_config.get('auto_add_margin', True)
+        
+        return f"""
+⚡ <b>LEVERAGE & MARGIN:</b>
+• Recommended: {recommended_lev}x
+• Auto Leverage: {auto_lev}x
+• Margin Type: {margin_type}
+• Cross Margin: {'✅ Enabled' if margin_type == 'CROSS' else '❌ Disabled'}
+• Auto Add Margin: {'✅ Active' if auto_margin else '❌ Inactive'}"""
+    
     def _format_trade_execution(self, trade_info: Dict) -> str:
         """
         Format trade execution details
@@ -300,6 +329,7 @@ Reason: {reason}
         position_value = leverage_result.position_value if leverage_result else 0
         margin = leverage_result.margin_required if leverage_result else 0
         confidence = leverage_result.confidence if leverage_result else 0
+        reason = leverage_result.reason if leverage_result else ""
         
         entry_order = trade_result.get('entry', {})
         sl_order = trade_result.get('stop_loss', {})
@@ -315,6 +345,9 @@ Reason: {reason}
 💵 <b>Position Value:</b> ${position_value:,.2f}
 💰 <b>Margin Used:</b> ${margin:,.2f}
 📈 <b>Confidence:</b> {confidence*100:.1f}%
+
+<b>LEVERAGE CALCULATION:</b>
+{reason}
 
 <b>ORDERS:</b>
 ✅ Entry: {'Filled' if entry_order.success else 'Failed'}

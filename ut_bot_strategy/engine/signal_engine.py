@@ -95,7 +95,7 @@ class SignalEngine:
         
         return df_combined
     
-    def find_swing_high(self, df: pd.DataFrame, lookback: int = None) -> float:
+    def find_swing_high(self, df: pd.DataFrame, lookback: Optional[int] = None) -> float:
         """
         Find recent swing high for stop loss (SHORT positions)
         
@@ -108,9 +108,9 @@ class SignalEngine:
         """
         lookback = lookback or self.swing_lookback
         recent_data = df.tail(lookback + 1)
-        return recent_data['high'].max()
+        return float(recent_data['high'].max())
     
-    def find_swing_low(self, df: pd.DataFrame, lookback: int = None) -> float:
+    def find_swing_low(self, df: pd.DataFrame, lookback: Optional[int] = None) -> float:
         """
         Find recent swing low for stop loss (LONG positions)
         
@@ -123,7 +123,7 @@ class SignalEngine:
         """
         lookback = lookback or self.swing_lookback
         recent_data = df.tail(lookback + 1)
-        return recent_data['low'].min()
+        return float(recent_data['low'].min())
     
     def calculate_risk_reward(self, entry_price: float, stop_loss: float, 
                              direction: str) -> Tuple[float, float, float]:
@@ -309,7 +309,8 @@ class SignalEngine:
         df_calculated = self.calculate_indicators(df)
         
         latest = df_calculated.iloc[-1]
-        current_time = df_calculated.index[-1] if hasattr(df_calculated.index[-1], 'strftime') else datetime.now()
+        index_value = df_calculated.index[-1]
+        current_time = index_value if isinstance(index_value, datetime) else datetime.fromtimestamp(index_value.timestamp()) if hasattr(index_value, 'timestamp') else datetime.now()
         entry_price = float(latest['close'])
         
         long_check = self.check_long_conditions(df_calculated)
@@ -339,7 +340,13 @@ class SignalEngine:
                     'stc_value': long_check['stc_value'],
                     'ut_trailing_stop': float(latest.get('trailing_stop', 0)),
                     'atr': float(latest.get('atr', 0)),
-                    'reason': long_check['reason']
+                    'reason': long_check['reason'],
+                    'recommended_leverage': 16,
+                    'leverage_config': {
+                        'base_leverage': 12,
+                        'margin_type': 'CROSS',
+                        'auto_add_margin': True
+                    }
                 }
             else:
                 logger.info(f"LONG signal rejected: Risk {risk_percent:.2f}% outside acceptable range")
@@ -366,7 +373,13 @@ class SignalEngine:
                     'stc_value': short_check['stc_value'],
                     'ut_trailing_stop': float(latest.get('trailing_stop', 0)),
                     'atr': float(latest.get('atr', 0)),
-                    'reason': short_check['reason']
+                    'reason': short_check['reason'],
+                    'recommended_leverage': 16,
+                    'leverage_config': {
+                        'base_leverage': 12,
+                        'margin_type': 'CROSS',
+                        'auto_add_margin': True
+                    }
                 }
             else:
                 logger.info(f"SHORT signal rejected: Risk {risk_percent:.2f}% outside acceptable range")

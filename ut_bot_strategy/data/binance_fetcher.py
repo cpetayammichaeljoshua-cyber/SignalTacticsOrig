@@ -9,22 +9,28 @@ import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Callable
+from typing import Optional, List, Dict, Callable, Any, Union
 import pandas as pd
+from pandas import DataFrame
 import numpy as np
+
+BINANCE_AVAILABLE = False
+BinanceAPIException: Any = Exception
 
 try:
     from binance.client import Client
     from binance.exceptions import BinanceAPIException
     BINANCE_AVAILABLE = True
 except ImportError:
-    BINANCE_AVAILABLE = False
+    Client = None
+
+CCXT_AVAILABLE = False
 
 try:
     import ccxt
     CCXT_AVAILABLE = True
 except ImportError:
-    CCXT_AVAILABLE = False
+    ccxt = None
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +92,9 @@ class BinanceDataFetcher:
         
         self._initialize_client()
     
-    def _initialize_client(self):
+    def _initialize_client(self) -> None:
         """Initialize the Binance client"""
-        if BINANCE_AVAILABLE and self.api_key and self.api_secret:
+        if BINANCE_AVAILABLE and self.api_key and self.api_secret and Client:
             try:
                 self.client = Client(self.api_key, self.api_secret)
                 logger.info("Binance client initialized successfully")
@@ -96,7 +102,7 @@ class BinanceDataFetcher:
                 logger.warning(f"Failed to initialize Binance client: {e}")
                 self.client = None
         
-        if CCXT_AVAILABLE:
+        if CCXT_AVAILABLE and ccxt:
             try:
                 self.ccxt_client = ccxt.binance({
                     'apiKey': self.api_key,
@@ -109,7 +115,7 @@ class BinanceDataFetcher:
                 logger.warning(f"Failed to initialize CCXT client: {e}")
                 self.ccxt_client = None
     
-    def fetch_historical_data(self, limit: int = 500, start_time: Optional[datetime] = None) -> pd.DataFrame:
+    def fetch_historical_data(self, limit: int = 500, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """
         Fetch historical OHLCV data
         
@@ -118,7 +124,7 @@ class BinanceDataFetcher:
             start_time: Optional start time for historical data
             
         Returns:
-            DataFrame with OHLCV data
+            DataFrame with OHLCV data or None
         """
         try:
             if self.ccxt_client:
@@ -131,7 +137,7 @@ class BinanceDataFetcher:
             logger.error(f"Error fetching historical data: {e}")
             raise
     
-    def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> pd.DataFrame:
+    def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """Fetch data using CCXT library"""
         try:
             since = None
@@ -162,7 +168,7 @@ class BinanceDataFetcher:
             logger.error(f"CCXT fetch error: {e}")
             raise
     
-    def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> pd.DataFrame:
+    def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
         """Fetch data using python-binance library"""
         try:
             klines = self.client.get_klines(
@@ -309,3 +315,20 @@ class BinanceDataFetcher:
         seconds_until = (next_close - now).total_seconds()
         
         return max(0, seconds_until)
+    
+    async def close(self) -> None:
+        """Close all clients and release resources"""
+        try:
+            if self.ccxt_client:
+                try:
+                    if hasattr(self.ccxt_client, 'close'):
+                        result = self.ccxt_client.close()
+                        if hasattr(result, '__await__'):
+                            await result
+                    logger.info("CCXT client closed successfully")
+                except Exception as e:
+                    logger.warning(f"Error closing CCXT client: {e}")
+        finally:
+            self.ccxt_client = None
+            self.client = None
+            logger.info("BinanceDataFetcher closed")

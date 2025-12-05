@@ -55,15 +55,15 @@ class UTBotAlerts:
     Generates buy/sell signals based on ATR trailing stop crossovers.
     """
     
-    def __init__(self, key_value: float = 2.0, atr_period: int = 6, 
-                 use_heikin_ashi: bool =True, ema_period: int = 1):
+    def __init__(self, key_value: float = 1.0, atr_period: int = 2, 
+                 use_heikin_ashi: bool = False, ema_period: int = 6):
         """
         Initialize UT Bot Alerts
         
         Args:
-            key_value: Sensitivity multiplier for ATR (default 2)
-            atr_period: Period for ATR calculation (default 6)
-            use_heikin_ashi: Use Heikin Ashi candles for signals (default True)
+            key_value: Sensitivity multiplier for ATR (default 1)
+            atr_period: Period for ATR calculation (default 10)
+            use_heikin_ashi: Use Heikin Ashi candles for signals (default False)
             ema_period: EMA period for trend detection (default 1)
         """
         self.key_value = key_value

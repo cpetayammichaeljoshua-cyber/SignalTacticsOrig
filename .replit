@@ -205,7 +205,7 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python apply_comprehensive_console_fixes.py && python main.py"
+args = "python apply_comprehensive_console_fixes.py && python start_fxsusdt_bot_fixed.py"
 
 [[workflows.workflow]]
 name = "FXSUSDT Comprehensive Fixed"

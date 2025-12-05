@@ -52,17 +52,10 @@ class TelegramSignalBot:
             self._session = aiohttp.ClientSession()
         return self._session
     
-    async def close(self) -> None:
-        """Close the aiohttp session and cleanup connectors"""
-        if self._session:
-            try:
-                await self._session.close()
-                await asyncio.sleep(0.3)
-                logger.info("Telegram bot session closed")
-            except Exception as e:
-                logger.warning(f"Error closing session: {e}")
-            finally:
-                self._session = None
+    async def close(self):
+        """Close the aiohttp session"""
+        if self._session and not self._session.closed:
+            await self._session.close()
     
     def _format_price(self, price: float) -> str:
         """Format price with appropriate decimals"""
@@ -102,11 +95,8 @@ class TelegramSignalBot:
         else:
             time_str = str(timestamp)
         
-        leverage_section = self._format_leverage_section(signal)
-        hull_section = self._format_hull_section(signal)
-        
         message = f"""
-{emoji} <b>UT BOT + STC + HULL SIGNAL</b> {emoji}
+{emoji} <b>UT BOT + STC SIGNAL</b> {emoji}
 
 {direction_emoji} <b>Direction:</b> {direction}
 💱 <b>Pair:</b> {signal.get('symbol', 'ETH/USDT')}
@@ -131,23 +121,14 @@ class TelegramSignalBot:
 
 ━━━━━━━━━━━━━━━━━━━━━
 
-{hull_section}
-
-━━━━━━━━━━━━━━━━━━━━━
-
-{leverage_section}
-
-━━━━━━━━━━━━━━━━━━━━━
-
 <b>CONFIRMATION:</b>
 ✅ UT Bot {direction} Signal
 ✅ STC {"Green ↑" if direction == "LONG" else "Red ↓"}
-✅ Hull Suite Confirmed
 ✅ All conditions met
 
 🕐 <i>{time_str}</i>
 
-<b>#ETHUSDT #{direction} #UTBot #STC #HULL</b>
+<b>#ETHUSDT #{direction} #UTBot #STC</b>
 """
         return message.strip()
     
@@ -212,7 +193,7 @@ class TelegramSignalBot:
 🎲 Risk:Reward: 1:1.5
 
 <b>Settings:</b>
-• UT Bot Key: 2.0, ATR Period: 6
+• UT Bot Key: 1.0, ATR Period: 10
 • STC Length: 80, Fast: 27, Slow: 50
 • Swing Lookback: 5 bars
 
@@ -289,49 +270,6 @@ Reason: {reason}
         logger.error("Failed to send message after all retries")
         return False
     
-    def _format_leverage_section(self, signal: Dict) -> str:
-        """Format leverage and margin details from signal"""
-        leverage_config = signal.get('leverage_config', {})
-        recommended_lev = leverage_config.get('base_leverage', 5)
-        auto_lev = signal.get('recommended_leverage', recommended_lev)
-        margin_type = leverage_config.get('margin_type', 'CROSS')
-        auto_margin = leverage_config.get('auto_add_margin', True)
-        
-        return f"""
-⚡ <b>LEVERAGE & MARGIN:</b>
-• Recommended: {recommended_lev}x
-• Auto Leverage: {auto_lev}x
-• Margin Type: {margin_type}
-• Cross Margin: {'✅ Enabled' if margin_type == 'CROSS' else '❌ Disabled'}
-• Auto Add Margin: {'✅ Active' if auto_margin else '❌ Inactive'}"""
-    
-    def _format_hull_section(self, signal: Dict) -> str:
-        """Format Hull Suite indicator details"""
-        hull_color = signal.get('hull_color', 'gray')
-        hull_strength = float(signal.get('hull_strength', 0))
-        hull_support = float(signal.get('hull_support', 0)) if signal.get('hull_support') is not None else 0
-        hull_resistance = float(signal.get('hull_resistance', 0)) if signal.get('hull_resistance') is not None else 0
-        
-        color_emoji = "🟢" if hull_color == "green" else "🔴" if hull_color == "red" else "⚫"
-        
-        # Handle NaN/invalid values with try-except
-        try:
-            support_str = f"${hull_support:.4f}" if hull_support > 0 and hull_support == hull_support else "$0.0000"
-        except (ValueError, TypeError):
-            support_str = "$0.0000"
-        
-        try:
-            resistance_str = f"${hull_resistance:.4f}" if hull_resistance > 0 and hull_resistance == hull_resistance else "$0.0000"
-        except (ValueError, TypeError):
-            resistance_str = "$0.0000"
-        
-        return f"""
-📊 <b>HULL SUITE CONFIRMATION:</b>
-• Trend: {color_emoji} {hull_color.upper()}
-• Strength: {hull_strength*100:.1f}%
-• Support (HMA55): {support_str}
-• Resistance (HMA200): {resistance_str}"""
-    
     def _format_trade_execution(self, trade_info: Dict) -> str:
         """
         Format trade execution details
@@ -362,7 +300,6 @@ Reason: {reason}
         position_value = leverage_result.position_value if leverage_result else 0
         margin = leverage_result.margin_required if leverage_result else 0
         confidence = leverage_result.confidence if leverage_result else 0
-        reason = leverage_result.reason if leverage_result else ""
         
         entry_order = trade_result.get('entry', {})
         sl_order = trade_result.get('stop_loss', {})
@@ -378,9 +315,6 @@ Reason: {reason}
 💵 <b>Position Value:</b> ${position_value:,.2f}
 💰 <b>Margin Used:</b> ${margin:,.2f}
 📈 <b>Confidence:</b> {confidence*100:.1f}%
-
-<b>LEVERAGE CALCULATION:</b>
-{reason}
 
 <b>ORDERS:</b>
 ✅ Entry: {'Filled' if entry_order.success else 'Failed'}

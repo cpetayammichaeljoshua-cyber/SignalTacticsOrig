@@ -8,7 +8,20 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 - Automatic stop loss and take profit calculation
 - Risk management with 1:1.5 reward ratio
 
-## Recent Changes (Latest) - November 28, 2025
+## Recent Changes (Latest) - December 6, 2025
+
+### ✅ Dependency Fixes for Deployment
+- Fixed numpy/pandas-ta/numba version conflicts
+- Replaced pandas-ta with ta library (more stable, Python 3.11 compatible)
+- Updated pyproject.toml with compatible version constraints:
+  - numpy>=1.24.0,<2.0 (binary compatible with pandas)
+  - pandas>=2.0.0,<2.1 (stable version)
+  - matplotlib>=3.8.0,<3.9
+  - scikit-learn>=1.3.0,<1.5
+- Migrated deprecated tool.uv.dev-dependencies to [dependency-groups] format
+- Constrained Python version to >=3.11,<3.12 for package compatibility
+
+## Changes - November 28, 2025
 
 ### ✅ New UT Bot + STC Strategy Implementation
 - **UT Bot Alerts Indicator**: Converted from TradingView Pine Script to Python

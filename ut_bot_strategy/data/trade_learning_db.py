@@ -191,7 +191,7 @@ class TradeLearningDB:
                     datetime.now().isoformat()
                 ))
                 
-                trade_id = cursor.lastrowid
+                trade_id = cursor.lastrowid or 0
                 await db.commit()
                 
                 logger.info(f"Recorded trade entry: ID={trade_id}, Symbol={trade_data.get('symbol')}, Direction={trade_data.get('direction')}")
@@ -467,7 +467,7 @@ class TradeLearningDB:
                     datetime.now().isoformat()
                 ))
                 
-                learning_id = cursor.lastrowid
+                learning_id = cursor.lastrowid or 0
                 await db.commit()
                 
                 logger.info(f"Recorded AI learning: ID={learning_id}, Trade ID={trade_id}")
@@ -599,7 +599,7 @@ class TradeLearningDB:
                     datetime.now().isoformat()
                 ))
                 
-                metrics_id = cursor.lastrowid
+                metrics_id = cursor.lastrowid or 0
                 await db.commit()
                 
                 logger.info(f"Saved performance metrics: ID={metrics_id}")

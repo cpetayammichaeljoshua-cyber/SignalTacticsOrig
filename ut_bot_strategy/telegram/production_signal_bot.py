@@ -17,7 +17,7 @@ import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from collections import deque
 from dataclasses import dataclass, field
 import aiohttp
@@ -210,7 +210,7 @@ class ProductionSignalBot:
         signal_data: Dict[str, Any],
         trade_setup: Dict[str, Any],
         ai_analysis: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Tuple[str, str]:
         """
         Format complete trading signal message
         

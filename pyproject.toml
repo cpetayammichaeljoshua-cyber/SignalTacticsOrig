@@ -2,14 +2,14 @@
 name = "repl-nix-workspace"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.12.15",
     "aiosqlite>=0.21.0",
     "ccxt>=4.5.0",
     "flask>=3.1.1",
     "matplotlib>=3.7.0",
-    "numpy>=1.24.0,<2.3",
+    "numpy>=1.24.0",
     "openai",
     "pandas>=2.0.0",
     "pandas-ta>=0.3.14b0",
@@ -23,7 +23,7 @@ dependencies = [
 dev = [
     "matplotlib>=3.7.0",
     "pandas>=2.0.0",
-    "numpy>=1.24.0,<2.3",
+    "numpy>=1.24.0",
 ]
 
 [[tool.uv.index]]

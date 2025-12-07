@@ -204,12 +204,25 @@ class AIPositionEngine:
             else:
                 raise ValueError(f"Invalid direction: {direction}")
             
+            min_sl_distance = entry_price * 0.005
+            actual_distance = abs(entry_price - stop_loss)
+            min_enforced = False
+            
+            if actual_distance < min_sl_distance:
+                logger.info(f"SL distance {actual_distance:.4f} ({actual_distance/entry_price*100:.3f}%) below minimum 0.5%, enforcing minimum distance")
+                min_enforced = True
+                if direction_upper == "LONG":
+                    stop_loss = entry_price - min_sl_distance
+                else:
+                    stop_loss = entry_price + min_sl_distance
+            
             sl_percent = abs(entry_price - stop_loss) / entry_price * 100
             
             reasoning = (
                 f"SL calculated: ATR={atr:.6f}, multiplier={adjusted_multiplier:.2f}, "
                 f"volatility={volatility_score:.2f}, structure={market_structure}, "
                 f"AI adj={ai_adjustment:.2f}, distance={sl_percent:.2f}%"
+                f"{' (min enforced)' if min_enforced else ''}"
             )
             
             logger.debug(reasoning)
@@ -268,8 +281,21 @@ class AIPositionEngine:
                 self.tp_allocation.tp3_percent
             ]
             
+            min_sl_distance = entry_price * 0.005
+            if sl_distance < min_sl_distance:
+                logger.info(f"SL distance {sl_distance:.4f} too small for TP calculation, using minimum {min_sl_distance:.4f}")
+                sl_distance = min_sl_distance
+            
+            min_rr_floors = [1.0, 2.0, 3.0]
+            
             for i, (rr, alloc) in enumerate(zip(risk_reward_ratios[:3], allocations)):
                 adjusted_rr = rr * tp_multiplier
+                
+                min_rr = min_rr_floors[i]
+                if adjusted_rr < min_rr:
+                    logger.debug(f"TP{i+1} R:R {adjusted_rr:.2f} below minimum {min_rr:.1f}R, enforcing floor")
+                    adjusted_rr = min_rr
+                
                 tp_distance = sl_distance * adjusted_rr
                 
                 if direction_upper == "LONG":
@@ -452,6 +478,13 @@ class AIPositionEngine:
                 raise ValueError("Invalid entry price")
             
             atr = market_data.get('atr', entry_price * 0.01)
+            atr_percent = market_data.get('atr_percent', 1.0)
+            
+            if atr < entry_price * 0.001:
+                logger.info(f"ATR {atr:.6f} seems too small (< 0.1% of entry), recalculating from atr_percent={atr_percent:.2f}%")
+                atr = entry_price * (atr_percent / 100) if atr_percent > 0 else entry_price * 0.01
+                logger.info(f"ATR adjusted to {atr:.6f}")
+            
             volatility_score = market_data.get('volatility_score', 0.5)
             ai_adjustment = signal.get('ai_adjustment', 0.0)
             market_structure = market_data.get('market_structure', 'ranging')

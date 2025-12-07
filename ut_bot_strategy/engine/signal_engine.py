@@ -310,7 +310,15 @@ class SignalEngine:
         
         latest = df_calculated.iloc[-1]
         index_value = df_calculated.index[-1]
-        current_time = index_value if isinstance(index_value, datetime) else datetime.fromtimestamp(index_value.timestamp()) if hasattr(index_value, 'timestamp') else datetime.now()
+        # Handle various datetime types from pandas index
+        if isinstance(index_value, datetime):
+            current_time = index_value
+        elif isinstance(index_value, pd.Timestamp):
+            current_time = index_value.to_pydatetime()
+        elif hasattr(index_value, 'timestamp') and callable(getattr(index_value, 'timestamp', None)):
+            current_time = datetime.fromtimestamp(index_value.timestamp())
+        else:
+            current_time = datetime.now()
         entry_price = float(latest['close'])
         
         long_check = self.check_long_conditions(df_calculated)

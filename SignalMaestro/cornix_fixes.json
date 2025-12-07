@@ -1,6 +1,0 @@
-{
-  "api_validation": true,
-  "signal_formatting": true,
-  "error_recovery": true,
-  "fallback_enabled": true
-}

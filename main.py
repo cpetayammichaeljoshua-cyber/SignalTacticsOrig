@@ -26,6 +26,7 @@ from ut_bot_strategy.ai.ai_trading_brain import AITradingBrain
 from ut_bot_strategy.trading.ai_position_engine import AIPositionEngine, TradeSetup
 from ut_bot_strategy.data.trade_learning_db import TradeLearningDB
 from ut_bot_strategy.telegram.production_signal_bot import ProductionSignalBot
+from ut_bot_strategy.telegram.interactive_command_bot import InteractiveCommandBot
 from ut_bot_strategy.trading.leverage_calculator import LeverageCalculator
 from ut_bot_strategy.trading.futures_executor import FuturesExecutor
 
@@ -551,7 +552,7 @@ def setup_signal_handlers(orchestrator: AITradingOrchestrator):
 
 
 async def run_bot():
-    """Run the trading bot"""
+    """Run the trading bot with interactive command bot"""
     print_banner()
     
     logger.info("Loading configuration...")
@@ -571,6 +572,21 @@ async def run_bot():
     orchestrator = AITradingOrchestrator(config)
     setup_signal_handlers(orchestrator)
     
+    admin_chat_ids = os.getenv('ADMIN_CHAT_IDS', config.telegram_chat_id)
+    command_bot = InteractiveCommandBot(
+        bot_token=config.telegram_bot_token,
+        admin_chat_ids=admin_chat_ids,
+        orchestrator=orchestrator
+    )
+    
+    try:
+        await command_bot.start()
+        logger.info("Interactive Command Bot started - All /commands active")
+    except Exception as e:
+        logger.error(f"Failed to start Interactive Command Bot: {e}")
+        logger.error("Trading system will not start without command interface")
+        sys.exit(1)
+    
     try:
         await orchestrator.run()
     except KeyboardInterrupt:
@@ -579,6 +595,12 @@ async def run_bot():
         logger.error(f"Fatal error: {e}")
         raise
     finally:
+        try:
+            await command_bot.stop()
+            logger.info("Interactive Command Bot stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping command bot: {e}")
+        
         if orchestrator.running:
             await orchestrator.shutdown("Application exit")
 

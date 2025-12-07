@@ -223,15 +223,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "AI Trading Signal Bot"
+args = "Ultimate Trading Bot"
 
 [[workflows.workflow]]
-name = "AI Trading Signal Bot"
+name = "Ultimate Trading Bot"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python main.py"
+args = "python start_ultimate_bot.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

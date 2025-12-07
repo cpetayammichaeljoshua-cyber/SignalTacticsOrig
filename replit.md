@@ -4,11 +4,50 @@
 Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe combining:
 - **UT Bot Alerts**: ATR-based trailing stop indicator for entry signals
 - **STC (Schaff Trend Cycle)**: Momentum oscillator for trend confirmation
+- **Order Flow Analysis**: Real-time CVD, delta, imbalance detection
+- **Manipulation Detection**: Stop hunts, spoofing, liquidity sweeps
 - Telegram signal notifications with rich formatting
 - Automatic stop loss and take profit calculation
 - Risk management with 1:1.5 reward ratio
 
 ## Recent Changes (Latest) - December 7, 2025
+
+### ✅ Order Flow Analysis Enhancement
+Added comprehensive order flow analysis for enhanced signal quality:
+
+**New Modules Created:**
+- `order_flow_stream.py` - Real-time Binance WebSocket streams (trades, depth)
+- `order_flow_metrics.py` - Aggregated metrics service with CVD, delta, imbalance
+- `tape_analyzer.py` - Footprint and tape analysis with absorption detection
+- `manipulation_detector.py` - Stop hunt, spoofing, and liquidity sweep detection
+
+**Order Flow Features:**
+- Real-time trade stream via Binance Futures WebSocket
+- Order book depth updates (20 levels @ 100ms)
+- Cumulative Volume Delta (CVD) tracking
+- Large order detection and tracking
+- Buy/sell imbalance ratios
+- Delta extremes identification
+
+**Manipulation Detection:**
+- Stop hunt detection (price spikes with quick reversals)
+- Spoofing detection (large orders that disappear quickly)
+- Liquidity sweep detection (rapid multi-level execution)
+- Absorption pattern recognition (large volume without price movement)
+- Overall manipulation score for signal filtering
+
+**Signal Engine Integration:**
+- Order flow metrics integrated into signal generation
+- Manipulation score affects signal confidence
+- Order flow bias confirms trade direction
+
+**Railway.com Deployment Ready:**
+- `Procfile` - Process configuration
+- `railway.json` - Railway deployment settings
+- `nixpacks.toml` - Build configuration
+- `runtime.txt` - Python version specification
+- `requirements.txt` - Python dependencies
+- `RAILWAY_DEPLOYMENT.md` - Complete deployment guide
 
 ### ✅ Dynamic TP/SL Enhancement
 Enhanced AI-powered position sizing with intelligent stop loss and take profit calculations:
@@ -121,10 +160,14 @@ ut_bot_strategy/
 │   └── stc_indicator.py  # STC indicator
 ├── engine/
 │   ├── __init__.py
-│   └── signal_engine.py  # Signal generation logic
+│   ├── signal_engine.py  # Signal generation logic
+│   ├── tape_analyzer.py  # Footprint and tape analysis
+│   └── manipulation_detector.py  # Manipulation detection
 ├── data/
 │   ├── __init__.py
-│   └── binance_fetcher.py # Binance data fetching
+│   ├── binance_fetcher.py    # Binance data fetching
+│   ├── order_flow_stream.py  # WebSocket order flow streams
+│   └── order_flow_metrics.py # Aggregated order flow metrics
 ├── trading/
 │   ├── __init__.py
 │   ├── leverage_calculator.py  # Auto-leverage calculation
@@ -133,6 +176,10 @@ ut_bot_strategy/
     ├── __init__.py
     └── telegram_bot.py   # Telegram notifications
 main.py                   # Entry point
+Procfile                  # Railway deployment
+railway.json              # Railway config
+nixpacks.toml             # Build config
+requirements.txt          # Dependencies
 ```
 
 ## Setup & Deployment
@@ -189,5 +236,10 @@ CONFIRMATION:
 ✅ **Telegram Integration**: Rich formatted notifications
 ✅ **Binance Data**: Real-time 5m ETH/USDT data
 ✅ **Continuous Monitoring**: 24/7 async operation
+✅ **Order Flow Stream**: Real-time WebSocket trades and depth
+✅ **Tape Analyzer**: Delta, imbalance, absorption detection
+✅ **Manipulation Detector**: Stop hunts, spoofing, liquidity sweeps
+✅ **Order Flow Metrics**: CVD, delta extremes, imbalance ratios
+✅ **Railway Deployment**: Configuration ready for deployment
 
-**🚀 UT Bot + STC Signal Bot is fully deployed and production-ready!**
+**🚀 UT Bot + STC Signal Bot with Order Flow Analysis is fully deployed and production-ready!**

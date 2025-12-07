@@ -285,7 +285,14 @@ class InteractiveCommandBot:
         
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling(drop_pending_updates=True)
+        
+        if self.application.updater is not None:
+            await self.application.updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query"]
+            )
+        else:
+            raise RuntimeError("Application updater is not available")
         
         self._running = True
         logger.info("InteractiveCommandBot started successfully")
@@ -299,7 +306,8 @@ class InteractiveCommandBot:
         
         if self.application:
             try:
-                await self.application.updater.stop()
+                if self.application.updater is not None and self.application.updater.running:
+                    await self.application.updater.stop()
                 await self.application.stop()
                 await self.application.shutdown()
                 logger.info("InteractiveCommandBot stopped successfully")
@@ -318,7 +326,7 @@ class InteractiveCommandBot:
             return await callback(update, context)
         return wrapped
     
-    async def _error_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def _error_callback(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Global error handler for the bot"""
         logger.error(f"Bot error: {context.error}", exc_info=context.error)
     

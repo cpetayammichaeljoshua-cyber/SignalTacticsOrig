@@ -75,7 +75,7 @@ async def check_bot_health():
     # Check 5: AI processor
     checks_total += 1
     try:
-        from openai_handler import get_openai_status
+        from openai import get_openai_status
         status = get_openai_status()
         if status.get('enabled'):
             print("✅ AI processor enabled (fallback mode active)")
@@ -93,7 +93,7 @@ async def check_bot_health():
         'SignalMaestro/fxsusdt_trader.py',
         'SignalMaestro/ichimoku_sniper_strategy.py',
         'SignalMaestro/dynamic_position_manager.py',
-        'openai_handler.py'
+        'openai.py'
     ]
     
     missing_files = [f for f in required_files if not Path(f).exists()]

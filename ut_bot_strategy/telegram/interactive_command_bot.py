@@ -45,6 +45,8 @@ def admin_only(func: Callable) -> Callable:
     """Decorator to restrict commands to admin users only"""
     @functools.wraps(func)
     async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        if not update.effective_user or not update.effective_chat:
+            return
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
         
@@ -57,14 +59,15 @@ def admin_only(func: Callable) -> Callable:
                 logger.info(f"Auto-authorized first user: {user_id}")
                 return await func(self, update, context, *args, **kwargs)
             
-            await update.message.reply_text(
-                f"⛔ <b>Access Denied</b>\n\n"
-                f"Your ID: <code>{user_id}</code>\n\n"
-                f"To authorize yourself, add your ID to the "
-                f"<code>ADMIN_CHAT_IDS</code> environment variable.\n\n"
-                f"Or set <code>TELEGRAM_CHAT_ID={user_id}</code>",
-                parse_mode=ParseMode.HTML
-            )
+            if update.message:
+                await update.message.reply_text(
+                    f"⛔ <b>Access Denied</b>\n\n"
+                    f"Your ID: <code>{user_id}</code>\n\n"
+                    f"To authorize yourself, add your ID to the "
+                    f"<code>ADMIN_CHAT_IDS</code> environment variable.\n\n"
+                    f"Or set <code>TELEGRAM_CHAT_ID={user_id}</code>",
+                    parse_mode=ParseMode.HTML
+                )
             return
         
         return await func(self, update, context, *args, **kwargs)
@@ -76,16 +79,19 @@ def rate_limit(max_calls: int = 5, window_seconds: int = 60) -> Callable:
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+            if not update.effective_user:
+                return
             user_id = update.effective_user.id
             command = func.__name__
             
             if not self._check_rate_limit(user_id, command, max_calls, window_seconds):
-                await update.message.reply_text(
-                    "⚠️ <b>Rate Limit Exceeded</b>\n\n"
-                    f"Please wait before using this command again.\n"
-                    f"Max {max_calls} calls per {window_seconds} seconds.",
-                    parse_mode=ParseMode.HTML
-                )
+                if update.message:
+                    await update.message.reply_text(
+                        "⚠️ <b>Rate Limit Exceeded</b>\n\n"
+                        f"Please wait before using this command again.\n"
+                        f"Max {max_calls} calls per {window_seconds} seconds.",
+                        parse_mode=ParseMode.HTML
+                    )
                 return
             
             return await func(self, update, context, *args, **kwargs)
@@ -310,6 +316,9 @@ class InteractiveCommandBot:
         
         while self._running:
             try:
+                if not self.application:
+                    await asyncio.sleep(1)
+                    continue
                 updates = await self.application.bot.get_updates(
                     offset=self._update_offset,
                     timeout=10,
@@ -373,6 +382,8 @@ class InteractiveCommandBot:
     @rate_limit(max_calls=3, window_seconds=30)
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command - Welcome message"""
+        if not update.message or not update.effective_user:
+            return
         user = update.effective_user
         logger.info(f"Start command from user {user.id} ({user.username})")
         
@@ -407,6 +418,8 @@ Hello <b>{user.first_name}</b>! I'm your AI-powered trading assistant.
     @rate_limit(max_calls=5, window_seconds=30)
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command - List all commands"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Help command from user {update.effective_user.id}")
         
         message = """
@@ -451,6 +464,8 @@ Hello <b>{user.first_name}</b>! I'm your AI-powered trading assistant.
     @rate_limit(max_calls=10, window_seconds=60)
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /status command - System status"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Status command from user {update.effective_user.id}")
         
         status = self._get_orchestrator_status()
@@ -500,6 +515,8 @@ Hello <b>{user.first_name}</b>! I'm your AI-powered trading assistant.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_health(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /health command - Detailed health check"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Health command from user {update.effective_user.id}")
         
         components = []
@@ -569,6 +586,8 @@ Hello <b>{user.first_name}</b>! I'm your AI-powered trading assistant.
     @rate_limit(max_calls=10, window_seconds=60)
     async def cmd_signals(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /signals command - Show recent signals"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Signals command from user {update.effective_user.id}")
         
         signals = []
@@ -626,6 +645,8 @@ The system will display the last 5 signals here once trading begins.
     @rate_limit(max_calls=10, window_seconds=60)
     async def cmd_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /positions command - Show open positions"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Positions command from user {update.effective_user.id}")
         
         positions = []
@@ -687,6 +708,8 @@ Positions will appear here when trades are opened.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_performance(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /performance command - Performance statistics"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Performance command from user {update.effective_user.id}")
         
         stats = None
@@ -758,6 +781,8 @@ Positions will appear here when trades are opened.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /history command - Trade history"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"History command from user {update.effective_user.id}")
         
         trades = []
@@ -824,6 +849,8 @@ Completed trades will appear here.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_ai(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /ai command - AI brain status and insights"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"AI command from user {update.effective_user.id}")
         
         ai_status = {
@@ -880,6 +907,8 @@ The AI brain analyzes each signal for:
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_insights(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /insights command - Latest AI learning insights"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Insights command from user {update.effective_user.id}")
         
         insights = []
@@ -951,6 +980,8 @@ The AI analyzes every trade outcome to improve future signal accuracy.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /settings command - View current configuration"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Settings command from user {update.effective_user.id}")
         
         config = None
@@ -1031,6 +1062,8 @@ The AI analyzes every trade outcome to improve future signal accuracy.
     @rate_limit(max_calls=10, window_seconds=60)
     async def cmd_market(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /market command - Current market state"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Market command from user {update.effective_user.id}")
         
         market_data = {
@@ -1115,6 +1148,8 @@ The AI analyzes every trade outcome to improve future signal accuracy.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_leverage(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle /leverage command - View/set leverage with inline buttons"""
+        if not update.message or not update.effective_user:
+            return ConversationHandler.END
         logger.info(f"Leverage command from user {update.effective_user.id}")
         
         current_leverage = 12
@@ -1160,10 +1195,14 @@ Select a new leverage level below:
     @error_handler
     async def leverage_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle leverage selection callback"""
+        if not update.callback_query or not update.effective_user:
+            return ConversationHandler.END
         query = update.callback_query
         await query.answer()
         
         data = query.data
+        if not data:
+            return ConversationHandler.END
         
         if data == "leverage_cancel":
             await query.edit_message_text(
@@ -1208,6 +1247,8 @@ This setting will be used for future trades.
     @rate_limit(max_calls=5, window_seconds=60)
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle /risk command - View/set risk level with inline buttons"""
+        if not update.message or not update.effective_user:
+            return ConversationHandler.END
         logger.info(f"Risk command from user {update.effective_user.id}")
         
         current_risk = 2.0
@@ -1255,10 +1296,14 @@ Select a new risk level below:
     @error_handler
     async def risk_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle risk selection callback"""
+        if not update.callback_query or not update.effective_user:
+            return ConversationHandler.END
         query = update.callback_query
         await query.answer()
         
         data = query.data
+        if not data:
+            return ConversationHandler.END
         
         if data == "risk_cancel":
             await query.edit_message_text(
@@ -1307,6 +1352,8 @@ This setting will be used for future trades.
     @rate_limit(max_calls=3, window_seconds=60)
     async def cmd_toggle_auto(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /toggle_auto command - Toggle auto trading"""
+        if not update.message or not update.effective_user:
+            return
         logger.info(f"Toggle auto command from user {update.effective_user.id}")
         
         current_state = False
@@ -1348,6 +1395,8 @@ Auto trading has been {action_text}.
     @error_handler
     async def cmd_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle /cancel command - Cancel current operation"""
+        if not update.message or not update.effective_user:
+            return ConversationHandler.END
         logger.info(f"Cancel command from user {update.effective_user.id}")
         
         await update.message.reply_text(

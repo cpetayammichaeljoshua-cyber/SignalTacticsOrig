@@ -2,7 +2,7 @@
 name = "ai-trading-signal-bot"
 version = "2.0.0"
 description = "AI-Powered UT Bot + STC Trading Signal System for Telegram"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.8.0",
     "aiosqlite>=0.19.0",

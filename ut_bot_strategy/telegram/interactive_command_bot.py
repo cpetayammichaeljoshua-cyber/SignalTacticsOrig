@@ -32,6 +32,7 @@ from telegram.ext import (
     filters
 )
 from telegram.constants import ParseMode
+from telegram.error import TimedOut, NetworkError
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +336,11 @@ class InteractiveCommandBot:
             except asyncio.CancelledError:
                 logger.info("Polling cancelled")
                 break
+            except TimedOut:
+                pass
+            except NetworkError as e:
+                logger.warning(f"Network error in polling: {e}")
+                await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"Polling error: {e}")
                 await asyncio.sleep(2)

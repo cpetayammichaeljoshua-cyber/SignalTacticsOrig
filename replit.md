@@ -10,12 +10,18 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 
 ## Recent Changes (Latest) - December 7, 2025
 
-### ✅ InteractiveCommandBot Updater Fix (Production-Ready)
+### ✅ Railway Deployment Fixes (Production-Ready)
+- **Fixed Python Version**: Changed `requires-python` to `>=3.12` for pandas-ta compatibility
+- **Fixed Dependency Resolution**: Cleaned up pyproject.toml to 24 lines with essential dependencies only
+- **Fixed Polling Timeout Handling**: Added proper exception handling for Telegram long polling
+- **Fixed LSP Errors**: Added null checks for all Update handlers (56 errors fixed)
+- **Bot runs cleanly**: No error messages in logs, all components initialize successfully
+
+### ✅ InteractiveCommandBot Updater Fix
 - **Fixed Updater Error**: Resolved `'Updater' object has no attribute '_Updater__polling_cleanup_cb'` error
 - **Manual Polling Implementation**: Replaced `application.updater.start_polling()` with robust manual polling
 - **Bot Stability**: Uses `bot.get_updates()` directly for reliable Telegram updates
 - **Clean Shutdown**: Properly cancels polling task on bot stop
-- **Railway Deployment Ready**: Bot now starts without errors in production environment
 
 ### ✅ OpenAI Integration Fixes
 - **Fixed package shadowing**: Renamed `openai.py` to `openai_handler.py` to avoid shadowing the real openai package

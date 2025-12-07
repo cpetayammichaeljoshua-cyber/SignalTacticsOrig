@@ -249,5 +249,6 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["python", "start_production_bot.py"]
-deploymentTarget = "vm"
+run = ["sh", "-c", "python main.py"]
+deploymentTarget = "gce"
+ignorePorts = true

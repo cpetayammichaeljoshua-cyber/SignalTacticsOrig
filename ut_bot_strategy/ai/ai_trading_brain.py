@@ -27,6 +27,7 @@ try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
+    OpenAI = None  # type: ignore
     OPENAI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)

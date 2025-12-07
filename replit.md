@@ -8,7 +8,28 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 - Automatic stop loss and take profit calculation
 - Risk management with 1:1.5 reward ratio
 
-## Recent Changes (Latest) - December 6, 2025
+## Recent Changes (Latest) - December 7, 2025
+
+### ✅ Dynamic TP/SL Enhancement
+Enhanced AI-powered position sizing with intelligent stop loss and take profit calculations:
+
+**Stop Loss Improvements:**
+- Minimum SL distance enforcement (0.5% of entry price)
+- True ATR calculation using Wilder's smoothing method
+- Volatility-based SL adjustment
+- Market structure detection for optimal placement
+
+**Take Profit Improvements:**
+- Multi-TP system with proper risk-reward ratios (1:1, 1:2, 1:3)
+- Enforced minimum R:R floors regardless of market structure
+- AI-calculated confidence-based TP adjustments
+
+**Technical Fixes:**
+- Fixed ATR percent validation in trade setup
+- Fixed datetime handling in signal engine
+- Proper volatility score normalization (0-1 range)
+
+## Changes - December 6, 2025
 
 ### ✅ Dependency Fixes for Deployment
 - Fixed numpy/pandas-ta/numba version conflicts

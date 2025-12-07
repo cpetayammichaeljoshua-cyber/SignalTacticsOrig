@@ -18,6 +18,8 @@ import logging
 import signal as sig
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+import pandas as pd
+import numpy as np
 
 from ut_bot_strategy.config import Config, load_config
 from ut_bot_strategy.data.binance_fetcher import BinanceDataFetcher
@@ -178,6 +180,103 @@ class AITradingOrchestrator:
         cooldown = timedelta(minutes=self.config.bot.signal_cooldown_minutes)
         return datetime.now() - self._last_signal_time > cooldown
     
+    def _calculate_true_atr(self, df, period: int = 14) -> float:
+        """
+        Calculate true Average True Range using Wilder's method
+        
+        Args:
+            df: DataFrame with high, low, close columns
+            period: ATR period (default 14)
+            
+        Returns:
+            ATR value as float
+        """
+        try:
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            
+            high_low = high - low
+            high_close = np.abs(high - close.shift(1))
+            low_close = np.abs(low - close.shift(1))
+            
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = true_range.rolling(window=period).mean().iloc[-1]
+            
+            if pd.isna(atr) or atr <= 0:
+                atr = true_range.iloc[-period:].mean()
+            
+            return float(atr) if not pd.isna(atr) else float(high.iloc[-1] - low.iloc[-1])
+            
+        except Exception as e:
+            logger.warning(f"Error calculating ATR: {e}")
+            return float(df['high'].iloc[-1] - df['low'].iloc[-1])
+    
+    def _calculate_volatility_score(self, atr_percent: float) -> float:
+        """
+        Calculate normalized volatility score (0-1, where 1 is low volatility/safer)
+        
+        Args:
+            atr_percent: ATR as percentage of price
+            
+        Returns:
+            Volatility score between 0 and 1
+        """
+        min_atr_pct = 0.3
+        max_atr_pct = 3.0
+        
+        clamped_atr = max(min_atr_pct, min(max_atr_pct, atr_percent))
+        
+        volatility_score = 1.0 - ((clamped_atr - min_atr_pct) / (max_atr_pct - min_atr_pct))
+        
+        return max(0.0, min(1.0, volatility_score))
+    
+    def _detect_market_structure(self, df, atr_percent: float) -> str:
+        """
+        Detect market structure from price action
+        
+        Args:
+            df: DataFrame with OHLCV data
+            atr_percent: ATR as percentage of price
+            
+        Returns:
+            Market structure: 'trending', 'ranging', 'volatile', 'breakout', 'consolidation'
+        """
+        try:
+            lookback = min(50, len(df) - 1)
+            if lookback < 10:
+                return 'ranging'
+            
+            close = df['close'].iloc[-lookback:]
+            high = df['high'].iloc[-lookback:]
+            low = df['low'].iloc[-lookback:]
+            
+            x = np.arange(len(close))
+            slope = np.polyfit(x, close.values, 1)[0]
+            price_range = close.max() - close.min()
+            normalized_slope = slope / (price_range / len(close)) if price_range > 0 else 0
+            
+            recent_range = (high.iloc[-10:].max() - low.iloc[-10:].min()) / close.iloc[-1] * 100
+            historical_range = (high.iloc[-30:-10].max() - low.iloc[-30:-10].min()) / close.iloc[-20] * 100 if len(close) >= 30 else recent_range
+            
+            if atr_percent > 2.0:
+                return 'volatile'
+            
+            if recent_range > historical_range * 1.5:
+                return 'breakout'
+            
+            if abs(normalized_slope) > 0.5:
+                return 'trending'
+            
+            if atr_percent < 0.5 and recent_range < historical_range * 0.7:
+                return 'consolidation'
+            
+            return 'ranging'
+            
+        except Exception as e:
+            logger.warning(f"Error detecting market structure: {e}")
+            return 'ranging'
+    
     async def _enhance_signal_with_ai(
         self,
         signal: Dict[str, Any],
@@ -195,12 +294,23 @@ class AITradingOrchestrator:
         """
         try:
             entry_price = signal.get('entry_price', 0)
-            atr = df['high'].iloc[-14:].max() - df['low'].iloc[-14:].min()
-            atr = atr / 14
-            volatility_score = min(1.0, atr / entry_price * 100)
+            
+            if 'atr' in df.columns and not df['atr'].isna().all():
+                atr = float(df['atr'].iloc[-1])
+                if pd.isna(atr) or atr <= 0:
+                    atr = self._calculate_true_atr(df, period=14)
+            else:
+                atr = self._calculate_true_atr(df, period=14)
+            
+            atr_percent = (atr / entry_price) * 100 if entry_price > 0 else 1.0
+            volatility_score = self._calculate_volatility_score(atr_percent)
+            
+            market_structure = self._detect_market_structure(df, atr_percent)
             
             signal['atr'] = atr
+            signal['atr_percent'] = atr_percent
             signal['volatility_score'] = volatility_score
+            signal['market_structure'] = market_structure
             
             ai_analysis = await self.ai_brain.analyze_signal({
                 'symbol': signal.get('symbol', self.config.trading.symbol),
@@ -223,8 +333,9 @@ class AITradingOrchestrator:
             
             market_data = {
                 'atr': atr,
+                'atr_percent': atr_percent,
                 'volatility_score': volatility_score,
-                'market_structure': ai_analysis.get('risk_assessment', {}).get('level', 'ranging')
+                'market_structure': market_structure
             }
             
             account_balance = 1000.0

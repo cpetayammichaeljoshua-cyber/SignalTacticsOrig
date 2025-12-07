@@ -1,0 +1,6 @@
+{
+  "confidence_threshold": 75.0,
+  "strict_filtering": true,
+  "error_handling": "comprehensive",
+  "ai_processor_enabled": true
+}

@@ -252,3 +252,4 @@ externalPort = 8080
 run = ["sh", "-c", "python main.py"]
 deploymentTarget = "gce"
 ignorePorts = true
+build = ["sh", "-c", "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py"]

@@ -8,7 +8,22 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 - Automatic stop loss and take profit calculation
 - Risk management with 1:1.5 reward ratio
 
-## Recent Changes (Latest) - November 28, 2025
+## Recent Changes (Latest) - December 7, 2025
+
+### ✅ InteractiveCommandBot Updater Fix (Production-Ready)
+- **Fixed Updater Error**: Resolved `'Updater' object has no attribute '_Updater__polling_cleanup_cb'` error
+- **Manual Polling Implementation**: Replaced `application.updater.start_polling()` with robust manual polling
+- **Bot Stability**: Uses `bot.get_updates()` directly for reliable Telegram updates
+- **Clean Shutdown**: Properly cancels polling task on bot stop
+- **Railway Deployment Ready**: Bot now starts without errors in production environment
+
+### ✅ OpenAI Integration Fixes
+- **Fixed package shadowing**: Renamed `openai.py` to `openai_handler.py` to avoid shadowing the real openai package
+- **Fixed API key encoding**: Added sanitization to remove hidden Unicode control characters from OPENAI_API_KEY
+- **Fixed message encoding**: Added text sanitization for all OpenAI API call messages
+- **AI Brain now Active**: System no longer runs in fallback mode - GPT-5 integration fully operational
+
+## Changes - November 28, 2025
 
 ### ✅ New UT Bot + STC Strategy Implementation
 - **UT Bot Alerts Indicator**: Converted from TradingView Pine Script to Python

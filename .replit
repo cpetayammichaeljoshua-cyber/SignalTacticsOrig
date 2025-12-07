@@ -1,4 +1,4 @@
-modules = ["python-3.11"]
+modules = ["python-3.12"]
 [agent]
 expertMode = true
 integrations = ["python_openai:1.0.0"]
@@ -223,15 +223,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Ultimate Trading Bot"
+args = "AI Trading Signal Bot"
 
 [[workflows.workflow]]
-name = "Ultimate Trading Bot"
+name = "AI Trading Signal Bot"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_ultimate_bot.py"
+args = "python main.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
@@ -249,5 +249,11 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["python", "start_production_bot.py"]
-deploymentTarget = "vm"
+run = ["sh", "-c", "python main.py"]
+deploymentTarget = "gce"
+ignorePorts = true
+
+[userenv]
+
+[userenv.shared]
+ADMIN_CHAT_IDS = "1548826223,-1003013505527"

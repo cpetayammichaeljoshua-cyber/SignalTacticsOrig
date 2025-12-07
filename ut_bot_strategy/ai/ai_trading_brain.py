@@ -14,10 +14,12 @@ Features:
 """
 
 import os
+import re
 import json
 import logging
 import hashlib
 import asyncio
+import unicodedata
 import aiosqlite
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
@@ -31,7 +33,15 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+def _get_clean_api_key() -> Optional[str]:
+    """Get OpenAI API key with any hidden Unicode characters removed."""
+    raw_key = os.environ.get("OPENAI_API_KEY", "")
+    if not raw_key:
+        return None
+    cleaned = ''.join(char for char in raw_key if ord(char) < 128)
+    return cleaned if cleaned else None
+
+OPENAI_API_KEY = _get_clean_api_key()
 
 
 class AITradingBrain:
@@ -176,6 +186,20 @@ class AITradingBrain:
             'expires': datetime.now() + timedelta(seconds=self.cache_ttl)
         }
     
+    def _sanitize_text(self, text: Any) -> str:
+        """
+        Sanitize text by removing Unicode control characters (category Cf).
+        This prevents encoding errors when sending to OpenAI API.
+        """
+        if text is None:
+            return ""
+        text_str = str(text)
+        cleaned = ''.join(
+            char for char in text_str 
+            if unicodedata.category(char) != 'Cf'
+        )
+        return unicodedata.normalize('NFC', cleaned)
+    
     def _call_openai(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """
         Make synchronous OpenAI API call with JSON response format.
@@ -190,14 +214,22 @@ class AITradingBrain:
             raise RuntimeError("OpenAI client not available")
         
         try:
+            sanitized_messages = []
+            for msg in messages:
+                sanitized_msg = {
+                    "role": msg.get("role", "user"),
+                    "content": self._sanitize_text(msg.get("content", ""))
+                }
+                sanitized_messages.append(sanitized_msg)
+            
             response = self.openai_client.chat.completions.create(
                 model=self.MODEL,
-                messages=messages,
+                messages=sanitized_messages,
                 response_format={"type": "json_object"}
             )
             
             content = response.choices[0].message.content
-            return json.loads(content)
+            return json.loads(content if content else "{}")
             
         except Exception as e:
             logger.error(f"OpenAI API call failed: {e}")
@@ -238,8 +270,8 @@ class AITradingBrain:
             return result
         
         try:
-            symbol = signal_data.get('symbol', 'UNKNOWN')
-            direction = signal_data.get('direction', 'UNKNOWN')
+            symbol = self._sanitize_text(signal_data.get('symbol', 'UNKNOWN'))
+            direction = self._sanitize_text(signal_data.get('direction', 'UNKNOWN'))
             entry = signal_data.get('entry_price', 0)
             stop_loss = signal_data.get('stop_loss', 0)
             take_profit = signal_data.get('take_profit', 0)
@@ -250,6 +282,11 @@ class AITradingBrain:
             rr_ratio = reward_percent / risk_percent if risk_percent > 0 else 0
             
             historical_context = await self._get_historical_performance(symbol, direction)
+            
+            indicators_json = self._sanitize_text(json.dumps(indicators, indent=2, ensure_ascii=True))
+            win_rate = self._sanitize_text(historical_context.get('win_rate', 'N/A'))
+            avg_profit = self._sanitize_text(historical_context.get('avg_profit', 'N/A'))
+            total_trades = historical_context.get('total_trades', 0)
             
             messages = [
                 {
@@ -272,12 +309,12 @@ Take Profit: {take_profit} (Reward: {reward_percent:.2f}%)
 Risk/Reward Ratio: {rr_ratio:.2f}
 
 Indicators:
-{json.dumps(indicators, indent=2)}
+{indicators_json}
 
 Historical Performance on {symbol} {direction} signals:
-- Win Rate: {historical_context.get('win_rate', 'N/A')}%
-- Average Profit: {historical_context.get('avg_profit', 'N/A')}%
-- Total Trades: {historical_context.get('total_trades', 0)}
+- Win Rate: {win_rate}%
+- Average Profit: {avg_profit}%
+- Total Trades: {total_trades}
 
 Provide your analysis with confidence score and recommendation."""
                 }

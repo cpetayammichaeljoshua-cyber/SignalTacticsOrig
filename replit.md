@@ -10,6 +10,14 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 
 ## Recent Changes (Latest) - December 7, 2025
 
+### ✅ New /backtest Command with Comprehensive Metrics
+- **Backtesting Module**: Created `ut_bot_strategy/backtesting/` with BacktestRunner and BacktestMetrics classes
+- **/backtest Command**: Run strategy backtest via Telegram with configurable lookback period (1-90 days)
+- **Comprehensive Metrics**: Win rate, loss rate, PnL, direction analysis, risk-reward, streaks, timing stats
+- **Rate Limited**: 2 calls per 5 minutes to prevent abuse
+- **Zero-trade Handling**: Graceful message when no trades generated in backtest period
+- **Usage**: `/backtest` (30 days default) or `/backtest 14` (14 days)
+
 ### ✅ Railway Deployment Fixes (Production-Ready)
 - **Fixed Python Version**: Changed `requires-python` to `>=3.12` for pandas-ta compatibility
 - **Fixed Dependency Resolution**: Cleaned up pyproject.toml to 24 lines with essential dependencies only

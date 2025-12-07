@@ -184,7 +184,7 @@ class BacktestRunner:
         
         for i in range(warmup_period, len(df)):
             current_bar = df.iloc[i]
-            current_time = df.index[i]
+            current_time = pd.to_datetime(df.index[i])
             current_high = current_bar['high']
             current_low = current_bar['low']
             current_close = current_bar['close']
@@ -205,7 +205,7 @@ class BacktestRunner:
         
         if self._current_position:
             last_bar = df.iloc[-1]
-            last_time = df.index[-1]
+            last_time = pd.to_datetime(df.index[-1])
             self._close_position(last_time, last_bar['close'], "End of backtest")
         
         from .backtest_metrics import BacktestMetrics
@@ -217,8 +217,8 @@ class BacktestRunner:
             'timeframe': self.config.timeframe,
             'period_days': days,
             'total_bars': len(df),
-            'start_date': df.index[warmup_period].strftime('%Y-%m-%d %H:%M'),
-            'end_date': df.index[-1].strftime('%Y-%m-%d %H:%M'),
+            'start_date': pd.to_datetime(df.index[warmup_period]).strftime('%Y-%m-%d %H:%M'),
+            'end_date': pd.to_datetime(df.index[-1]).strftime('%Y-%m-%d %H:%M'),
             'trades': [t.to_dict() for t in self.trades],
             'metrics': metrics.calculate_all_metrics()
         }

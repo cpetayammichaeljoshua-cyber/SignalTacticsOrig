@@ -266,6 +266,7 @@ class InteractiveCommandBot:
         self.application.add_handler(CommandHandler("settings", self._wrap_handler(self.cmd_settings)))
         self.application.add_handler(CommandHandler("market", self._wrap_handler(self.cmd_market)))
         self.application.add_handler(CommandHandler("toggle_auto", self._wrap_handler(self.cmd_toggle_auto)))
+        self.application.add_handler(CommandHandler("backtest", self._wrap_handler(self.cmd_backtest)))
         
         leverage_conv = ConversationHandler(
             entry_points=[CommandHandler("leverage", self._wrap_handler(self.cmd_leverage))],
@@ -443,6 +444,7 @@ Hello <b>{user.first_name}</b>! I'm your AI-powered trading assistant.
 /positions - Open positions
 /performance - Performance stats
 /history - Trade history
+/backtest - Run strategy backtest
 
 <b>🤖 AI Features</b>
 /ai - AI brain status & insights
@@ -1397,6 +1399,89 @@ Auto trading has been {action_text}.
 """
         await update.message.reply_text(message.strip(), parse_mode=ParseMode.HTML)
         logger.info(f"Auto trading {'enabled' if new_state else 'disabled'} by user {update.effective_user.id}")
+    
+    @admin_only
+    @error_handler
+    @rate_limit(max_calls=2, window_seconds=300)
+    async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /backtest command - Run strategy backtest and show results"""
+        if not update.message or not update.effective_user:
+            return
+        logger.info(f"Backtest command from user {update.effective_user.id}")
+        
+        lookback_days = 30
+        if context.args and len(context.args) > 0:
+            try:
+                lookback_days = int(context.args[0])
+                lookback_days = max(1, min(lookback_days, 90))
+            except ValueError:
+                pass
+        
+        await update.message.reply_text(
+            f"📊 <b>Starting Backtest...</b>\n\n"
+            f"Running {lookback_days}-day backtest on ETH/USDT 5m...\n"
+            f"This may take 30-60 seconds.",
+            parse_mode=ParseMode.HTML
+        )
+        
+        try:
+            from ..backtesting.backtest_runner import BacktestRunner, BacktestConfig
+            from ..backtesting.backtest_metrics import BacktestMetrics
+            
+            config = BacktestConfig(
+                symbol="ETHUSDT",
+                timeframe="5m",
+                lookback_days=lookback_days
+            )
+            
+            data_fetcher = None
+            if self.orchestrator and hasattr(self.orchestrator, 'data_fetcher'):
+                data_fetcher = self.orchestrator.data_fetcher
+            
+            runner = BacktestRunner(config=config, data_fetcher=data_fetcher)
+            results = await runner.run_backtest(lookback_days=lookback_days)
+            
+            if not results.get('success', False):
+                error_msg = results.get('error', 'Unknown error')
+                await update.message.reply_text(
+                    f"❌ <b>Backtest Failed</b>\n\n"
+                    f"Error: <code>{error_msg}</code>\n\n"
+                    f"Please try again later.",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+            
+            metrics_obj = BacktestMetrics([])
+            metrics_obj._metrics = results.get('metrics', {})
+            
+            if not metrics_obj._metrics or metrics_obj._metrics.get('overview', {}).get('total_trades', 0) == 0:
+                await update.message.reply_text(
+                    f"📊 <b>Backtest Complete</b>\n\n"
+                    f"No trades generated during the {lookback_days}-day period.\n"
+                    f"The strategy conditions were not met.\n\n"
+                    f"<b>Period:</b> {results.get('start_date', 'N/A')} to {results.get('end_date', 'N/A')}",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+            
+            telegram_message = metrics_obj.format_telegram_message()
+            
+            period_info = (
+                f"\n<b>Period:</b> {results.get('start_date', 'N/A')} to {results.get('end_date', 'N/A')}"
+            )
+            full_message = telegram_message + period_info
+            
+            await update.message.reply_text(full_message, parse_mode=ParseMode.HTML)
+            logger.info(f"Backtest completed: {len(results.get('trades', []))} trades over {lookback_days} days")
+            
+        except Exception as e:
+            logger.error(f"Backtest error: {e}", exc_info=True)
+            await update.message.reply_text(
+                f"❌ <b>Backtest Error</b>\n\n"
+                f"An error occurred: <code>{str(e)[:100]}</code>\n\n"
+                f"Please try again.",
+                parse_mode=ParseMode.HTML
+            )
     
     @error_handler
     async def cmd_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

@@ -177,9 +177,6 @@ class InteractiveCommandBot:
         
         self._first_user_auto_admin = len(self.admin_chat_ids) == 0
         
-        self._polling_task: Optional[asyncio.Task] = None
-        self._update_offset: int = 0
-        
         logger.info(f"InteractiveCommandBot initialized with {len(self.admin_chat_ids)} admin IDs: {self.admin_chat_ids}")
         if self._first_user_auto_admin:
             logger.info("First user auto-admin mode enabled - first user to run a command will be authorized")
@@ -239,7 +236,7 @@ class InteractiveCommandBot:
         return {}
     
     async def start(self) -> None:
-        """Start the interactive command bot using manual polling (more robust)"""
+        """Start the interactive command bot"""
         if self._running:
             logger.warning("Bot is already running")
             return
@@ -288,47 +285,10 @@ class InteractiveCommandBot:
         
         await self.application.initialize()
         await self.application.start()
-        
-        try:
-            await self.application.bot.delete_webhook(drop_pending_updates=True)
-        except Exception as e:
-            logger.warning(f"Could not delete webhook: {e}")
+        await self.application.updater.start_polling(drop_pending_updates=True)
         
         self._running = True
-        self._polling_task = asyncio.create_task(self._manual_polling())
-        
-        logger.info("InteractiveCommandBot started successfully with manual polling")
-    
-    async def _manual_polling(self) -> None:
-        """
-        Manual polling loop using bot.get_updates() directly.
-        
-        This approach is more robust than using application.updater.start_polling()
-        because it avoids internal Updater class issues in python-telegram-bot v20+.
-        """
-        logger.info("Starting manual polling loop...")
-        
-        while self._running:
-            try:
-                updates = await self.application.bot.get_updates(
-                    offset=self._update_offset,
-                    timeout=10,
-                    allowed_updates=["message", "callback_query"]
-                )
-                
-                for update in updates:
-                    self._update_offset = update.update_id + 1
-                    try:
-                        await self.application.process_update(update)
-                    except Exception as e:
-                        logger.error(f"Error processing update {update.update_id}: {e}")
-                        
-            except asyncio.CancelledError:
-                logger.info("Polling cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Polling error: {e}")
-                await asyncio.sleep(2)
+        logger.info("InteractiveCommandBot started successfully")
     
     async def stop(self) -> None:
         """Stop the interactive command bot"""
@@ -337,16 +297,9 @@ class InteractiveCommandBot:
         
         self._running = False
         
-        if self._polling_task is not None:
-            self._polling_task.cancel()
-            try:
-                await self._polling_task
-            except asyncio.CancelledError:
-                pass
-            self._polling_task = None
-        
         if self.application:
             try:
+                await self.application.updater.stop()
                 await self.application.stop()
                 await self.application.shutdown()
                 logger.info("InteractiveCommandBot stopped successfully")
@@ -365,7 +318,7 @@ class InteractiveCommandBot:
             return await callback(update, context)
         return wrapped
     
-    async def _error_callback(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def _error_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Global error handler for the bot"""
         logger.error(f"Bot error: {context.error}", exc_info=context.error)
     

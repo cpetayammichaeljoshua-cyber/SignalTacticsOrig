@@ -252,3 +252,8 @@ externalPort = 8080
 run = ["sh", "-c", "python main.py"]
 deploymentTarget = "gce"
 ignorePorts = true
+
+[userenv]
+
+[userenv.shared]
+ADMIN_CHAT_IDS = "1548826223,-1003013505527"

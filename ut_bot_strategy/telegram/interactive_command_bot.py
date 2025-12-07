@@ -50,10 +50,19 @@ def admin_only(func: Callable) -> Callable:
         
         if not self._is_authorized(user_id, chat_id):
             logger.warning(f"Unauthorized access attempt from user {user_id} in chat {chat_id}")
+            
+            if hasattr(self, '_first_user_auto_admin') and not self._first_user_auto_admin:
+                self._first_user_auto_admin = True
+                self.add_admin(user_id)
+                logger.info(f"Auto-authorized first user: {user_id}")
+                return await func(self, update, context, *args, **kwargs)
+            
             await update.message.reply_text(
-                "⛔ <b>Access Denied</b>\n\n"
-                "You are not authorized to use this command.\n"
-                "Contact the administrator for access.",
+                f"⛔ <b>Access Denied</b>\n\n"
+                f"Your ID: <code>{user_id}</code>\n\n"
+                f"To authorize yourself, add your ID to the "
+                f"<code>ADMIN_CHAT_IDS</code> environment variable.\n\n"
+                f"Or set <code>TELEGRAM_CHAT_ID={user_id}</code>",
                 parse_mode=ParseMode.HTML
             )
             return
@@ -136,8 +145,17 @@ class InteractiveCommandBot:
         """
         self.bot_token = bot_token or os.getenv('TELEGRAM_BOT_TOKEN', '')
         
-        admin_ids_str = admin_chat_ids or os.getenv('ADMIN_CHAT_IDS', '')
         self.admin_chat_ids: set = set()
+        
+        telegram_chat_id = os.getenv('TELEGRAM_CHAT_ID', '')
+        if telegram_chat_id:
+            try:
+                self.admin_chat_ids.add(int(telegram_chat_id.strip()))
+                logger.info(f"Added TELEGRAM_CHAT_ID {telegram_chat_id} as admin")
+            except ValueError:
+                logger.warning(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+        
+        admin_ids_str = admin_chat_ids or os.getenv('ADMIN_CHAT_IDS', '')
         if admin_ids_str:
             for id_str in admin_ids_str.split(','):
                 id_str = id_str.strip()
@@ -155,13 +173,25 @@ class InteractiveCommandBot:
         
         self._settings_overrides = {}
         
-        logger.info(f"InteractiveCommandBot initialized with {len(self.admin_chat_ids)} admin IDs")
+        self._dynamic_admins: set = set()
+        
+        self._first_user_auto_admin = len(self.admin_chat_ids) == 0
+        
+        logger.info(f"InteractiveCommandBot initialized with {len(self.admin_chat_ids)} admin IDs: {self.admin_chat_ids}")
+        if self._first_user_auto_admin:
+            logger.info("First user auto-admin mode enabled - first user to run a command will be authorized")
     
     def _is_authorized(self, user_id: int, chat_id: int) -> bool:
         """Check if user/chat is authorized"""
-        if not self.admin_chat_ids:
+        if not self.admin_chat_ids and not self._dynamic_admins:
             return True
-        return user_id in self.admin_chat_ids or chat_id in self.admin_chat_ids
+        all_admins = self.admin_chat_ids | self._dynamic_admins
+        return user_id in all_admins or chat_id in all_admins
+    
+    def add_admin(self, chat_id: int) -> None:
+        """Dynamically add an admin chat ID"""
+        self._dynamic_admins.add(chat_id)
+        logger.info(f"Dynamically added admin: {chat_id}")
     
     def _check_rate_limit(self, user_id: int, command: str, max_calls: int, window_seconds: int) -> bool:
         """Check and update rate limit for a user/command"""

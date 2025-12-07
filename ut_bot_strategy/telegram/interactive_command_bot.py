@@ -51,8 +51,8 @@ def admin_only(func: Callable) -> Callable:
         if not self._is_authorized(user_id, chat_id):
             logger.warning(f"Unauthorized access attempt from user {user_id} in chat {chat_id}")
             
-            if hasattr(self, '_first_user_auto_admin') and not self._first_user_auto_admin:
-                self._first_user_auto_admin = True
+            if hasattr(self, '_first_user_auto_admin') and self._first_user_auto_admin:
+                self._first_user_auto_admin = False
                 self.add_admin(user_id)
                 logger.info(f"Auto-authorized first user: {user_id}")
                 return await func(self, update, context, *args, **kwargs)

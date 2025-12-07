@@ -7,11 +7,17 @@ Implements the complete strategy rules:
 - SHORT: UT Bot sell signal + STC red + STC pointing down + STC > 25
 - Stop loss at recent swing high/low
 - Take profit at 1.5x risk
+
+Enhanced with Order Flow Analysis:
+- CVD trend integration for confirmation
+- Manipulation detection filtering
+- Institutional activity scoring
+- Enhanced confidence calculation
 """
 
 import logging
 from datetime import datetime
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 import pandas as pd
 import numpy as np
 
@@ -30,7 +36,11 @@ class SignalEngine:
     2. STC indicator for confirmation
     3. Swing detection for stop loss
     4. Risk:Reward calculation for take profit
+    5. Order flow analysis for enhanced confirmation (optional)
     """
+    
+    MANIPULATION_THRESHOLD = 0.7
+    ORDER_FLOW_DIVERGENCE_THRESHOLD = 0.3
     
     def __init__(self, 
                  ut_key_value: float = 1.0,
@@ -42,7 +52,10 @@ class SignalEngine:
                  swing_lookback: int = 5,
                  risk_reward_ratio: float = 1.5,
                  min_risk_percent: float = 0.5,
-                 max_risk_percent: float = 3.0):
+                 max_risk_percent: float = 3.0,
+                 order_flow_enabled: bool = True,
+                 manipulation_filter_enabled: bool = True,
+                 order_flow_weight: float = 0.3):
         """
         Initialize Signal Engine
         
@@ -57,6 +70,9 @@ class SignalEngine:
             risk_reward_ratio: Target R:R ratio (default 1.5)
             min_risk_percent: Minimum risk percentage (default 0.5%)
             max_risk_percent: Maximum risk percentage (default 3.0%)
+            order_flow_enabled: Enable order flow analysis integration (default True)
+            manipulation_filter_enabled: Filter signals on manipulation detection (default True)
+            order_flow_weight: Weight for order flow in confidence calculation (default 0.3)
         """
         self.ut_bot = UTBotAlerts(
             key_value=ut_key_value,
@@ -75,9 +91,245 @@ class SignalEngine:
         self.min_risk_percent = min_risk_percent
         self.max_risk_percent = max_risk_percent
         
+        self.order_flow_enabled = order_flow_enabled
+        self.manipulation_filter_enabled = manipulation_filter_enabled
+        self.order_flow_weight = max(0.0, min(1.0, order_flow_weight))
+        
+        self._order_flow_metrics_service: Optional[Any] = None
+        
         self._last_signal_time: Optional[datetime] = None
         self._last_signal_type: Optional[str] = None
         self._signal_history: List[Dict] = []
+        
+        logger.info(f"SignalEngine initialized with order_flow_enabled={order_flow_enabled}, "
+                   f"manipulation_filter_enabled={manipulation_filter_enabled}, "
+                   f"order_flow_weight={order_flow_weight}")
+    
+    def set_order_flow_metrics(self, metrics_service: Any) -> None:
+        """
+        Connect to OrderFlowMetricsService for order flow analysis
+        
+        Args:
+            metrics_service: OrderFlowMetricsService instance
+        """
+        self._order_flow_metrics_service = metrics_service
+        logger.info("OrderFlowMetricsService connected to SignalEngine")
+    
+    def _get_order_flow_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current order flow metrics from connected service
+        
+        Returns:
+            Dictionary with order flow data or None if not available
+        """
+        if not self._order_flow_metrics_service:
+            return None
+        
+        try:
+            metrics = self._order_flow_metrics_service.get_complete_metrics()
+            
+            imbalance_dir = "neutral"
+            if hasattr(metrics, 'imbalance') and metrics.imbalance:
+                if metrics.imbalance.direction == "bullish":
+                    imbalance_dir = "bid"
+                elif metrics.imbalance.direction == "bearish":
+                    imbalance_dir = "ask"
+            
+            absorption_detected = False
+            if hasattr(metrics, 'absorption') and metrics.absorption:
+                absorption_detected = metrics.absorption.active_zones > 0
+            
+            return {
+                'cvd_trend': metrics.cvd.cvd_trend if hasattr(metrics, 'cvd') else 'neutral',
+                'cvd_value': metrics.cvd.current_cvd if hasattr(metrics, 'cvd') else 0.0,
+                'cvd_trend_strength': metrics.cvd.trend_strength if hasattr(metrics, 'cvd') else 0.0,
+                'delta_extreme': metrics.delta_extremes.has_extreme if hasattr(metrics, 'delta_extremes') else False,
+                'delta_direction': metrics.delta_extremes.direction if hasattr(metrics, 'delta_extremes') else 'none',
+                'imbalance_direction': imbalance_dir,
+                'imbalance_ratio': metrics.imbalance.imbalance_ratio if hasattr(metrics, 'imbalance') else 0.0,
+                'absorption_detected': absorption_detected,
+                'absorption_zones': metrics.absorption.active_zones if hasattr(metrics, 'absorption') else 0,
+                'manipulation_score': metrics.manipulation.overall_score if hasattr(metrics, 'manipulation') else 0.0,
+                'manipulation_notes': metrics.manipulation.notes if hasattr(metrics, 'manipulation') else [],
+                'manipulation_recommendation': metrics.manipulation.recommendation if hasattr(metrics, 'manipulation') else 'trade',
+                'tape_signal': metrics.tape_signal if hasattr(metrics, 'tape_signal') else 0.0,
+                'order_flow_bias': metrics.order_flow_bias if hasattr(metrics, 'order_flow_bias') else 0.0,
+                'institutional_activity': metrics.institutional_activity.activity_score if hasattr(metrics, 'institutional_activity') else 0.0,
+                'smart_money_direction': metrics.smart_money.direction if hasattr(metrics, 'smart_money') else 'neutral',
+                'smart_money_score': metrics.smart_money.score if hasattr(metrics, 'smart_money') else 0.0
+            }
+        except Exception as e:
+            logger.warning(f"Error getting order flow data: {e}")
+            return None
+    
+    def _check_manipulation_filter(self, signal: Dict, order_flow_data: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Check if signal should be filtered due to manipulation detection
+        
+        Args:
+            signal: Signal dictionary
+            order_flow_data: Order flow data dictionary
+            
+        Returns:
+            Tuple of (should_filter: bool, reason: str)
+        """
+        if not self.manipulation_filter_enabled:
+            return False, ""
+        
+        manipulation_score = order_flow_data.get('manipulation_score', 0.0)
+        manipulation_recommendation = order_flow_data.get('manipulation_recommendation', 'trade')
+        
+        if manipulation_score >= self.MANIPULATION_THRESHOLD:
+            notes = order_flow_data.get('manipulation_notes', [])
+            reason = f"Manipulation detected (score: {manipulation_score:.2f})"
+            if notes:
+                reason += f" - {', '.join(notes[:2])}"
+            return True, reason
+        
+        if manipulation_recommendation == 'avoid':
+            return True, f"Order flow recommendation: avoid trading"
+        
+        return False, ""
+    
+    def _check_order_flow_divergence(self, signal: Dict, order_flow_data: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Check if order flow diverges from signal direction
+        
+        Args:
+            signal: Signal dictionary
+            order_flow_data: Order flow data dictionary
+            
+        Returns:
+            Tuple of (should_filter: bool, reason: str)
+        """
+        signal_type = signal.get('type', '')
+        order_flow_bias = order_flow_data.get('order_flow_bias', 0.0)
+        cvd_trend = order_flow_data.get('cvd_trend', 'neutral')
+        
+        if signal_type == 'LONG':
+            if order_flow_bias < -self.ORDER_FLOW_DIVERGENCE_THRESHOLD:
+                return True, f"Order flow divergence: LONG signal but bearish order flow (bias: {order_flow_bias:.2f})"
+            
+            if cvd_trend == 'bearish' and abs(order_flow_bias) > 0.2:
+                return True, f"Order flow divergence: LONG signal but bearish CVD trend"
+        
+        elif signal_type == 'SHORT':
+            if order_flow_bias > self.ORDER_FLOW_DIVERGENCE_THRESHOLD:
+                return True, f"Order flow divergence: SHORT signal but bullish order flow (bias: {order_flow_bias:.2f})"
+            
+            if cvd_trend == 'bullish' and abs(order_flow_bias) > 0.2:
+                return True, f"Order flow divergence: SHORT signal but bullish CVD trend"
+        
+        return False, ""
+    
+    def _calculate_enhanced_confidence(self, base_confidence: float, order_flow_bias: float, 
+                                        signal_type: str) -> float:
+        """
+        Calculate enhanced confidence by combining base confidence with order flow alignment
+        
+        Args:
+            base_confidence: Base signal confidence (0 to 1)
+            order_flow_bias: Order flow bias (-1 to 1)
+            signal_type: 'LONG' or 'SHORT'
+            
+        Returns:
+            Enhanced confidence (0 to 1)
+        """
+        base_weight = 1.0 - self.order_flow_weight
+        of_weight = self.order_flow_weight
+        
+        if signal_type == 'LONG':
+            of_alignment = (order_flow_bias + 1) / 2
+        elif signal_type == 'SHORT':
+            of_alignment = (-order_flow_bias + 1) / 2
+        else:
+            of_alignment = 0.5
+        
+        enhanced = (base_confidence * base_weight) + (of_alignment * of_weight)
+        
+        return max(0.0, min(1.0, enhanced))
+    
+    def _enhance_with_order_flow(self, signal: Dict) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Enhance signal with order flow data
+        
+        Args:
+            signal: Base signal dictionary
+            
+        Returns:
+            Tuple of (enhanced_signal or None if filtered, rejection_reason or None)
+        """
+        if not self.order_flow_enabled or not self._order_flow_metrics_service:
+            return signal, None
+        
+        order_flow_data = self._get_order_flow_data()
+        if not order_flow_data:
+            signal['order_flow'] = {
+                'cvd_trend': 'neutral',
+                'delta_extreme': False,
+                'imbalance_direction': 'neutral',
+                'absorption_detected': False,
+                'manipulation_score': 0.0,
+                'tape_signal': 0.0,
+                'enhanced_confidence': signal.get('confidence', 0.7)
+            }
+            signal['order_flow_bias'] = 0.0
+            signal['manipulation_score'] = 0.0
+            signal['institutional_activity'] = 0.0
+            signal['tape_signal'] = 0.0
+            signal['enhanced_confidence'] = signal.get('confidence', 0.7)
+            return signal, None
+        
+        should_filter, filter_reason = self._check_manipulation_filter(signal, order_flow_data)
+        if should_filter:
+            logger.info(f"{signal['type']} signal rejected: {filter_reason}")
+            return None, filter_reason
+        
+        should_filter, divergence_reason = self._check_order_flow_divergence(signal, order_flow_data)
+        if should_filter:
+            logger.info(f"{signal['type']} signal rejected: {divergence_reason}")
+            return None, divergence_reason
+        
+        base_confidence = signal.get('confidence', 0.7)
+        order_flow_bias = order_flow_data.get('order_flow_bias', 0.0)
+        signal_type = signal.get('type', '')
+        
+        enhanced_confidence = self._calculate_enhanced_confidence(
+            base_confidence, order_flow_bias, signal_type
+        )
+        
+        signal['order_flow'] = {
+            'cvd_trend': order_flow_data.get('cvd_trend', 'neutral'),
+            'delta_extreme': order_flow_data.get('delta_extreme', False),
+            'imbalance_direction': order_flow_data.get('imbalance_direction', 'neutral'),
+            'absorption_detected': order_flow_data.get('absorption_detected', False),
+            'manipulation_score': order_flow_data.get('manipulation_score', 0.0),
+            'tape_signal': order_flow_data.get('tape_signal', 0.0),
+            'enhanced_confidence': enhanced_confidence
+        }
+        
+        signal['order_flow_bias'] = order_flow_data.get('order_flow_bias', 0.0)
+        signal['manipulation_score'] = order_flow_data.get('manipulation_score', 0.0)
+        signal['institutional_activity'] = order_flow_data.get('institutional_activity', 0.0)
+        signal['tape_signal'] = order_flow_data.get('tape_signal', 0.0)
+        signal['enhanced_confidence'] = enhanced_confidence
+        
+        signal['order_flow_details'] = {
+            'cvd_value': order_flow_data.get('cvd_value', 0.0),
+            'cvd_trend_strength': order_flow_data.get('cvd_trend_strength', 0.0),
+            'delta_direction': order_flow_data.get('delta_direction', 'none'),
+            'imbalance_ratio': order_flow_data.get('imbalance_ratio', 0.0),
+            'absorption_zones': order_flow_data.get('absorption_zones', 0),
+            'smart_money_direction': order_flow_data.get('smart_money_direction', 'neutral'),
+            'smart_money_score': order_flow_data.get('smart_money_score', 0.0),
+            'manipulation_recommendation': order_flow_data.get('manipulation_recommendation', 'trade')
+        }
+        
+        logger.debug(f"Order flow enhanced signal: bias={order_flow_bias:.3f}, "
+                    f"manipulation={signal['manipulation_score']:.3f}, "
+                    f"enhanced_confidence={enhanced_confidence:.3f}")
+        
+        return signal, None
     
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -294,7 +546,7 @@ class SignalEngine:
     
     def generate_signal(self, df: pd.DataFrame) -> Optional[Dict]:
         """
-        Generate trading signal based on strategy rules
+        Generate trading signal based on strategy rules with order flow enhancement
         
         Args:
             df: DataFrame with OHLCV data
@@ -310,7 +562,6 @@ class SignalEngine:
         
         latest = df_calculated.iloc[-1]
         index_value = df_calculated.index[-1]
-        # Handle various datetime types from pandas index
         if isinstance(index_value, datetime):
             current_time = index_value
         elif isinstance(index_value, pd.Timestamp):
@@ -325,6 +576,7 @@ class SignalEngine:
         short_check = self.check_short_conditions(df_calculated)
         
         signal = None
+        rejection_reason = None
         
         if long_check['valid']:
             stop_loss = self.find_swing_low(df_calculated)
@@ -349,6 +601,7 @@ class SignalEngine:
                     'ut_trailing_stop': float(latest.get('trailing_stop', 0)),
                     'atr': float(latest.get('atr', 0)),
                     'reason': long_check['reason'],
+                    'confidence': 0.7,
                     'recommended_leverage': 16,
                     'leverage_config': {
                         'base_leverage': 12,
@@ -382,6 +635,7 @@ class SignalEngine:
                     'ut_trailing_stop': float(latest.get('trailing_stop', 0)),
                     'atr': float(latest.get('atr', 0)),
                     'reason': short_check['reason'],
+                    'confidence': 0.7,
                     'recommended_leverage': 16,
                     'leverage_config': {
                         'base_leverage': 12,
@@ -393,6 +647,14 @@ class SignalEngine:
                 logger.info(f"SHORT signal rejected: Risk {risk_percent:.2f}% outside acceptable range")
         
         if signal:
+            enhanced_signal, rejection_reason = self._enhance_with_order_flow(signal)
+            
+            if enhanced_signal is None:
+                logger.info(f"Signal filtered by order flow: {rejection_reason}")
+                return None
+            
+            signal = enhanced_signal
+            
             if (self._last_signal_time == current_time and 
                 self._last_signal_type == signal['type']):
                 logger.debug("Duplicate signal detected, skipping")
@@ -405,7 +667,11 @@ class SignalEngine:
             if len(self._signal_history) > 100:
                 self._signal_history = self._signal_history[-100:]
             
-            logger.info(f"Generated {signal['type']} signal at {entry_price}")
+            of_info = ""
+            if 'order_flow_bias' in signal:
+                of_info = f" (OF bias: {signal['order_flow_bias']:.2f}, confidence: {signal.get('enhanced_confidence', 0.7):.2f})"
+            
+            logger.info(f"Generated {signal['type']} signal at {entry_price}{of_info}")
         
         return signal
     
@@ -425,7 +691,7 @@ class SignalEngine:
         df_calculated = self.calculate_indicators(df)
         latest = df_calculated.iloc[-1]
         
-        return {
+        state = {
             'timestamp': df_calculated.index[-1],
             'price': float(latest['close']),
             'ut_position': int(latest.get('position', 0)),
@@ -438,7 +704,31 @@ class SignalEngine:
             'long_conditions': self.check_long_conditions(df_calculated),
             'short_conditions': self.check_short_conditions(df_calculated)
         }
+        
+        if self.order_flow_enabled and self._order_flow_metrics_service:
+            order_flow_data = self._get_order_flow_data()
+            if order_flow_data:
+                state['order_flow'] = {
+                    'bias': order_flow_data.get('order_flow_bias', 0.0),
+                    'cvd_trend': order_flow_data.get('cvd_trend', 'neutral'),
+                    'manipulation_score': order_flow_data.get('manipulation_score', 0.0),
+                    'institutional_activity': order_flow_data.get('institutional_activity', 0.0),
+                    'tape_signal': order_flow_data.get('tape_signal', 0.0)
+                }
+        
+        return state
     
     def get_signal_history(self) -> List[Dict]:
         """Get recent signal history"""
         return self._signal_history.copy()
+    
+    def get_order_flow_status(self) -> Dict[str, Any]:
+        """Get order flow integration status"""
+        return {
+            'enabled': self.order_flow_enabled,
+            'manipulation_filter_enabled': self.manipulation_filter_enabled,
+            'order_flow_weight': self.order_flow_weight,
+            'service_connected': self._order_flow_metrics_service is not None,
+            'manipulation_threshold': self.MANIPULATION_THRESHOLD,
+            'divergence_threshold': self.ORDER_FLOW_DIVERGENCE_THRESHOLD
+        }

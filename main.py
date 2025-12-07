@@ -30,6 +30,10 @@ from ut_bot_strategy.data.trade_learning_db import TradeLearningDB
 from ut_bot_strategy.telegram.production_signal_bot import ProductionSignalBot
 from ut_bot_strategy.trading.leverage_calculator import LeverageCalculator
 from ut_bot_strategy.trading.futures_executor import FuturesExecutor
+from ut_bot_strategy.data.order_flow_stream import OrderFlowStream
+from ut_bot_strategy.data.order_flow_metrics import OrderFlowMetricsService
+from ut_bot_strategy.engine.tape_analyzer import TapeAnalyzer
+from ut_bot_strategy.engine.manipulation_detector import ManipulationDetector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +58,8 @@ def print_banner():
 ║  - Intelligent Leverage Optimization (2x-20x)                ║
 ║  - Cornix-Compatible Telegram Signals                        ║
 ║  - Trade Outcome Learning & Performance Tracking             ║
+║  - Order Flow Analysis (CVD, Imbalance, Large Orders)        ║
+║  - Manipulation Detection (Stop Hunts, Spoofing, Sweeps)     ║
 ║                                                              ║
 ║  Strategy: UT Bot Alerts + Schaff Trend Cycle                ║
 ║  Pair: ETH/USDT | Timeframe: 5 minutes                       ║
@@ -146,8 +152,48 @@ class AITradingOrchestrator:
             symbol=self.config.trading.symbol
         )
         
+        self.order_flow_stream = OrderFlowStream(
+            symbol=self.config.trading.symbol,
+            large_order_threshold=10000.0,
+            rolling_window_seconds=300,
+            on_trade_callback=self._on_order_flow_trade,
+            on_depth_callback=self._on_order_flow_depth,
+            on_metrics_callback=self._on_order_flow_metrics,
+            use_futures=True
+        )
+        
+        self.tape_analyzer = TapeAnalyzer(
+            order_flow_stream=self.order_flow_stream,
+            large_print_threshold=50000.0,
+            tick_size=0.01,
+            rolling_window_seconds=300,
+            imbalance_threshold=2.0
+        )
+        
+        self.manipulation_detector = ManipulationDetector(
+            stop_hunt_threshold=0.003,
+            spoofing_order_lifetime=5.0,
+            sweep_min_levels=3,
+            large_order_threshold=50000.0,
+            absorption_stability=0.001,
+            analysis_window=300
+        )
+        
+        self.order_flow_metrics_service = OrderFlowMetricsService()
+        self.order_flow_metrics_service.initialize(
+            stream=self.order_flow_stream,
+            tape_analyzer=self.tape_analyzer,
+            manipulation_detector=self.manipulation_detector
+        )
+        
+        self.signal_engine.set_order_flow_metrics(self.order_flow_metrics_service)
+        
         self.auto_trading_enabled = self.config.trading.leverage.enabled
         self._current_trade_id: Optional[int] = None
+        self._order_flow_active = False
+        self._order_flow_task: Optional[asyncio.Task] = None
+        self._order_flow_trade_count = 0
+        self._last_order_flow_log_time: Optional[datetime] = None
         
         logger.info("=" * 60)
         logger.info("AI Trading Orchestrator Initialized")
@@ -159,13 +205,51 @@ class AITradingOrchestrator:
         logger.info(f"Leverage Range: {self.config.trading.leverage.min_leverage}x - {self.config.trading.leverage.max_leverage}x")
         logger.info(f"AI Brain: {'Active' if self.ai_brain.ai_available else 'Fallback Mode'}")
         logger.info(f"Auto Trading: {'ENABLED' if self.auto_trading_enabled else 'DISABLED'}")
+        logger.info(f"Order Flow Analysis: ENABLED")
+        logger.info(f"Manipulation Detection: ENABLED")
         logger.info("=" * 60)
+    
+    def _on_order_flow_trade(self, trade):
+        """Callback for order flow trade updates"""
+        self._order_flow_trade_count += 1
+        self._order_flow_active = True
+        
+        now = datetime.now()
+        if self._last_order_flow_log_time is None or (now - self._last_order_flow_log_time).total_seconds() >= 60:
+            self._last_order_flow_log_time = now
+            logger.info(f"Order Flow Active: {self._order_flow_trade_count} trades received, last price: ${trade.price:.2f}")
+    
+    def _on_order_flow_depth(self, depth):
+        """Callback for order flow depth updates"""
+        pass
+    
+    def _on_order_flow_metrics(self, metrics):
+        """Callback for order flow metrics updates"""
+        if metrics:
+            self._order_flow_active = True
     
     async def initialize(self) -> bool:
         """Initialize all async components"""
         try:
             await self.ai_brain.initialize()
             await self.trade_db.initialize()
+            
+            try:
+                self._order_flow_task = asyncio.create_task(self.order_flow_stream.start())
+                await asyncio.sleep(0.5)
+                
+                if self._order_flow_task.done():
+                    exc = self._order_flow_task.exception()
+                    if exc:
+                        raise exc
+                
+                self._order_flow_active = True
+                logger.info("Order Flow Stream task scheduled successfully - WebSocket connections opening")
+            except Exception as e:
+                logger.warning(f"Order Flow Stream failed to start: {e}")
+                self._order_flow_active = False
+                self._order_flow_task = None
+            
             logger.info("All components initialized successfully")
             return True
         except Exception as e:
@@ -381,10 +465,20 @@ class AITradingOrchestrator:
                 'confidence_score': trade_setup.confidence_score
             }
             
+            try:
+                of_metrics = self.order_flow_metrics_service.get_complete_metrics()
+                signal['manipulation_score'] = of_metrics.manipulation.overall_score if of_metrics else 0.0
+                signal['order_flow_bias'] = of_metrics.order_flow_bias if of_metrics else 0.0
+            except Exception as e:
+                logger.warning(f"Error getting order flow metrics: {e}")
+                signal['manipulation_score'] = 0.0
+                signal['order_flow_bias'] = 0.0
+            
             logger.info(
                 f"Signal enhanced with AI: confidence={ai_analysis.get('confidence', 0):.2f}, "
                 f"recommendation={ai_analysis.get('recommendation', 'N/A')}, "
-                f"leverage={trade_setup.leverage}x"
+                f"leverage={trade_setup.leverage}x, "
+                f"manipulation_score={signal.get('manipulation_score', 0.0):.2f}"
             )
             
             return signal
@@ -630,6 +724,20 @@ class AITradingOrchestrator:
         except Exception as e:
             logger.warning(f"Error closing data fetcher: {e}")
         
+        try:
+            if self._order_flow_task and not self._order_flow_task.done():
+                self._order_flow_task.cancel()
+                try:
+                    await self._order_flow_task
+                except asyncio.CancelledError:
+                    pass
+                logger.info("Order Flow task cancelled")
+            
+            await self.order_flow_stream.stop()
+            logger.info(f"Order Flow Stream stopped (total trades received: {self._order_flow_trade_count})")
+        except Exception as e:
+            logger.warning(f"Error stopping order flow stream: {e}")
+        
         await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")
     
@@ -646,6 +754,7 @@ class AITradingOrchestrator:
             'error_count': self._error_count,
             'last_signal_time': self._last_signal_time,
             'ai_brain_active': self.ai_brain.ai_available,
+            'order_flow_active': self._order_flow_active,
             'rate_limit_status': self.telegram_bot.get_rate_limit_status(),
             'performance_stats': self.telegram_bot.get_performance_stats()
         }

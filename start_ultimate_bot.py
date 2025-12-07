@@ -21,17 +21,45 @@ warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 os.environ['PYTHONWARNINGS'] = 'ignore'
 
-# Add SignalMaestro to path
-sys.path.insert(0, str(Path(__file__).parent / "SignalMaestro"))
-sys.path.insert(0, os.path.dirname(__file__))
+# Add paths for imports
+ROOT_DIR = Path(__file__).parent
+SIGNAL_MAESTRO_DIR = ROOT_DIR / "SignalMaestro"
+
+# Ensure paths are added properly
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+if str(SIGNAL_MAESTRO_DIR) not in sys.path:
+    sys.path.insert(0, str(SIGNAL_MAESTRO_DIR))
 
 # Import with comprehensive error handling
-try:
-    from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot
-except ImportError as e:
-    print(f"❌ Import Error: {e}")
-    print("🔧 Attempting to fix import issues...")
-    from fxsusdt_telegram_bot import FXSUSDTTelegramBot
+FXSUSDTTelegramBot = None
+
+def load_bot_module():
+    """Load the bot module with multiple fallback attempts"""
+    global FXSUSDTTelegramBot
+    
+    # Try primary import
+    try:
+        from SignalMaestro.fxsusdt_telegram_bot import FXSUSDTTelegramBot as Bot
+        FXSUSDTTelegramBot = Bot
+        return True
+    except ImportError as e:
+        print(f"⚠️ Primary import failed: {e}")
+    
+    # Try from SignalMaestro directory directly
+    try:
+        sys.path.insert(0, str(SIGNAL_MAESTRO_DIR))
+        from fxsusdt_telegram_bot import FXSUSDTTelegramBot as Bot
+        FXSUSDTTelegramBot = Bot
+        return True
+    except ImportError as e:
+        print(f"❌ Fallback import also failed: {e}")
+        return False
+
+# Load the module
+if not load_bot_module():
+    print("❌ Critical: Could not import FXSUSDTTelegramBot")
+    print("Please check that all dependencies are installed and files exist")
 
 # Configure logging
 logging.basicConfig(

@@ -16,14 +16,15 @@
    - `BINANCE_API_SECRET` - Binance API secret
 
 4. **Deploy**:
-   - Railway will auto-detect the configuration
+   - Railway will use the custom Dockerfile
    - Build uses `requirements.txt` for dependencies
    - Start command: `python main.py`
 
 ## Configuration Files
 
-- `nixpacks.toml` - Build configuration for Nixpacks
-- `railway.json` - Railway deployment settings  
+- `Dockerfile` - Custom Docker build (used by Railway)
+- `railway.json` - Railway deployment settings (uses DOCKERFILE builder)
+- `.dockerignore` - Excludes unnecessary files from Docker build
 - `Procfile` - Process type (worker for background bot)
 - `requirements.txt` - Python dependencies
 - `runtime.txt` - Python version (3.11.10)
@@ -34,6 +35,15 @@
 - Secrets are set in Railway dashboard, NOT in code
 - Bot runs 24/7 with auto-restart on failure
 - Order Flow WebSocket connections auto-reconnect
+- Using custom Dockerfile bypasses Nixpacks auto-detection issues
+
+## Why Custom Dockerfile?
+
+Railway's Nixpacks builder auto-detects `pyproject.toml` and uses `pip install -e .` 
+which can cause issues. The custom Dockerfile gives full control over:
+- Python version (3.11-slim)
+- Dependency installation (requirements.txt only)
+- Build process (no secrets in build args)
 
 ## Monitoring
 
@@ -41,3 +51,11 @@ Check Railway logs for:
 - "AI Trading Signal Bot Started" - Bot initialized
 - "Order Flow Active" - WebSocket connected
 - Signal generation and Telegram notifications
+
+## Troubleshooting
+
+If deployment fails:
+1. Check Railway logs for errors
+2. Verify all environment variables are set in Railway dashboard
+3. Make sure GitHub repo is synced with latest code
+4. Check that Dockerfile is in root directory

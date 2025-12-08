@@ -1,3 +1,6 @@
+# NOTE: Railway uses Dockerfile instead (see railway.json)
+# This file is kept for reference only
+
 [phases.setup]
 nixPkgs = ["python311", "python311Packages.pip"]
 

@@ -1,21 +1,119 @@
-.git
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Git
+.git/
 .gitignore
-.local
-.cache
-.config
-.upm
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-.pytest_cache
-.mypy_cache
-.venv
-venv
-*.log
-*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Replit specific
 .replit
 replit.nix
-.pythonlibs
-node_modules
-attached_assets
+.cache/
+.upm/
+.local/
+
+# Pyproject - prevent Nixpacks auto-detection
+pyproject.toml
+uv.lock
+
+# Root-level database files only (ut_bot_strategy/data/*.db are KEPT)
+/advanced_ml_trading.db
+/advanced_ml_trading_backup_old.db
+/bot_health_monitoring.db
+/closed_trades_scanner.db
+/error_logs.db
+/ml_trade_learning_backup_old.db
+/trade_learning.db
+/trade_learning_backup_old.db
+/trading_bot.db
+/ultimate_ml_trading_backup_old.db
+
+# Logs (will be created at runtime)
+*.log
+/logs/
+
+# Backup and old files
+*_backup_old*
+/ml_models_backup_old/
+
+# Documentation
+*.md
+
+# Attached assets
+/attached_assets/
+
+# Legacy bot directories (not used by ut_bot_strategy)
+/bot/
+/data/
+/ml_models/
+/models/
+/SignalMaestro/
+/utils/
+
+# Legacy scripts (not used by ut_bot_strategy)
+/start_*.py
+/run_*.py
+/*_fixer*.py
+/*_monitor*.py
+/*_handler*.py
+/*_checker*.py
+/*_wizard*.py
+/*_setup*.py
+/*_daemon*.py
+/keep_alive.py
+/openai.py
+/send_telegram_message.py
+/freqtrade_integration.py
+/freqtrade_telegram_commands.py
+/alternative_setup_instructions.py
+/apply_*.py
+/enhance_*.py
+/enhanced_*.py
+/fix_*.py
+/continuous_*.py
+
+# Legacy config files (ut_bot_strategy uses Python dataclass config)
+/*config*.json
+/*status*.json
+/*process*.json
+
+# Shell scripts
+*.sh
+
+# Test files
+/tests/
+/test_*.py
+
+# Procfile and Railway-specific (Railway uses railway.json)
+/Procfile
+/nixpacks.toml
+
+# Unnecessary text files
+/DEPLOYMENT*.txt
+/QUICK_START.md
+/SECURITY.md
+
+# Other unnecessary files
+/requirements_additional.txt
+/requirements_charts.txt
+/persistent_trade_logs.json

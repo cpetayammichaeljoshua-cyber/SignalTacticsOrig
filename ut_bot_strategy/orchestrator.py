@@ -29,6 +29,8 @@ from .trading.futures_executor import FuturesExecutor
 from .external_data.fear_greed_client import FearGreedClient
 from .external_data.market_data_aggregator import MarketDataAggregator
 from .external_data.news_sentiment_client import NewsSentimentClient
+from .external_data.derivatives_client import BinanceDerivativesClient
+from .external_data.liquidation_monitor import LiquidationMonitor
 from .confirmation.multi_timeframe import MultiTimeframeConfirmation
 
 logging.basicConfig(
@@ -135,6 +137,11 @@ class TradingOrchestrator:
                 api_key=self.config.cryptopanic_api_key
             )
         
+        self.derivatives_client = BinanceDerivativesClient()
+        self.liquidation_monitor = LiquidationMonitor()
+        
+        self.signal_engine.set_derivatives_client(self.derivatives_client)
+        
         if self.config.multi_timeframe.enabled:
             self.mtf_confirmation = MultiTimeframeConfirmation(
                 api_key=self.config.binance_api_key,
@@ -163,6 +170,8 @@ class TradingOrchestrator:
         logger.info(f"CoinGecko Market Data: {'ENABLED' if self.market_data_client else 'DISABLED'}")
         logger.info(f"News Sentiment: {'ENABLED' if self.news_client else 'DISABLED'}")
         logger.info(f"Multi-Timeframe Confirmation: {'ENABLED' if self.mtf_confirmation else 'DISABLED'}")
+        logger.info("Derivatives Client: ENABLED")
+        logger.info("Liquidation Monitor: ENABLED")
     
     def _can_send_signal(self) -> bool:
         """Check if we can send a new signal (respecting cooldown)"""
@@ -237,7 +246,7 @@ class TradingOrchestrator:
                         self._market_intelligence['news_sentiment'] = {
                             'average_sentiment': news_summary.average_sentiment,
                             'sentiment_label': news_summary.sentiment_label,
-                            'total_articles': news_summary.total_articles
+                            'total_articles': news_summary.total_news
                         }
                         logger.info(f"News Sentiment: {news_summary.sentiment_label} ({news_summary.average_sentiment:.2f})")
                 except Exception as e:
@@ -311,7 +320,16 @@ class TradingOrchestrator:
             
             logger.debug(f"Fetched {len(df)} candles, latest: {df.index[-1]}")
             
-            signal = self.signal_engine.generate_signal(df)
+            derivatives_data = None
+            try:
+                symbol = self.config.trading.symbol.replace('/', '').upper()
+                derivatives_data = await self.derivatives_client.get_derivatives_intelligence(symbol)
+                if derivatives_data:
+                    logger.debug(f"Derivatives data fetched: score={derivatives_data.derivatives_score:.2f}")
+            except Exception as e:
+                logger.warning(f"Error fetching derivatives data: {e}")
+            
+            signal = self.signal_engine.generate_signal(df, derivatives_data=derivatives_data)
             
             if signal and self._can_send_signal():
                 signal_type = signal.get('type', 'NEUTRAL')
@@ -327,6 +345,22 @@ class TradingOrchestrator:
                         return None, df
                 
                 signal['market_intelligence'] = self._market_intelligence.copy()
+                
+                try:
+                    liquidation_metrics = self.liquidation_monitor.get_metrics()
+                    if liquidation_metrics:
+                        signal['market_intelligence']['liquidation'] = {
+                            'long_liquidations_usd': liquidation_metrics.long_liquidations_usd,
+                            'short_liquidations_usd': liquidation_metrics.short_liquidations_usd,
+                            'total_liquidations_usd': liquidation_metrics.total_liquidations_usd,
+                            'liquidation_imbalance': liquidation_metrics.liquidation_imbalance,
+                            'large_liquidation_count': liquidation_metrics.large_liquidation_count,
+                            'liquidation_intensity': liquidation_metrics.liquidation_intensity,
+                            'signal_bias': liquidation_metrics.signal_bias
+                        }
+                        logger.debug(f"Liquidation metrics added: imbalance={liquidation_metrics.liquidation_imbalance:.2f}")
+                except Exception as e:
+                    logger.warning(f"Error getting liquidation metrics: {e}")
                 
                 logger.info(f"Valid {signal_type} signal generated with market intelligence!")
                 return signal, df
@@ -485,6 +519,12 @@ class TradingOrchestrator:
         self.running = True
         logger.info("Starting UT Bot + STC Signal Bot...")
         
+        try:
+            await self.liquidation_monitor.start()
+            logger.info("Liquidation monitor started")
+        except Exception as e:
+            logger.warning(f"Failed to start liquidation monitor: {e}")
+        
         if self.config.bot.enable_startup_notification:
             await self.telegram_bot.send_startup_notification()
         
@@ -563,6 +603,18 @@ class TradingOrchestrator:
                 logger.info("News sentiment client closed")
             except Exception as e:
                 logger.warning(f"Error closing news client: {e}")
+        
+        try:
+            await self.derivatives_client.close()
+            logger.info("Derivatives client closed")
+        except Exception as e:
+            logger.warning(f"Error closing derivatives client: {e}")
+        
+        try:
+            await self.liquidation_monitor.stop()
+            logger.info("Liquidation monitor stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping liquidation monitor: {e}")
         
         await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")

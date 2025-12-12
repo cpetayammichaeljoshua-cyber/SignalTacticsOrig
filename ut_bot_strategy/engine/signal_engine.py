@@ -21,12 +21,13 @@ Multi-Source Market Intelligence:
 - Multi-timeframe confirmation
 
 Confidence Weight Distribution:
-- Base indicator confidence: 40%
-- Order flow alignment: 20%
-- Fear/Greed alignment: 10%
-- News sentiment: 10%
-- Multi-timeframe confirmation: 15%
+- Base indicator confidence: 35%
+- Order flow alignment: 18%
+- Fear/Greed alignment: 9%
+- News sentiment: 9%
+- Multi-timeframe confirmation: 14%
 - Market breadth: 5%
+- Derivatives alignment: 10%
 """
 
 import logging
@@ -37,6 +38,7 @@ import numpy as np
 
 from ..indicators.ut_bot_alerts import UTBotAlerts
 from ..indicators.stc_indicator import STCIndicator
+from ..external_data.derivatives_client import BinanceDerivativesClient, DerivativesData
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,7 @@ class SignalEngine:
         self._fear_greed_client: Optional[Any] = None
         self._news_client: Optional[Any] = None
         self._market_aggregator: Optional[Any] = None
+        self._derivatives_client: Optional[BinanceDerivativesClient] = None
         
         self._last_signal_time: Optional[datetime] = None
         self._last_signal_type: Optional[str] = None
@@ -156,6 +159,56 @@ class SignalEngine:
         if market_aggregator is not None:
             self._market_aggregator = market_aggregator
             logger.info("MarketDataAggregator connected to SignalEngine")
+    
+    def set_derivatives_client(self, client: BinanceDerivativesClient) -> None:
+        """
+        Connect derivatives client for funding rate, OI, and L/S ratio data
+        
+        Args:
+            client: BinanceDerivativesClient instance
+        """
+        self._derivatives_client = client
+        logger.info("BinanceDerivativesClient connected to SignalEngine")
+    
+    async def _get_derivatives_data(self, symbol: str = "ETHUSDT") -> Optional[DerivativesData]:
+        """
+        Fetch derivatives data from connected client
+        
+        Args:
+            symbol: Trading pair symbol (default ETHUSDT)
+            
+        Returns:
+            DerivativesData or None if unavailable
+        """
+        if not self._derivatives_client:
+            return None
+        
+        try:
+            derivatives_data = await self._derivatives_client.get_derivatives_intelligence(symbol)
+            return derivatives_data
+        except Exception as e:
+            logger.warning(f"Error fetching derivatives data: {e}")
+            return None
+    
+    def _calculate_derivatives_alignment(self, derivatives_data: DerivativesData, signal_type: str) -> float:
+        """
+        Calculate derivatives alignment score for signal
+        
+        Args:
+            derivatives_data: DerivativesData with market metrics
+            signal_type: 'LONG' or 'SHORT'
+            
+        Returns:
+            Alignment score (0 to 1)
+        """
+        derivatives_score = derivatives_data.derivatives_score
+        
+        if signal_type == 'LONG':
+            return (derivatives_score + 1) / 2
+        elif signal_type == 'SHORT':
+            return (-derivatives_score + 1) / 2
+        
+        return 0.5
     
     def _get_order_flow_data(self) -> Optional[Dict[str, Any]]:
         """
@@ -369,17 +422,19 @@ class SignalEngine:
                                            signal_type: str,
                                            order_flow_bias: float = 0.0,
                                            market_context: Optional[Dict] = None,
-                                           mtf_confirmation: Optional[Dict] = None) -> Tuple[float, Dict]:
+                                           mtf_confirmation: Optional[Dict] = None,
+                                           derivatives_data: Optional[DerivativesData] = None) -> Tuple[float, Dict]:
         """
         Calculate multi-source confidence by weighing all market intelligence factors
         
         Weight distribution:
-        - Base indicator confidence: 40%
-        - Order flow alignment: 20%
-        - Fear/Greed alignment: 10%
-        - News sentiment: 10%
-        - Multi-timeframe confirmation: 15%
+        - Base indicator confidence: 35%
+        - Order flow alignment: 18%
+        - Fear/Greed alignment: 9%
+        - News sentiment: 9%
+        - Multi-timeframe confirmation: 14%
         - Market breadth: 5%
+        - Derivatives alignment: 10%
         
         Args:
             base_confidence: Base signal confidence (0 to 1)
@@ -387,16 +442,18 @@ class SignalEngine:
             order_flow_bias: Order flow bias (-1 to 1)
             market_context: Dict containing fear_greed, news_sentiment, market_breadth
             mtf_confirmation: Dict containing alignment_score from multi-timeframe analysis
+            derivatives_data: DerivativesData with funding, OI, L/S data
             
         Returns:
             Tuple of (multi_source_confidence, component_scores_dict)
         """
-        WEIGHT_BASE = 0.40
-        WEIGHT_ORDER_FLOW = 0.20
-        WEIGHT_FEAR_GREED = 0.10
-        WEIGHT_NEWS = 0.10
-        WEIGHT_MTF = 0.15
+        WEIGHT_BASE = 0.35
+        WEIGHT_ORDER_FLOW = 0.18
+        WEIGHT_FEAR_GREED = 0.09
+        WEIGHT_NEWS = 0.09
+        WEIGHT_MTF = 0.14
         WEIGHT_BREADTH = 0.05
+        WEIGHT_DERIVATIVES = 0.10
         
         component_scores = {
             'base_indicator': base_confidence,
@@ -404,7 +461,8 @@ class SignalEngine:
             'fear_greed_alignment': 0.5,
             'news_sentiment_alignment': 0.5,
             'mtf_alignment': 0.5,
-            'market_breadth_alignment': 0.5
+            'market_breadth_alignment': 0.5,
+            'derivatives_alignment': 0.5
         }
         
         if signal_type == 'LONG':
@@ -435,13 +493,19 @@ class SignalEngine:
             mtf_score = mtf_confirmation.get('alignment_score', 0.5)
             component_scores['mtf_alignment'] = mtf_score
         
+        if derivatives_data:
+            component_scores['derivatives_alignment'] = self._calculate_derivatives_alignment(
+                derivatives_data, signal_type
+            )
+        
         multi_source_confidence = (
             component_scores['base_indicator'] * WEIGHT_BASE +
             component_scores['order_flow_alignment'] * WEIGHT_ORDER_FLOW +
             component_scores['fear_greed_alignment'] * WEIGHT_FEAR_GREED +
             component_scores['news_sentiment_alignment'] * WEIGHT_NEWS +
             component_scores['mtf_alignment'] * WEIGHT_MTF +
-            component_scores['market_breadth_alignment'] * WEIGHT_BREADTH
+            component_scores['market_breadth_alignment'] * WEIGHT_BREADTH +
+            component_scores['derivatives_alignment'] * WEIGHT_DERIVATIVES
         )
         
         multi_source_confidence = max(0.0, min(1.0, multi_source_confidence))
@@ -452,7 +516,8 @@ class SignalEngine:
                                    market_context: Optional[Dict],
                                    mtf_confirmation: Optional[Dict],
                                    component_scores: Dict,
-                                   overall_score: float) -> Dict[str, Any]:
+                                   overall_score: float,
+                                   derivatives_data: Optional[DerivativesData] = None) -> Dict[str, Any]:
         """
         Build the market_intelligence field for signal output
         
@@ -461,6 +526,7 @@ class SignalEngine:
             mtf_confirmation: Dict containing alignment_score from multi-timeframe analysis
             component_scores: Component scores from multi-source confidence calculation
             overall_score: Overall multi-source confidence score
+            derivatives_data: DerivativesData with funding, OI, L/S data
             
         Returns:
             market_intelligence dictionary
@@ -473,7 +539,13 @@ class SignalEngine:
             'market_breadth_score': 50.0,
             'mtf_alignment_score': 0.5,
             'overall_intelligence_score': overall_score,
-            'component_scores': component_scores
+            'component_scores': component_scores,
+            'derivatives_score': 0.0,
+            'funding_rate': 0.0,
+            'funding_trend': 'stable',
+            'long_short_ratio': 1.0,
+            'open_interest_change': 0.0,
+            'market_sentiment': 'neutral'
         }
         
         if market_context:
@@ -509,6 +581,14 @@ class SignalEngine:
             intelligence['higher_tf_bias'] = mtf_confirmation.get('higher_timeframe_bias', 'neutral')
             intelligence['confirming_timeframes'] = mtf_confirmation.get('confirming_timeframes', [])
             intelligence['conflicting_timeframes'] = mtf_confirmation.get('conflicting_timeframes', [])
+        
+        if derivatives_data:
+            intelligence['derivatives_score'] = derivatives_data.derivatives_score
+            intelligence['funding_rate'] = derivatives_data.funding_rate
+            intelligence['funding_trend'] = derivatives_data.funding_rate_trend
+            intelligence['long_short_ratio'] = derivatives_data.long_short_ratio
+            intelligence['open_interest_change'] = derivatives_data.oi_change_24h
+            intelligence['market_sentiment'] = derivatives_data.market_sentiment
         
         return intelligence
     
@@ -810,7 +890,8 @@ class SignalEngine:
     def generate_signal(self, 
                         df: pd.DataFrame,
                         market_context: Optional[Dict] = None,
-                        mtf_confirmation: Optional[Dict] = None) -> Optional[Dict]:
+                        mtf_confirmation: Optional[Dict] = None,
+                        derivatives_data: Optional[DerivativesData] = None) -> Optional[Dict]:
         """
         Generate trading signal based on strategy rules with order flow enhancement
         and multi-source market intelligence
@@ -827,6 +908,13 @@ class SignalEngine:
                 - higher_timeframe_bias: 'bullish', 'bearish', or 'neutral'
                 - confirming_timeframes: List of confirming timeframes
                 - conflicting_timeframes: List of conflicting timeframes
+            derivatives_data: Optional[DerivativesData] containing:
+                - derivatives_score: Composite score (-1 to +1)
+                - funding_rate: Current funding rate
+                - funding_rate_trend: rising/falling/stable
+                - long_short_ratio: Global L/S ratio
+                - oi_change_24h: 24h OI change percentage
+                - market_sentiment: Market sentiment from derivatives
             
         Returns:
             Signal dictionary or None if no valid signal
@@ -943,7 +1031,8 @@ class SignalEngine:
                 signal_type=signal_type,
                 order_flow_bias=order_flow_bias,
                 market_context=market_context,
-                mtf_confirmation=mtf_confirmation
+                mtf_confirmation=mtf_confirmation,
+                derivatives_data=derivatives_data
             )
             
             signal['multi_source_confidence'] = multi_source_confidence
@@ -952,7 +1041,8 @@ class SignalEngine:
                 market_context=market_context,
                 mtf_confirmation=mtf_confirmation,
                 component_scores=component_scores,
-                overall_score=multi_source_confidence
+                overall_score=multi_source_confidence,
+                derivatives_data=derivatives_data
             )
             
             if (self._last_signal_time == current_time and 

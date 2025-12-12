@@ -37,6 +37,8 @@ from ut_bot_strategy.engine.manipulation_detector import ManipulationDetector
 from ut_bot_strategy.external_data.fear_greed_client import FearGreedClient
 from ut_bot_strategy.external_data.market_data_aggregator import MarketDataAggregator
 from ut_bot_strategy.external_data.news_sentiment_client import NewsSentimentClient
+from ut_bot_strategy.external_data.derivatives_client import BinanceDerivativesClient, DerivativesData
+from ut_bot_strategy.external_data.liquidation_monitor import LiquidationMonitor, LiquidationMetrics
 from ut_bot_strategy.confirmation.multi_timeframe import MultiTimeframeConfirmation
 
 logging.basicConfig(
@@ -225,6 +227,12 @@ class AITradingOrchestrator:
                 stc_slow_length=self.config.stc.slow_length
             )
         
+        self.derivatives_client: Optional[BinanceDerivativesClient] = BinanceDerivativesClient()
+        self.liquidation_monitor: Optional[LiquidationMonitor] = LiquidationMonitor()
+        
+        if self.derivatives_client:
+            self.signal_engine.set_derivatives_client(self.derivatives_client)
+        
         self._last_external_data_refresh: Optional[datetime] = None
         self._market_intelligence: Dict[str, Any] = {}
         
@@ -301,7 +309,7 @@ class AITradingOrchestrator:
                         self._market_intelligence['news_sentiment'] = {
                             'average_sentiment': news_summary.average_sentiment,
                             'sentiment_label': news_summary.sentiment_label,
-                            'total_articles': news_summary.total_articles
+                            'total_articles': news_summary.total_news
                         }
                         logger.info(f"News Sentiment: {news_summary.sentiment_label} ({news_summary.average_sentiment:.2f})")
                 except Exception as e:
@@ -387,6 +395,16 @@ class AITradingOrchestrator:
                 self._order_flow_active = False
                 self._order_flow_task = None
             
+            if self.liquidation_monitor:
+                try:
+                    await self.liquidation_monitor.start()
+                    logger.info("Liquidation Monitor started - tracking real-time liquidations")
+                except Exception as e:
+                    logger.warning(f"Liquidation Monitor failed to start: {e}")
+            
+            if self.derivatives_client:
+                logger.info("Derivatives Client: ENABLED (funding rates, OI, L/S ratio)")
+            
             logger.info("All components initialized successfully")
             return True
         except Exception as e:
@@ -401,7 +419,7 @@ class AITradingOrchestrator:
         cooldown = timedelta(minutes=self.config.bot.signal_cooldown_minutes)
         return datetime.now() - self._last_signal_time > cooldown
     
-    def _calculate_true_atr(self, df, period: int = 14) -> float:
+    def _calculate_true_atr(self, df: pd.DataFrame, period: int = 14) -> float:
         """
         Calculate true Average True Range using Wilder's method
         
@@ -418,16 +436,21 @@ class AITradingOrchestrator:
             close = df['close']
             
             high_low = high - low
-            high_close = np.abs(high - close.shift(1))
-            low_close = np.abs(low - close.shift(1))
+            high_close = (high - close.shift(1)).abs()
+            low_close = (low - close.shift(1)).abs()
             
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            atr = true_range.rolling(window=period).mean().iloc[-1]
+            ranges_df = pd.DataFrame({'hl': high_low, 'hc': high_close, 'lc': low_close})
+            true_range = ranges_df.max(axis=1)
+            atr_series = true_range.rolling(window=period).mean()
+            atr_value = float(atr_series.iloc[-1])
             
-            if pd.isna(atr) or atr <= 0:
-                atr = true_range.iloc[-period:].mean()
+            if pd.isna(atr_value) or atr_value <= 0:
+                atr_value = float(true_range.iloc[-period:].mean())
             
-            return float(atr) if not pd.isna(atr) else float(high.iloc[-1] - low.iloc[-1])
+            if pd.isna(atr_value):
+                atr_value = float(high.iloc[-1] - low.iloc[-1])
+                
+            return atr_value
             
         except Exception as e:
             logger.warning(f"Error calculating ATR: {e}")
@@ -911,6 +934,20 @@ class AITradingOrchestrator:
                 logger.info("News sentiment client closed")
             except Exception as e:
                 logger.warning(f"Error closing news client: {e}")
+        
+        if self.derivatives_client:
+            try:
+                await self.derivatives_client.close()
+                logger.info("Derivatives client closed")
+            except Exception as e:
+                logger.warning(f"Error closing derivatives client: {e}")
+        
+        if self.liquidation_monitor:
+            try:
+                await self.liquidation_monitor.stop()
+                logger.info("Liquidation monitor stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping liquidation monitor: {e}")
         
         await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")

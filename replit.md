@@ -1,5 +1,10 @@
 # UT Bot + STC Trading Signal Bot
 
+## Recent Changes (December 12, 2025)
+- Fixed all 21 LSP type warnings in scalping_strategy.py and main.py
+- Added proper pandas Series type annotations
+- Bot running successfully with all components active
+
 ## Overview
 This project is an advanced cryptocurrency trading signal bot designed for **ALL liquid Binance USDT-M Futures pairs**. It integrates a wide array of sophisticated analytics, including the UT Bot and STC indicators, real-time order flow analysis, manipulation detection, and multi-source market intelligence. The bot aims to provide highly accurate trading signals by confirming trends across multiple timeframes, tracking whale activity, and understanding the broader economic and derivatives market context. Its primary purpose is to identify high-probability trading opportunities with robust risk management, delivering actionable intelligence via Telegram notifications. The project's ambition is to capitalize on a comprehensive, data-driven approach to cryptocurrency futures trading.
 

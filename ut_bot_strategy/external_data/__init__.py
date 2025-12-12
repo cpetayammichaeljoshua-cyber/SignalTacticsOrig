@@ -5,6 +5,8 @@ Provides API clients for fetching external market data:
 - Fear & Greed Index (Alternative.me)
 - Market Data Aggregator (CoinGecko)
 - News Sentiment (CryptoPanic)
+- Binance Derivatives Data (Funding, OI, L/S Ratio)
+- Binance Liquidation Monitor (Real-time WebSocket)
 """
 
 from ut_bot_strategy.external_data.fear_greed_client import (
@@ -23,6 +25,20 @@ from ut_bot_strategy.external_data.news_sentiment_client import (
     NewsItem,
     NewsSentimentSummary
 )
+from ut_bot_strategy.external_data.derivatives_client import (
+    BinanceDerivativesClient,
+    DerivativesData,
+    FundingRateEntry,
+    OpenInterestData,
+    LongShortRatioData,
+    TakerVolumeData
+)
+from ut_bot_strategy.external_data.liquidation_monitor import (
+    LiquidationMonitor,
+    LiquidationEvent,
+    LiquidationMetrics,
+    create_liquidation_monitor
+)
 
 __all__ = [
     'FearGreedClient',
@@ -34,5 +50,15 @@ __all__ = [
     'GlobalMarketData',
     'NewsSentimentClient',
     'NewsItem',
-    'NewsSentimentSummary'
+    'NewsSentimentSummary',
+    'BinanceDerivativesClient',
+    'DerivativesData',
+    'FundingRateEntry',
+    'OpenInterestData',
+    'LongShortRatioData',
+    'TakerVolumeData',
+    'LiquidationMonitor',
+    'LiquidationEvent',
+    'LiquidationMetrics',
+    'create_liquidation_monitor'
 ]

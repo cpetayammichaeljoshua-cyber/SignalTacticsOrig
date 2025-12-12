@@ -19,19 +19,15 @@ Multi-Source Market Intelligence:
 - News sentiment analysis
 - Market breadth (how many top coins moving in same direction)
 - Multi-timeframe confirmation
-- Whale activity tracking (large $100K+ trades)
-- Economic calendar awareness (FOMC, CPI, NFP impact)
 
 Confidence Weight Distribution:
-- Base indicator confidence: 30%
-- Order flow alignment: 15%
-- Multi-timeframe confirmation: 12%
+- Base indicator confidence: 35%
+- Order flow alignment: 18%
+- Fear/Greed alignment: 9%
+- News sentiment: 9%
+- Multi-timeframe confirmation: 14%
+- Market breadth: 5%
 - Derivatives alignment: 10%
-- Whale activity: 8%
-- Fear/Greed alignment: 8%
-- News sentiment: 8%
-- Economic calendar: 5%
-- Market breadth: 4%
 """
 
 import logging
@@ -121,8 +117,6 @@ class SignalEngine:
         self._news_client: Optional[Any] = None
         self._market_aggregator: Optional[Any] = None
         self._derivatives_client: Optional[BinanceDerivativesClient] = None
-        self._whale_tracker: Optional[Any] = None
-        self._economic_calendar: Optional[Any] = None
         
         self._last_signal_time: Optional[datetime] = None
         self._last_signal_type: Optional[str] = None
@@ -175,152 +169,6 @@ class SignalEngine:
         """
         self._derivatives_client = client
         logger.info("BinanceDerivativesClient connected to SignalEngine")
-    
-    def set_whale_tracker(self, whale_tracker: Any) -> None:
-        """
-        Connect whale tracker for large trade monitoring
-        
-        Args:
-            whale_tracker: WhaleTracker instance for tracking $100K+ trades
-        """
-        self._whale_tracker = whale_tracker
-        logger.info("WhaleTracker connected to SignalEngine")
-    
-    def set_economic_calendar(self, calendar_client: Any) -> None:
-        """
-        Connect economic calendar client for macro event awareness
-        
-        Args:
-            calendar_client: EconomicCalendarClient instance for event tracking
-        """
-        self._economic_calendar = calendar_client
-        logger.info("EconomicCalendarClient connected to SignalEngine")
-    
-    async def _get_whale_metrics(self) -> Optional[Dict[str, Any]]:
-        """
-        Get current whale activity metrics from connected tracker
-        
-        Returns:
-            Dictionary with whale metrics or None if unavailable
-        """
-        if not self._whale_tracker:
-            return None
-        
-        try:
-            metrics = self._whale_tracker.get_current_metrics()
-            if metrics is None:
-                return None
-            
-            return {
-                'whale_bias': getattr(metrics, 'whale_bias', 0.0),
-                'smart_money_direction': getattr(metrics, 'smart_money_direction', 'NEUTRAL'),
-                'whale_buy_volume': getattr(metrics, 'whale_buy_volume', 0.0),
-                'whale_sell_volume': getattr(metrics, 'whale_sell_volume', 0.0),
-                'net_whale_flow': getattr(metrics, 'net_whale_flow', 0.0),
-                'accumulation_score': getattr(metrics, 'accumulation_score', 0.0),
-                'distribution_score': getattr(metrics, 'distribution_score', 0.0),
-                'whale_buy_count': getattr(metrics, 'whale_buy_count', 0),
-                'whale_sell_count': getattr(metrics, 'whale_sell_count', 0)
-            }
-        except Exception as e:
-            logger.warning(f"Error getting whale metrics: {e}")
-            return None
-    
-    async def _get_economic_calendar_data(self) -> Optional[Dict[str, Any]]:
-        """
-        Get upcoming economic events from connected calendar client
-        
-        Returns:
-            Dictionary with economic calendar data or None if unavailable
-        """
-        if not self._economic_calendar:
-            return None
-        
-        try:
-            summary = await self._economic_calendar.get_summary()
-            if summary is None:
-                return None
-            
-            next_event_info = None
-            if summary.next_major_event:
-                next_event_info = {
-                    'name': summary.next_major_event.name,
-                    'time': summary.next_major_event.time.isoformat() if hasattr(summary.next_major_event.time, 'isoformat') else str(summary.next_major_event.time),
-                    'impact': summary.next_major_event.impact.value if hasattr(summary.next_major_event.impact, 'value') else str(summary.next_major_event.impact),
-                    'minutes_until': summary.next_major_event.minutes_until
-                }
-            
-            return {
-                'has_imminent_event': summary.has_imminent_event,
-                'should_avoid_trading': summary.should_avoid_trading,
-                'total_events': summary.total_events,
-                'high_impact_count': summary.high_impact_events,
-                'next_major_event': next_event_info,
-                'trading_recommendation': summary.trading_recommendation
-            }
-        except Exception as e:
-            logger.warning(f"Error getting economic calendar data: {e}")
-            return None
-    
-    def _calculate_whale_alignment(self, whale_metrics: Dict[str, Any], signal_type: str) -> float:
-        """
-        Calculate whale activity alignment score for signal
-        
-        Args:
-            whale_metrics: Dict with whale activity data
-            signal_type: 'LONG' or 'SHORT'
-            
-        Returns:
-            Alignment score (0 to 1)
-        """
-        whale_bias = whale_metrics.get('whale_bias', 0.0)
-        smart_money_direction = whale_metrics.get('smart_money_direction', 'NEUTRAL')
-        
-        if signal_type == 'LONG':
-            base_alignment = (whale_bias + 1) / 2
-            if smart_money_direction == 'BULLISH':
-                base_alignment = min(1.0, base_alignment + 0.1)
-            elif smart_money_direction == 'BEARISH':
-                base_alignment = max(0.0, base_alignment - 0.1)
-        elif signal_type == 'SHORT':
-            base_alignment = (-whale_bias + 1) / 2
-            if smart_money_direction == 'BEARISH':
-                base_alignment = min(1.0, base_alignment + 0.1)
-            elif smart_money_direction == 'BULLISH':
-                base_alignment = max(0.0, base_alignment - 0.1)
-        else:
-            base_alignment = 0.5
-        
-        return max(0.0, min(1.0, base_alignment))
-    
-    def _calculate_economic_calendar_factor(self, calendar_data: Dict[str, Any]) -> float:
-        """
-        Calculate economic calendar factor for confidence adjustment
-        
-        High-impact events within 30 minutes reduce confidence.
-        No imminent events return neutral score.
-        
-        Args:
-            calendar_data: Dict with economic calendar data
-            
-        Returns:
-            Factor score (0 to 1), where 1.0 = no impact, lower = reduce confidence
-        """
-        if calendar_data.get('should_avoid_trading', False):
-            return 0.3
-        
-        if calendar_data.get('has_imminent_event', False):
-            next_event = calendar_data.get('next_major_event')
-            if next_event:
-                minutes_until = next_event.get('minutes_until', 60)
-                if minutes_until <= 15:
-                    return 0.4
-                elif minutes_until <= 30:
-                    return 0.6
-                elif minutes_until <= 60:
-                    return 0.8
-        
-        return 1.0
     
     async def _get_derivatives_data(self, symbol: str = "ETHUSDT") -> Optional[DerivativesData]:
         """
@@ -575,22 +423,18 @@ class SignalEngine:
                                            order_flow_bias: float = 0.0,
                                            market_context: Optional[Dict] = None,
                                            mtf_confirmation: Optional[Dict] = None,
-                                           derivatives_data: Optional[DerivativesData] = None,
-                                           whale_metrics: Optional[Dict] = None,
-                                           calendar_data: Optional[Dict] = None) -> Tuple[float, Dict]:
+                                           derivatives_data: Optional[DerivativesData] = None) -> Tuple[float, Dict]:
         """
         Calculate multi-source confidence by weighing all market intelligence factors
         
         Weight distribution:
-        - Base indicator confidence: 30%
-        - Order flow alignment: 15%
-        - Multi-timeframe confirmation: 12%
+        - Base indicator confidence: 35%
+        - Order flow alignment: 18%
+        - Fear/Greed alignment: 9%
+        - News sentiment: 9%
+        - Multi-timeframe confirmation: 14%
+        - Market breadth: 5%
         - Derivatives alignment: 10%
-        - Whale activity: 8%
-        - Fear/Greed alignment: 8%
-        - News sentiment: 8%
-        - Economic calendar: 5%
-        - Market breadth: 4%
         
         Args:
             base_confidence: Base signal confidence (0 to 1)
@@ -599,21 +443,17 @@ class SignalEngine:
             market_context: Dict containing fear_greed, news_sentiment, market_breadth
             mtf_confirmation: Dict containing alignment_score from multi-timeframe analysis
             derivatives_data: DerivativesData with funding, OI, L/S data
-            whale_metrics: Dict containing whale activity data
-            calendar_data: Dict containing economic calendar data
             
         Returns:
             Tuple of (multi_source_confidence, component_scores_dict)
         """
-        WEIGHT_BASE = 0.30
-        WEIGHT_ORDER_FLOW = 0.15
-        WEIGHT_MTF = 0.12
+        WEIGHT_BASE = 0.35
+        WEIGHT_ORDER_FLOW = 0.18
+        WEIGHT_FEAR_GREED = 0.09
+        WEIGHT_NEWS = 0.09
+        WEIGHT_MTF = 0.14
+        WEIGHT_BREADTH = 0.05
         WEIGHT_DERIVATIVES = 0.10
-        WEIGHT_WHALE = 0.08
-        WEIGHT_FEAR_GREED = 0.08
-        WEIGHT_NEWS = 0.08
-        WEIGHT_CALENDAR = 0.05
-        WEIGHT_BREADTH = 0.04
         
         component_scores = {
             'base_indicator': base_confidence,
@@ -622,9 +462,7 @@ class SignalEngine:
             'news_sentiment_alignment': 0.5,
             'mtf_alignment': 0.5,
             'market_breadth_alignment': 0.5,
-            'derivatives_alignment': 0.5,
-            'whale_alignment': 0.5,
-            'economic_calendar_factor': 1.0
+            'derivatives_alignment': 0.5
         }
         
         if signal_type == 'LONG':
@@ -660,26 +498,14 @@ class SignalEngine:
                 derivatives_data, signal_type
             )
         
-        if whale_metrics:
-            component_scores['whale_alignment'] = self._calculate_whale_alignment(
-                whale_metrics, signal_type
-            )
-        
-        if calendar_data:
-            component_scores['economic_calendar_factor'] = self._calculate_economic_calendar_factor(
-                calendar_data
-            )
-        
         multi_source_confidence = (
             component_scores['base_indicator'] * WEIGHT_BASE +
             component_scores['order_flow_alignment'] * WEIGHT_ORDER_FLOW +
-            component_scores['mtf_alignment'] * WEIGHT_MTF +
-            component_scores['derivatives_alignment'] * WEIGHT_DERIVATIVES +
-            component_scores['whale_alignment'] * WEIGHT_WHALE +
             component_scores['fear_greed_alignment'] * WEIGHT_FEAR_GREED +
             component_scores['news_sentiment_alignment'] * WEIGHT_NEWS +
-            component_scores['economic_calendar_factor'] * WEIGHT_CALENDAR +
-            component_scores['market_breadth_alignment'] * WEIGHT_BREADTH
+            component_scores['mtf_alignment'] * WEIGHT_MTF +
+            component_scores['market_breadth_alignment'] * WEIGHT_BREADTH +
+            component_scores['derivatives_alignment'] * WEIGHT_DERIVATIVES
         )
         
         multi_source_confidence = max(0.0, min(1.0, multi_source_confidence))
@@ -691,9 +517,7 @@ class SignalEngine:
                                    mtf_confirmation: Optional[Dict],
                                    component_scores: Dict,
                                    overall_score: float,
-                                   derivatives_data: Optional[DerivativesData] = None,
-                                   whale_metrics: Optional[Dict] = None,
-                                   calendar_data: Optional[Dict] = None) -> Dict[str, Any]:
+                                   derivatives_data: Optional[DerivativesData] = None) -> Dict[str, Any]:
         """
         Build the market_intelligence field for signal output
         
@@ -703,8 +527,6 @@ class SignalEngine:
             component_scores: Component scores from multi-source confidence calculation
             overall_score: Overall multi-source confidence score
             derivatives_data: DerivativesData with funding, OI, L/S data
-            whale_metrics: Dict containing whale activity data
-            calendar_data: Dict containing economic calendar data
             
         Returns:
             market_intelligence dictionary
@@ -717,18 +539,13 @@ class SignalEngine:
             'market_breadth_score': 50.0,
             'mtf_alignment_score': 0.5,
             'overall_intelligence_score': overall_score,
-            'all_source_confidence': overall_score,
             'component_scores': component_scores,
             'derivatives_score': 0.0,
             'funding_rate': 0.0,
             'funding_trend': 'stable',
             'long_short_ratio': 1.0,
             'open_interest_change': 0.0,
-            'market_sentiment': 'neutral',
-            'whale_bias': 0.0,
-            'whale_direction': 'NEUTRAL',
-            'economic_event_warning': False,
-            'next_major_event': None
+            'market_sentiment': 'neutral'
         }
         
         if market_context:
@@ -772,23 +589,6 @@ class SignalEngine:
             intelligence['long_short_ratio'] = derivatives_data.long_short_ratio
             intelligence['open_interest_change'] = derivatives_data.oi_change_24h
             intelligence['market_sentiment'] = derivatives_data.market_sentiment
-        
-        if whale_metrics:
-            intelligence['whale_bias'] = whale_metrics.get('whale_bias', 0.0)
-            intelligence['whale_direction'] = whale_metrics.get('smart_money_direction', 'NEUTRAL')
-            intelligence['whale_buy_volume'] = whale_metrics.get('whale_buy_volume', 0.0)
-            intelligence['whale_sell_volume'] = whale_metrics.get('whale_sell_volume', 0.0)
-            intelligence['net_whale_flow'] = whale_metrics.get('net_whale_flow', 0.0)
-            intelligence['accumulation_score'] = whale_metrics.get('accumulation_score', 0.0)
-            intelligence['distribution_score'] = whale_metrics.get('distribution_score', 0.0)
-        
-        if calendar_data:
-            has_imminent = calendar_data.get('has_imminent_event', False)
-            should_avoid = calendar_data.get('should_avoid_trading', False)
-            intelligence['economic_event_warning'] = has_imminent or should_avoid
-            intelligence['next_major_event'] = calendar_data.get('next_major_event')
-            intelligence['trading_recommendation'] = calendar_data.get('trading_recommendation', 'TRADE')
-            intelligence['high_impact_event_count'] = calendar_data.get('high_impact_count', 0)
         
         return intelligence
     
@@ -1091,9 +891,7 @@ class SignalEngine:
                         df: pd.DataFrame,
                         market_context: Optional[Dict] = None,
                         mtf_confirmation: Optional[Dict] = None,
-                        derivatives_data: Optional[DerivativesData] = None,
-                        whale_metrics: Optional[Dict] = None,
-                        calendar_data: Optional[Dict] = None) -> Optional[Dict]:
+                        derivatives_data: Optional[DerivativesData] = None) -> Optional[Dict]:
         """
         Generate trading signal based on strategy rules with order flow enhancement
         and multi-source market intelligence
@@ -1117,17 +915,6 @@ class SignalEngine:
                 - long_short_ratio: Global L/S ratio
                 - oi_change_24h: 24h OI change percentage
                 - market_sentiment: Market sentiment from derivatives
-            whale_metrics: Optional[Dict] containing:
-                - whale_bias: Whale buy/sell bias (-1 to +1)
-                - smart_money_direction: BULLISH/BEARISH/NEUTRAL
-                - whale_buy_volume: Total whale buy volume
-                - whale_sell_volume: Total whale sell volume
-                - net_whale_flow: Net flow (buy - sell)
-            calendar_data: Optional[Dict] containing:
-                - has_imminent_event: Whether a high-impact event is imminent
-                - should_avoid_trading: Whether to avoid new positions
-                - next_major_event: Info about next major event
-                - trading_recommendation: Calendar-based recommendation
             
         Returns:
             Signal dictionary or None if no valid signal
@@ -1245,34 +1032,17 @@ class SignalEngine:
                 order_flow_bias=order_flow_bias,
                 market_context=market_context,
                 mtf_confirmation=mtf_confirmation,
-                derivatives_data=derivatives_data,
-                whale_metrics=whale_metrics,
-                calendar_data=calendar_data
+                derivatives_data=derivatives_data
             )
             
             signal['multi_source_confidence'] = multi_source_confidence
-            
-            if calendar_data:
-                has_imminent = calendar_data.get('has_imminent_event', False)
-                should_avoid = calendar_data.get('should_avoid_trading', False)
-                signal['event_warning'] = has_imminent or should_avoid
-                
-                next_event = calendar_data.get('next_major_event')
-                if next_event and next_event.get('minutes_until', 60) <= 30:
-                    calendar_factor = component_scores.get('economic_calendar_factor', 1.0)
-                    signal['multi_source_confidence'] = multi_source_confidence * calendar_factor
-                    logger.info(f"High-impact event within 30 minutes - confidence reduced by factor {calendar_factor:.2f}")
-            else:
-                signal['event_warning'] = False
             
             signal['market_intelligence'] = self._build_market_intelligence(
                 market_context=market_context,
                 mtf_confirmation=mtf_confirmation,
                 component_scores=component_scores,
-                overall_score=signal['multi_source_confidence'],
-                derivatives_data=derivatives_data,
-                whale_metrics=whale_metrics,
-                calendar_data=calendar_data
+                overall_score=multi_source_confidence,
+                derivatives_data=derivatives_data
             )
             
             if (self._last_signal_time == current_time and 

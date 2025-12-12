@@ -39,9 +39,6 @@ from ut_bot_strategy.external_data.market_data_aggregator import MarketDataAggre
 from ut_bot_strategy.external_data.news_sentiment_client import NewsSentimentClient
 from ut_bot_strategy.external_data.derivatives_client import BinanceDerivativesClient, DerivativesData
 from ut_bot_strategy.external_data.liquidation_monitor import LiquidationMonitor, LiquidationMetrics
-from ut_bot_strategy.external_data.dynamic_pairs_fetcher import DynamicPairsFetcher, create_pairs_fetcher
-from ut_bot_strategy.external_data.whale_tracker import WhaleTracker, WhaleMetrics, create_whale_tracker_from_order_flow
-from ut_bot_strategy.external_data.economic_calendar import EconomicCalendarClient, EventImpact
 from ut_bot_strategy.confirmation.multi_timeframe import MultiTimeframeConfirmation
 
 logging.basicConfig(
@@ -233,41 +230,8 @@ class AITradingOrchestrator:
         self.derivatives_client: Optional[BinanceDerivativesClient] = BinanceDerivativesClient()
         self.liquidation_monitor: Optional[LiquidationMonitor] = LiquidationMonitor()
         
-        self.pairs_fetcher: Optional[DynamicPairsFetcher] = None
-        self.whale_tracker: Optional[WhaleTracker] = None
-        self.economic_calendar: Optional[EconomicCalendarClient] = None
-        self.multi_asset_mode: bool = False
-        
-        try:
-            self.pairs_fetcher = DynamicPairsFetcher(
-                min_volume_usd=10_000_000,
-                cache_ttl_seconds=3600
-            )
-        except Exception as e:
-            logger.warning(f"Failed to create DynamicPairsFetcher: {e}")
-        
-        try:
-            self.whale_tracker = create_whale_tracker_from_order_flow(
-                order_flow_stream=self.order_flow_stream,
-                whale_threshold_usd=100_000.0,
-                window_minutes=15
-            )
-        except Exception as e:
-            logger.warning(f"Failed to create WhaleTracker: {e}")
-        
-        try:
-            self.economic_calendar = EconomicCalendarClient()
-        except Exception as e:
-            logger.warning(f"Failed to create EconomicCalendarClient: {e}")
-        
         if self.derivatives_client:
             self.signal_engine.set_derivatives_client(self.derivatives_client)
-        
-        if self.whale_tracker:
-            self.signal_engine.set_whale_tracker(self.whale_tracker)
-        
-        if self.economic_calendar:
-            self.signal_engine.set_economic_calendar(self.economic_calendar)
         
         self._last_external_data_refresh: Optional[datetime] = None
         self._market_intelligence: Dict[str, Any] = {}
@@ -295,9 +259,6 @@ class AITradingOrchestrator:
         logger.info(f"CoinGecko Market Data: {'ENABLED' if self.market_data_client else 'DISABLED'}")
         logger.info(f"News Sentiment: {'ENABLED' if self.news_client else 'DISABLED'}")
         logger.info(f"Multi-Timeframe Confirmation: {'ENABLED' if self.mtf_confirmation else 'DISABLED'}")
-        logger.info(f"Dynamic Pairs Fetcher: {'ENABLED' if self.pairs_fetcher else 'DISABLED'}")
-        logger.info(f"Whale Tracker: {'ENABLED ($100K+ threshold)' if self.whale_tracker else 'DISABLED'}")
-        logger.info(f"Economic Calendar: {'ENABLED' if self.economic_calendar else 'DISABLED'}")
         logger.info("=" * 60)
     
     def _should_refresh_external_data(self) -> bool:
@@ -443,25 +404,6 @@ class AITradingOrchestrator:
             
             if self.derivatives_client:
                 logger.info("Derivatives Client: ENABLED (funding rates, OI, L/S ratio)")
-            
-            if self.pairs_fetcher:
-                try:
-                    pairs_list = await self.pairs_fetcher.get_all_pairs()
-                    pairs_count = len(pairs_list) if pairs_list else 0
-                    self.multi_asset_mode = pairs_count > 0
-                    logger.info(f"Dynamic Pairs Fetcher: ENABLED ({pairs_count} liquid pairs found)")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch initial pairs list: {e}")
-            
-            if self.whale_tracker:
-                try:
-                    await self.whale_tracker.start()
-                    logger.info("Whale Tracker: ENABLED ($100K+ threshold)")
-                except Exception as e:
-                    logger.warning(f"Failed to start Whale Tracker: {e}")
-            
-            if self.economic_calendar:
-                logger.info("Economic Calendar: ENABLED")
             
             logger.info("All components initialized successfully")
             return True
@@ -1006,27 +948,6 @@ class AITradingOrchestrator:
                 logger.info("Liquidation monitor stopped")
             except Exception as e:
                 logger.warning(f"Error stopping liquidation monitor: {e}")
-        
-        if self.whale_tracker:
-            try:
-                await self.whale_tracker.stop()
-                logger.info("Whale tracker stopped")
-            except Exception as e:
-                logger.warning(f"Error stopping whale tracker: {e}")
-        
-        if self.economic_calendar:
-            try:
-                await self.economic_calendar.close()
-                logger.info("Economic calendar closed")
-            except Exception as e:
-                logger.warning(f"Error closing economic calendar: {e}")
-        
-        if self.pairs_fetcher:
-            try:
-                await self.pairs_fetcher.close()
-                logger.info("Pairs fetcher closed")
-            except Exception as e:
-                logger.warning(f"Error closing pairs fetcher: {e}")
         
         await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")

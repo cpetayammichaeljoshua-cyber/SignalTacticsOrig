@@ -7,9 +7,6 @@ Provides API clients for fetching external market data:
 - News Sentiment (CryptoPanic)
 - Binance Derivatives Data (Funding, OI, L/S Ratio)
 - Binance Liquidation Monitor (Real-time WebSocket)
-- Dynamic Futures Pairs Fetcher (Binance public API)
-- Whale Tracker (Large trade detection and metrics)
-- Economic Calendar (Finnhub API for macro event awareness)
 """
 
 from ut_bot_strategy.external_data.fear_greed_client import (
@@ -42,25 +39,6 @@ from ut_bot_strategy.external_data.liquidation_monitor import (
     LiquidationMetrics,
     create_liquidation_monitor
 )
-from ut_bot_strategy.external_data.dynamic_pairs_fetcher import (
-    DynamicPairsFetcher,
-    FuturesPair,
-    create_pairs_fetcher
-)
-from ut_bot_strategy.external_data.whale_tracker import (
-    WhaleTracker,
-    WhaleTrade,
-    WhaleMetrics,
-    create_whale_tracker_from_order_flow,
-    create_standalone_whale_tracker
-)
-from ut_bot_strategy.external_data.economic_calendar import (
-    EconomicCalendarClient,
-    EconomicEvent,
-    EconomicCalendarSummary,
-    EventImpact,
-    check_economic_events_before_trade
-)
 
 __all__ = [
     'FearGreedClient',
@@ -82,18 +60,5 @@ __all__ = [
     'LiquidationMonitor',
     'LiquidationEvent',
     'LiquidationMetrics',
-    'create_liquidation_monitor',
-    'DynamicPairsFetcher',
-    'FuturesPair',
-    'create_pairs_fetcher',
-    'WhaleTracker',
-    'WhaleTrade',
-    'WhaleMetrics',
-    'create_whale_tracker_from_order_flow',
-    'create_standalone_whale_tracker',
-    'EconomicCalendarClient',
-    'EconomicEvent',
-    'EconomicCalendarSummary',
-    'EventImpact',
-    'check_economic_events_before_trade'
+    'create_liquidation_monitor'
 ]

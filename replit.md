@@ -1,19 +1,44 @@
 # UT Bot + STC Trading Signal Bot - Production Deployment ✅
 
 ## Project Overview
-Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe combining:
+Advanced cryptocurrency trading signal bot for **ALL liquid Binance USDT-M Futures pairs** (174+ pairs) combining:
 - **UT Bot Alerts**: ATR-based trailing stop indicator for entry signals
 - **STC (Schaff Trend Cycle)**: Momentum oscillator for trend confirmation
 - **Order Flow Analysis**: Real-time CVD, delta, imbalance detection
 - **Manipulation Detection**: Stop hunts, spoofing, liquidity sweeps
 - **Multi-Source Market Intelligence**: Fear & Greed Index, CoinGecko, News Sentiment
 - **Multi-Timeframe Confirmation**: 1m, 5m, 15m, 1h, 4h alignment analysis
-- **Multi-Asset Scanning**: Top 20 USDT-M futures pairs
+- **Dynamic Multi-Asset Scanning**: All 174+ liquid USDT-M futures pairs (auto-discovered)
+- **Whale Tracking**: Real-time $100K+ trade detection and smart money flow
+- **Economic Calendar**: FOMC, CPI, NFP event awareness with trading warnings
+- **Derivatives Intelligence**: Funding rates, OI, L/S ratios, liquidations
 - Telegram signal notifications with rich formatting
 - AI-powered position sizing and analysis
 - Risk management with 1:1.5 reward ratio
 
 ## Recent Changes (Latest) - December 12, 2025
+
+### ✅ Comprehensive Multi-Source Intelligence Upgrade
+Major enhancement integrating APIs from multiple sources for hugescale multi-asset trading:
+
+**NEW: Dynamic Pairs Fetcher (`dynamic_pairs_fetcher.py`)**
+- Auto-discovers ALL liquid USDT-M perpetual futures from Binance (174+ pairs)
+- Filters by minimum 24h volume ($10M+)
+- Sorts by volume for priority scanning
+- 1-hour cache with auto-refresh
+
+**NEW: Whale Tracker (`whale_tracker.py`)**
+- Real-time WebSocket tracking of $100K+ trades
+- Aggregated whale metrics over 15-minute windows
+- Buy/sell imbalance and net whale flow calculation
+- Smart money direction: ACCUMULATING, DISTRIBUTING, BULLISH, BEARISH, NEUTRAL
+- Integration with existing OrderFlowStream
+
+**NEW: Economic Calendar (`economic_calendar.py`)**
+- Tracks high-impact macro events: FOMC, CPI, NFP, PPI, GDP, Interest Rates
+- Event warnings before major announcements
+- Automatic confidence reduction when events are imminent
+- 30-minute cache with fallback data
 
 ### ✅ Binance Derivatives Data Integration (FREE - No API Key Required)
 Added real-time derivatives market structure analysis for enhanced signal quality:
@@ -36,13 +61,15 @@ Added real-time derivatives market structure analysis for enhanced signal qualit
   - Cascade risk assessment
 
 **Signal Engine Confidence Weights (Updated):**
-- Base indicators: 35% (was 40%)
-- Order flow: 18% (was 20%)
-- Multi-timeframe: 14% (was 15%)
-- Derivatives data: 10% (NEW)
-- Fear/Greed: 9% (was 10%)
-- News sentiment: 9% (was 10%)
-- Market breadth: 5%
+- Base indicators: 30%
+- Order flow: 15%
+- Multi-timeframe: 12%
+- Derivatives data: 10%
+- Whale activity: 8% (NEW)
+- Fear/Greed: 8%
+- News sentiment: 8%
+- Economic calendar: 5% (NEW)
+- Market breadth: 4%
 
 ### ✅ Multi-Source Market Intelligence Integration
 Added comprehensive external data sources for enhanced signal quality:

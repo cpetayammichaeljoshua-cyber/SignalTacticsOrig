@@ -249,6 +249,6 @@ localPort = 8080
 externalPort = 8080
 
 [deployment]
-run = ["sh", "-c", "python dynamic_comprehensive_error_fixer.py && python bot_health_check.py && python main.py"]
-deploymentTarget = "gce"
+run = ["python", "main.py"]
+deploymentTarget = "vm"
 ignorePorts = true

@@ -207,7 +207,7 @@ class SignalEngine:
             return None
         
         try:
-            metrics = self._whale_tracker.get_metrics()
+            metrics = self._whale_tracker.get_current_metrics()
             if metrics is None:
                 return None
             
@@ -237,7 +237,7 @@ class SignalEngine:
             return None
         
         try:
-            summary = await self._economic_calendar.get_calendar_summary()
+            summary = await self._economic_calendar.get_summary()
             if summary is None:
                 return None
             

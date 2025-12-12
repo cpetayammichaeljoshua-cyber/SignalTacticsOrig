@@ -6,11 +6,16 @@ Advanced AI-powered trading analysis using OpenAI GPT-5 for:
 - Learning from trade outcomes
 - Dynamic market insights
 - Parameter optimization suggestions
+- Multi-source market intelligence integration
 
 Features:
 - SQLite database for persistent learning data
 - Caching to avoid redundant API calls
 - Fallback mode when OpenAI is unavailable
+- Fear & Greed Index integration
+- News sentiment analysis
+- Market breadth data
+- Multi-timeframe confirmation
 """
 
 import os
@@ -203,6 +208,481 @@ class AITradingBrain:
         except Exception as e:
             logger.error(f"OpenAI API call failed: {e}")
             raise
+    
+    def _build_analysis_prompt(self, signal_data: Dict[str, Any], 
+                                market_intelligence: Optional[Dict[str, Any]] = None,
+                                historical_context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Build a comprehensive analysis prompt incorporating multi-source market intelligence.
+        
+        Args:
+            signal_data: Dictionary containing signal information
+            market_intelligence: Optional dict with fear_greed, news_sentiment, market_breadth, mtf_confirmation
+            historical_context: Optional dict with historical performance data
+            
+        Returns:
+            Formatted prompt string for OpenAI analysis
+        """
+        symbol = signal_data.get('symbol', 'UNKNOWN')
+        direction = signal_data.get('direction', 'UNKNOWN')
+        entry = signal_data.get('entry_price', 0)
+        stop_loss = signal_data.get('stop_loss', 0)
+        take_profit = signal_data.get('take_profit', 0)
+        indicators = signal_data.get('indicators', {})
+        
+        risk_percent = abs(entry - stop_loss) / entry * 100 if entry > 0 else 0
+        reward_percent = abs(take_profit - entry) / entry * 100 if entry > 0 else 0
+        rr_ratio = reward_percent / risk_percent if risk_percent > 0 else 0
+        
+        prompt = f"""Analyze this trading signal with comprehensive market intelligence:
+
+=== SIGNAL DATA ===
+Symbol: {symbol}
+Direction: {direction}
+Entry Price: {entry}
+Stop Loss: {stop_loss} (Risk: {risk_percent:.2f}%)
+Take Profit: {take_profit} (Reward: {reward_percent:.2f}%)
+Risk/Reward Ratio: {rr_ratio:.2f}
+
+=== TECHNICAL INDICATORS ===
+{json.dumps(indicators, indent=2)}
+"""
+        
+        if market_intelligence:
+            fear_greed = market_intelligence.get('fear_greed', {})
+            news_sentiment = market_intelligence.get('news_sentiment', {})
+            market_breadth = market_intelligence.get('market_breadth', {})
+            mtf_confirmation = market_intelligence.get('mtf_confirmation', {})
+            overall_score = market_intelligence.get('overall_intelligence_score', 0.5)
+            
+            fg_value = fear_greed.get('value', 50)
+            fg_classification = fear_greed.get('classification', 'neutral')
+            fg_trend = fear_greed.get('trend', 'stable')
+            
+            prompt += f"""
+=== FEAR & GREED INDEX ===
+Current Value: {fg_value}/100
+Classification: {fg_classification}
+Trend: {fg_trend}
+Analysis Guidance:
+- Extreme Fear (0-25): Contrarian BUY opportunity, favors LONG positions
+- Fear (25-45): Cautious BUY bias
+- Neutral (45-55): No clear sentiment edge
+- Greed (55-75): Cautious SELL bias
+- Extreme Greed (75-100): Contrarian SELL opportunity, favors SHORT positions
+"""
+            
+            bullish_count = news_sentiment.get('bullish_count', 0)
+            bearish_count = news_sentiment.get('bearish_count', 0)
+            news_bias = news_sentiment.get('overall_bias', 'neutral')
+            news_score = news_sentiment.get('sentiment_score', 0.0)
+            
+            prompt += f"""
+=== NEWS SENTIMENT ===
+Bullish News Count: {bullish_count}
+Bearish News Count: {bearish_count}
+Overall Bias: {news_bias}
+Sentiment Score: {news_score:.2f} (-1 = very bearish, +1 = very bullish)
+"""
+            
+            coins_up = market_breadth.get('coins_up', 0)
+            coins_down = market_breadth.get('coins_down', 0)
+            breadth_percentage = market_breadth.get('breadth_percentage', 50)
+            market_trend = market_breadth.get('market_trend', 'mixed')
+            
+            prompt += f"""
+=== MARKET BREADTH ===
+Top Coins Moving Up: {coins_up}
+Top Coins Moving Down: {coins_down}
+Breadth Percentage: {breadth_percentage:.1f}% bullish
+Market Trend: {market_trend}
+"""
+            
+            confirming_tfs = mtf_confirmation.get('confirming_timeframes', [])
+            conflicting_tfs = mtf_confirmation.get('conflicting_timeframes', [])
+            mtf_alignment = mtf_confirmation.get('alignment_score', 0.5)
+            higher_tf_bias = mtf_confirmation.get('higher_tf_bias', 'neutral')
+            
+            prompt += f"""
+=== MULTI-TIMEFRAME CONFIRMATION ===
+Confirming Timeframes: {', '.join(confirming_tfs) if confirming_tfs else 'None'}
+Conflicting Timeframes: {', '.join(conflicting_tfs) if conflicting_tfs else 'None'}
+MTF Alignment Score: {mtf_alignment:.2f}
+Higher Timeframe Bias: {higher_tf_bias}
+"""
+            
+            prompt += f"""
+=== OVERALL MARKET INTELLIGENCE ===
+Combined Intelligence Score: {overall_score:.2f} (0 = strongly against signal, 1 = strongly supports signal)
+"""
+        
+        if historical_context:
+            prompt += f"""
+=== HISTORICAL PERFORMANCE ===
+Win Rate on {symbol} {direction}: {historical_context.get('win_rate', 'N/A')}%
+Average Profit: {historical_context.get('avg_profit', 'N/A')}%
+Total Trades: {historical_context.get('total_trades', 0)}
+"""
+        
+        prompt += """
+=== ANALYSIS REQUIREMENTS ===
+Consider these key factors:
+1. Does the Fear & Greed level support or contradict this trade direction?
+2. Does news sentiment align with the trade direction?
+3. Do higher timeframes confirm the signal?
+4. What is the overall risk assessment based on all factors?
+5. Should position size be adjusted based on intelligence alignment?
+
+Provide your comprehensive analysis with confidence score and recommendations."""
+        
+        return prompt
+    
+    async def analyze_with_market_context(self, signal_data: Dict[str, Any],
+                                           market_intelligence: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze trading signal with comprehensive multi-source market intelligence.
+        
+        This enhanced analysis method incorporates:
+        - Fear & Greed Index (contrarian indicator)
+        - News sentiment analysis
+        - Market breadth data
+        - Multi-timeframe confirmation
+        - Overall market intelligence scoring
+        
+        Args:
+            signal_data: Dictionary containing signal information:
+                - symbol: Trading pair (e.g., 'ETHUSDT')
+                - direction: 'LONG' or 'SHORT'
+                - entry_price: Proposed entry price
+                - stop_loss: Stop loss level
+                - take_profit: Take profit level(s)
+                - indicators: Dict of indicator values
+                - timeframe: Chart timeframe
+                - base_confidence: Initial confidence before market intelligence
+                
+            market_intelligence: Dictionary containing:
+                - fear_greed: Dict with value, classification, trend
+                - news_sentiment: Dict with bullish_count, bearish_count, overall_bias, sentiment_score
+                - market_breadth: Dict with coins_up, coins_down, breadth_percentage, market_trend
+                - mtf_confirmation: Dict with confirming_timeframes, conflicting_timeframes, 
+                                    alignment_score, higher_tf_bias
+                - overall_intelligence_score: Combined score from all sources
+                
+        Returns:
+            Dictionary with enhanced analysis:
+                - confidence: Final adjusted confidence (0.0 to 1.0)
+                - recommendation: 'EXECUTE', 'SKIP', or 'MODIFY'
+                - analysis: Detailed analysis text
+                - risk_assessment: Risk level and factors
+                - suggested_adjustments: Position adjustments
+                - market_assessment: 'bullish', 'bearish', or 'neutral'
+                - intelligence_alignment: How well all sources align (0.0 to 1.0)
+                - confidence_adjustment: Adjustment applied (-0.3 to +0.3)
+                - reasoning: List of bullet points explaining the analysis
+                - position_sizing: Dict with recommended position adjustments
+        """
+        await self.initialize()
+        
+        combined_data = {**signal_data, 'market_intelligence': market_intelligence}
+        cache_key = self._generate_cache_key("market_context", combined_data)
+        cached = self._get_cached(cache_key)
+        if cached:
+            return cached
+        
+        if not self.ai_available:
+            result = self._fallback_analyze_with_market_context(signal_data, market_intelligence)
+            self._set_cached(cache_key, result)
+            return result
+        
+        try:
+            symbol = signal_data.get('symbol', 'UNKNOWN')
+            direction = signal_data.get('direction', 'UNKNOWN')
+            
+            historical_context = await self._get_historical_performance(symbol, direction)
+            
+            analysis_prompt = self._build_analysis_prompt(
+                signal_data, market_intelligence, historical_context
+            )
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": """You are an expert trading analyst AI with deep understanding of market psychology, 
+sentiment analysis, and multi-timeframe technical analysis. Analyze trading signals by considering 
+all available market intelligence sources.
+
+IMPORTANT: You must respond with valid JSON containing these exact fields:
+- confidence: Final confidence score (0.0-1.0)
+- recommendation: One of "EXECUTE", "SKIP", or "MODIFY"
+- analysis: Detailed analysis text
+- risk_assessment: Object with "level" (low/medium/high) and "factors" (array of risk factors)
+- suggested_adjustments: Object with optional "entry", "stop_loss", "take_profit" adjustments
+- market_assessment: One of "bullish", "bearish", or "neutral"
+- intelligence_alignment: How well all intelligence sources align with the trade (0.0-1.0)
+- confidence_adjustment: Adjustment to base confidence based on intelligence (-0.3 to +0.3)
+- reasoning: Array of bullet point strings explaining key factors
+- position_sizing: Object with:
+  - size_multiplier: Position size adjustment (0.5 = half size, 1.0 = normal, 1.5 = 1.5x size)
+  - max_leverage_recommended: Maximum recommended leverage
+  - rationale: Brief explanation for sizing
+
+Key Analysis Framework:
+1. Fear & Greed: Extreme readings are contrarian - extreme fear favors LONG, extreme greed favors SHORT
+2. News Sentiment: Aligning sentiment increases confidence, conflicting sentiment decreases it
+3. Multi-Timeframe: Higher timeframe alignment is crucial - conflicting higher TFs are warning signs
+4. Market Breadth: Strong breadth in trade direction adds confidence
+5. Overall: Combine all factors for holistic risk assessment"""
+                },
+                {
+                    "role": "user",
+                    "content": analysis_prompt
+                }
+            ]
+            
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._call_openai, messages)
+            
+            defaults = {
+                'confidence': 0.5,
+                'recommendation': 'SKIP',
+                'analysis': 'Analysis incomplete',
+                'risk_assessment': {'level': 'medium', 'factors': []},
+                'suggested_adjustments': {},
+                'market_assessment': 'neutral',
+                'intelligence_alignment': 0.5,
+                'confidence_adjustment': 0.0,
+                'reasoning': [],
+                'position_sizing': {
+                    'size_multiplier': 1.0,
+                    'max_leverage_recommended': 10,
+                    'rationale': 'Default sizing'
+                }
+            }
+            
+            for key, default_value in defaults.items():
+                if key not in result:
+                    result[key] = default_value
+            
+            result['confidence_adjustment'] = max(-0.3, min(0.3, result.get('confidence_adjustment', 0.0)))
+            result['intelligence_alignment'] = max(0.0, min(1.0, result.get('intelligence_alignment', 0.5)))
+            
+            result['ai_powered'] = True
+            result['model'] = self.MODEL
+            result['timestamp'] = datetime.now().isoformat()
+            result['market_intelligence_used'] = True
+            
+            self._set_cached(cache_key, result)
+            logger.info(f"Market context analysis for {symbol}: confidence={result['confidence']:.2f}, "
+                       f"recommendation={result['recommendation']}, "
+                       f"market_assessment={result['market_assessment']}, "
+                       f"intelligence_alignment={result['intelligence_alignment']:.2f}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"AI market context analysis failed: {e}")
+            result = self._fallback_analyze_with_market_context(signal_data, market_intelligence)
+            self._set_cached(cache_key, result)
+            return result
+    
+    def _fallback_analyze_with_market_context(self, signal_data: Dict[str, Any],
+                                               market_intelligence: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fallback market context analysis when OpenAI is unavailable.
+        Uses rule-based logic to analyze market intelligence factors.
+        """
+        entry = signal_data.get('entry_price', 0)
+        stop_loss = signal_data.get('stop_loss', 0)
+        take_profit = signal_data.get('take_profit', 0)
+        direction = signal_data.get('direction', 'UNKNOWN')
+        base_confidence = signal_data.get('base_confidence', 0.5)
+        
+        risk_percent = abs(entry - stop_loss) / entry * 100 if entry > 0 else 0
+        reward_percent = abs(take_profit - entry) / entry * 100 if entry > 0 else 0
+        rr_ratio = reward_percent / risk_percent if risk_percent > 0 else 0
+        
+        confidence_adjustment = 0.0
+        reasoning = []
+        alignment_scores = []
+        
+        fear_greed = market_intelligence.get('fear_greed', {})
+        fg_value = fear_greed.get('value', 50)
+        
+        if direction == 'LONG':
+            if fg_value <= 25:
+                confidence_adjustment += 0.15
+                reasoning.append(f"Extreme Fear ({fg_value}) supports LONG - contrarian buy opportunity")
+                alignment_scores.append(1.0)
+            elif fg_value <= 40:
+                confidence_adjustment += 0.05
+                reasoning.append(f"Fear zone ({fg_value}) mildly supports LONG")
+                alignment_scores.append(0.7)
+            elif fg_value >= 75:
+                confidence_adjustment -= 0.15
+                reasoning.append(f"Extreme Greed ({fg_value}) contradicts LONG - caution advised")
+                alignment_scores.append(0.2)
+            elif fg_value >= 60:
+                confidence_adjustment -= 0.05
+                reasoning.append(f"Greed zone ({fg_value}) mildly contradicts LONG")
+                alignment_scores.append(0.4)
+            else:
+                alignment_scores.append(0.5)
+        else:
+            if fg_value >= 75:
+                confidence_adjustment += 0.15
+                reasoning.append(f"Extreme Greed ({fg_value}) supports SHORT - contrarian sell opportunity")
+                alignment_scores.append(1.0)
+            elif fg_value >= 60:
+                confidence_adjustment += 0.05
+                reasoning.append(f"Greed zone ({fg_value}) mildly supports SHORT")
+                alignment_scores.append(0.7)
+            elif fg_value <= 25:
+                confidence_adjustment -= 0.15
+                reasoning.append(f"Extreme Fear ({fg_value}) contradicts SHORT - caution advised")
+                alignment_scores.append(0.2)
+            elif fg_value <= 40:
+                confidence_adjustment -= 0.05
+                reasoning.append(f"Fear zone ({fg_value}) mildly contradicts SHORT")
+                alignment_scores.append(0.4)
+            else:
+                alignment_scores.append(0.5)
+        
+        news = market_intelligence.get('news_sentiment', {})
+        news_score = news.get('sentiment_score', 0.0)
+        
+        if direction == 'LONG':
+            if news_score >= 0.5:
+                confidence_adjustment += 0.1
+                reasoning.append(f"Strong bullish news sentiment ({news_score:.2f}) aligns with LONG")
+                alignment_scores.append(0.9)
+            elif news_score >= 0.2:
+                confidence_adjustment += 0.05
+                reasoning.append(f"Mildly bullish news sentiment supports LONG")
+                alignment_scores.append(0.7)
+            elif news_score <= -0.5:
+                confidence_adjustment -= 0.1
+                reasoning.append(f"Strong bearish news sentiment ({news_score:.2f}) contradicts LONG")
+                alignment_scores.append(0.2)
+            elif news_score <= -0.2:
+                confidence_adjustment -= 0.05
+                reasoning.append(f"Mildly bearish news sentiment contradicts LONG")
+                alignment_scores.append(0.4)
+            else:
+                alignment_scores.append(0.5)
+        else:
+            if news_score <= -0.5:
+                confidence_adjustment += 0.1
+                reasoning.append(f"Strong bearish news sentiment ({news_score:.2f}) aligns with SHORT")
+                alignment_scores.append(0.9)
+            elif news_score <= -0.2:
+                confidence_adjustment += 0.05
+                reasoning.append(f"Mildly bearish news sentiment supports SHORT")
+                alignment_scores.append(0.7)
+            elif news_score >= 0.5:
+                confidence_adjustment -= 0.1
+                reasoning.append(f"Strong bullish news sentiment ({news_score:.2f}) contradicts SHORT")
+                alignment_scores.append(0.2)
+            elif news_score >= 0.2:
+                confidence_adjustment -= 0.05
+                reasoning.append(f"Mildly bullish news sentiment contradicts SHORT")
+                alignment_scores.append(0.4)
+            else:
+                alignment_scores.append(0.5)
+        
+        mtf = market_intelligence.get('mtf_confirmation', {})
+        mtf_alignment = mtf.get('alignment_score', 0.5)
+        higher_tf_bias = mtf.get('higher_tf_bias', 'neutral')
+        
+        if direction == 'LONG' and higher_tf_bias == 'bullish':
+            confidence_adjustment += 0.1
+            reasoning.append("Higher timeframes confirm bullish bias")
+            alignment_scores.append(mtf_alignment)
+        elif direction == 'SHORT' and higher_tf_bias == 'bearish':
+            confidence_adjustment += 0.1
+            reasoning.append("Higher timeframes confirm bearish bias")
+            alignment_scores.append(mtf_alignment)
+        elif higher_tf_bias != 'neutral' and higher_tf_bias != direction.lower():
+            confidence_adjustment -= 0.1
+            reasoning.append(f"Warning: Higher timeframes show {higher_tf_bias} bias, conflicts with {direction}")
+            alignment_scores.append(1 - mtf_alignment)
+        else:
+            alignment_scores.append(0.5)
+        
+        breadth = market_intelligence.get('market_breadth', {})
+        breadth_pct = breadth.get('breadth_percentage', 50)
+        
+        if direction == 'LONG' and breadth_pct >= 65:
+            confidence_adjustment += 0.05
+            reasoning.append(f"Strong market breadth ({breadth_pct:.0f}% bullish) supports LONG")
+            alignment_scores.append(0.8)
+        elif direction == 'SHORT' and breadth_pct <= 35:
+            confidence_adjustment += 0.05
+            reasoning.append(f"Weak market breadth ({breadth_pct:.0f}% bullish) supports SHORT")
+            alignment_scores.append(0.8)
+        elif direction == 'LONG' and breadth_pct <= 35:
+            confidence_adjustment -= 0.05
+            reasoning.append(f"Weak market breadth contradicts LONG")
+            alignment_scores.append(0.3)
+        elif direction == 'SHORT' and breadth_pct >= 65:
+            confidence_adjustment -= 0.05
+            reasoning.append(f"Strong market breadth contradicts SHORT")
+            alignment_scores.append(0.3)
+        else:
+            alignment_scores.append(0.5)
+        
+        confidence_adjustment = max(-0.3, min(0.3, confidence_adjustment))
+        final_confidence = max(0.0, min(1.0, base_confidence + confidence_adjustment))
+        intelligence_alignment = sum(alignment_scores) / len(alignment_scores) if alignment_scores else 0.5
+        
+        if final_confidence >= 0.7 and intelligence_alignment >= 0.6:
+            recommendation = 'EXECUTE'
+            size_multiplier = 1.0 + (intelligence_alignment - 0.5) * 0.5
+        elif final_confidence >= 0.5:
+            recommendation = 'MODIFY'
+            size_multiplier = 0.75
+        else:
+            recommendation = 'SKIP'
+            size_multiplier = 0.5
+        
+        if confidence_adjustment >= 0.1:
+            market_assessment = 'bullish' if direction == 'LONG' else 'bearish'
+        elif confidence_adjustment <= -0.1:
+            market_assessment = 'bearish' if direction == 'LONG' else 'bullish'
+        else:
+            market_assessment = 'neutral'
+        
+        if risk_percent > 3:
+            risk_level = 'high'
+        elif risk_percent > 1.5:
+            risk_level = 'medium'
+        else:
+            risk_level = 'low'
+        
+        return {
+            'confidence': final_confidence,
+            'recommendation': recommendation,
+            'analysis': f"Fallback market context analysis: Base confidence {base_confidence:.2f} "
+                       f"adjusted by {confidence_adjustment:+.2f} based on market intelligence. "
+                       f"R/R ratio: {rr_ratio:.2f}",
+            'risk_assessment': {
+                'level': risk_level,
+                'factors': ['risk_percent', 'intelligence_alignment', 'market_conditions']
+            },
+            'suggested_adjustments': {},
+            'market_assessment': market_assessment,
+            'intelligence_alignment': intelligence_alignment,
+            'confidence_adjustment': confidence_adjustment,
+            'reasoning': reasoning,
+            'position_sizing': {
+                'size_multiplier': round(size_multiplier, 2),
+                'max_leverage_recommended': 10 if intelligence_alignment >= 0.6 else 5,
+                'rationale': f"Based on intelligence alignment of {intelligence_alignment:.2f}"
+            },
+            'ai_powered': False,
+            'fallback_mode': True,
+            'market_intelligence_used': True,
+            'timestamp': datetime.now().isoformat()
+        }
     
     async def analyze_signal(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
         """

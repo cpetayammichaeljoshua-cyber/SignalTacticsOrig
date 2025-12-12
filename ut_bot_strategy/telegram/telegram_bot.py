@@ -13,7 +13,7 @@ import os
 import asyncio
 import logging
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import aiohttp
 
 logger = logging.getLogger(__name__)
@@ -73,28 +73,233 @@ class TelegramSignalBot:
         else:
             return f"${price:.6f}"
     
-    def _format_signal_message(self, signal: Dict) -> str:
+    def _format_fear_greed(self, value: int, classification: str = "") -> str:
+        """
+        Format Fear & Greed index with emoji
+        
+        Args:
+            value: Fear & Greed index value (0-100)
+            classification: Classification label (e.g., "Fear", "Greed")
+            
+        Returns:
+            Formatted string with emoji
+        """
+        if not classification:
+            if value <= 20:
+                classification = "Extreme Fear"
+            elif value <= 40:
+                classification = "Fear"
+            elif value <= 60:
+                classification = "Neutral"
+            elif value <= 80:
+                classification = "Greed"
+            else:
+                classification = "Extreme Greed"
+        
+        if value <= 25:
+            emoji = "😱"
+        elif value <= 45:
+            emoji = "😰"
+        elif value <= 55:
+            emoji = "😐"
+        elif value <= 75:
+            emoji = "😊"
+        else:
+            emoji = "🤑"
+        
+        return f"🎭 Fear & Greed: {value} ({classification}) {emoji}"
+    
+    def _format_news_sentiment(self, score: float) -> str:
+        """
+        Format news sentiment score with emoji and direction
+        
+        Args:
+            score: Sentiment score (-1 to +1)
+            
+        Returns:
+            Formatted string with emoji
+        """
+        if score > 0.3:
+            direction = "Bullish"
+            emoji = "📈"
+        elif score > 0.1:
+            direction = "Slightly Bullish"
+            emoji = "↗️"
+        elif score < -0.3:
+            direction = "Bearish"
+            emoji = "📉"
+        elif score < -0.1:
+            direction = "Slightly Bearish"
+            emoji = "↘️"
+        else:
+            direction = "Neutral"
+            emoji = "➡️"
+        
+        sign = "+" if score >= 0 else ""
+        return f"📰 News Sentiment: {sign}{score:.2f} ({direction}) {emoji}"
+    
+    def _format_mtf_alignment(self, score: float, confirming_timeframes: List[str] = None) -> str:
+        """
+        Format multi-timeframe alignment with confirmation details
+        
+        Args:
+            score: Alignment score (0-100)
+            confirming_timeframes: List of confirming timeframes
+            
+        Returns:
+            Formatted string with confirmation details
+        """
+        if confirming_timeframes and len(confirming_timeframes) > 0:
+            tf_str = ", ".join(confirming_timeframes[:4])
+            return f"🔄 MTF Alignment: {score:.0f}% ({tf_str} confirm)"
+        return f"🔄 MTF Alignment: {score:.0f}%"
+    
+    def _format_market_intelligence(self, intelligence_data: Dict[str, Any]) -> str:
+        """
+        Format full market intelligence section
+        
+        Args:
+            intelligence_data: Dictionary with market intelligence data:
+                - fear_greed_value: int
+                - fear_greed_classification: str
+                - news_sentiment: float
+                - market_breadth: float
+                - mtf_alignment: float
+                - confirming_timeframes: List[str]
+                - ai_confidence: float
+                
+        Returns:
+            Formatted market intelligence section
+        """
+        if not intelligence_data:
+            return ""
+        
+        lines = ["━━━━━ MARKET INTELLIGENCE ━━━━━", ""]
+        
+        fear_value = intelligence_data.get('fear_greed_value', 0)
+        fear_class = intelligence_data.get('fear_greed_classification', '')
+        if fear_value > 0:
+            lines.append(self._format_fear_greed(fear_value, fear_class))
+        
+        news_score = intelligence_data.get('news_sentiment')
+        if news_score is not None:
+            lines.append(self._format_news_sentiment(news_score))
+        
+        market_breadth = intelligence_data.get('market_breadth')
+        if market_breadth is not None:
+            breadth_emoji = "📊"
+            direction = "Bullish" if market_breadth > 50 else "Bearish" if market_breadth < 50 else "Neutral"
+            lines.append(f"{breadth_emoji} Market Breadth: {market_breadth:.0f}% {direction}")
+        
+        mtf_score = intelligence_data.get('mtf_alignment')
+        confirming_tfs = intelligence_data.get('confirming_timeframes', [])
+        if mtf_score is not None:
+            lines.append(self._format_mtf_alignment(mtf_score, confirming_tfs))
+        
+        ai_confidence = intelligence_data.get('ai_confidence')
+        if ai_confidence is not None:
+            conf_value = ai_confidence * 100 if ai_confidence <= 1 else ai_confidence
+            lines.append(f"🧠 AI Confidence: {conf_value:.0f}%")
+        
+        lines.append("")
+        return "\n".join(lines)
+    
+    def _format_risk_analysis(self, signal: Dict, intelligence_data: Optional[Dict] = None) -> str:
+        """
+        Format risk analysis section
+        
+        Args:
+            signal: Signal dictionary
+            intelligence_data: Optional market intelligence data
+            
+        Returns:
+            Formatted risk analysis section
+        """
+        lines = ["━━━━━━ RISK ANALYSIS ━━━━━━", ""]
+        
+        risk = signal.get('risk_percent', 0)
+        rr = signal.get('risk_reward_ratio', 1.5)
+        lines.append(f"📊 Risk: {risk:.2f}%")
+        lines.append(f"🎲 Risk:Reward: 1:{rr}")
+        
+        if intelligence_data:
+            order_flow = intelligence_data.get('order_flow_score')
+            if order_flow is not None:
+                direction = "Bullish" if order_flow > 0 else "Bearish" if order_flow < 0 else "Neutral"
+                sign = "+" if order_flow >= 0 else ""
+                lines.append(f"📈 Order Flow: {direction} ({sign}{order_flow:.2f})")
+            
+            manipulation = intelligence_data.get('manipulation_score')
+            if manipulation is not None:
+                warning = " ⚡" if manipulation > 0.5 else ""
+                lines.append(f"⚠️ Manipulation Score: {manipulation:.2f}{warning}")
+        
+        lines.append("")
+        return "\n".join(lines)
+    
+    def _format_confirmations(self, signal: Dict, intelligence_data: Optional[Dict] = None) -> str:
+        """
+        Format confirmation checklist section
+        
+        Args:
+            signal: Signal dictionary
+            intelligence_data: Optional market intelligence data
+            
+        Returns:
+            Formatted confirmation section
+        """
+        direction = signal.get('type', 'LONG')
+        lines = ["━━━━━━ CONFIRMATION ━━━━━━", ""]
+        
+        lines.append(f"✅ UT Bot {direction} Signal")
+        stc_indicator = "Green ↑" if direction == "LONG" else "Red ↓"
+        lines.append(f"✅ STC {stc_indicator}")
+        
+        if intelligence_data:
+            fear_value = intelligence_data.get('fear_greed_value', 50)
+            if fear_value > 0:
+                if direction == "LONG" and fear_value < 50:
+                    lines.append("✅ Fear supports LONG")
+                elif direction == "SHORT" and fear_value > 50:
+                    lines.append("✅ Greed supports SHORT")
+                elif fear_value >= 40 and fear_value <= 60:
+                    lines.append("✅ Neutral sentiment")
+            
+            news_sentiment = intelligence_data.get('news_sentiment')
+            if news_sentiment is not None:
+                if (direction == "LONG" and news_sentiment > 0.1) or \
+                   (direction == "SHORT" and news_sentiment < -0.1):
+                    lines.append("✅ News sentiment aligned")
+            
+            mtf_alignment = intelligence_data.get('mtf_alignment', 0)
+            if mtf_alignment >= 70:
+                lines.append("✅ Higher TF confirms")
+            elif mtf_alignment >= 50:
+                lines.append("⚠️ Partial TF alignment")
+        else:
+            lines.append("✅ All conditions met")
+        
+        lines.append("")
+        return "\n".join(lines)
+    
+    def _format_signal_message(self, signal: Dict, market_intelligence: Optional[Dict] = None) -> str:
         """
         Format trading signal as Telegram message
         
         Args:
             signal: Signal dictionary from SignalEngine
+            market_intelligence: Optional market intelligence data for enhanced formatting
             
         Returns:
             Formatted message string
         """
-        direction = signal['type']
+        direction = signal.get('type', 'LONG')
         emoji = "🟢" if direction == "LONG" else "🔴"
         direction_emoji = "📈" if direction == "LONG" else "📉"
         
-        entry = self._format_price(signal['entry_price'])
-        sl = self._format_price(signal['stop_loss'])
-        tp = self._format_price(signal['take_profit'])
-        risk = signal['risk_percent']
-        rr = signal['risk_reward_ratio']
-        
-        stc_value = signal.get('stc_value', 0)
-        atr = signal.get('atr', 0)
+        entry = self._format_price(signal.get('entry_price', 0))
+        sl = self._format_price(signal.get('stop_loss', 0))
+        tp = self._format_price(signal.get('take_profit', 0))
         
         timestamp = signal.get('timestamp', datetime.now())
         if hasattr(timestamp, 'strftime'):
@@ -102,13 +307,46 @@ class TelegramSignalBot:
         else:
             time_str = str(timestamp)
         
-        leverage_section = self._format_leverage_section(signal)
+        symbol = signal.get('symbol', 'ETH/USDT')
+        symbol_tag = symbol.replace('/', '').upper()
         
-        message = f"""
+        if market_intelligence:
+            market_intel_section = self._format_market_intelligence(market_intelligence)
+            risk_analysis_section = self._format_risk_analysis(signal, market_intelligence)
+            confirmation_section = self._format_confirmations(signal, market_intelligence)
+            
+            message = f"""
 {emoji} <b>UT BOT + STC SIGNAL</b> {emoji}
 
 {direction_emoji} <b>Direction:</b> {direction}
-💱 <b>Pair:</b> {signal.get('symbol', 'ETH/USDT')}
+💱 <b>Pair:</b> {symbol}
+⏰ <b>Timeframe:</b> {signal.get('timeframe', '5m')}
+
+{market_intel_section}
+━━━━━━━ TRADE SETUP ━━━━━━━
+
+💰 <b>Entry:</b> {entry}
+🛑 <b>Stop Loss:</b> {sl}
+🎯 <b>Take Profit:</b> {tp}
+
+{risk_analysis_section}
+{confirmation_section}
+🕐 <i>{time_str}</i>
+
+<b>#{symbol_tag} #{direction} #UTBot #STC</b>
+"""
+        else:
+            risk = signal.get('risk_percent', 0)
+            rr = signal.get('risk_reward_ratio', 1.5)
+            stc_value = signal.get('stc_value', 0)
+            atr = signal.get('atr', 0)
+            leverage_section = self._format_leverage_section(signal)
+            
+            message = f"""
+{emoji} <b>UT BOT + STC SIGNAL</b> {emoji}
+
+{direction_emoji} <b>Direction:</b> {direction}
+💱 <b>Pair:</b> {symbol}
 ⏰ <b>Timeframe:</b> {signal.get('timeframe', '5m')}
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -141,7 +379,7 @@ class TelegramSignalBot:
 
 🕐 <i>{time_str}</i>
 
-<b>#ETHUSDT #{direction} #UTBot #STC</b>
+<b>#{symbol_tag} #{direction} #UTBot #STC</b>
 """
         return message.strip()
     
@@ -357,18 +595,29 @@ Reason: {reason}
 💳 <b>Account Balance:</b> ${balance:,.2f}
 """
     
-    async def send_signal(self, signal: Dict, trade_info: Optional[Dict] = None) -> bool:
+    async def send_signal(self, signal: Dict, trade_info: Optional[Dict] = None,
+                          market_intelligence: Optional[Dict] = None) -> bool:
         """
         Send trading signal to Telegram
         
         Args:
             signal: Signal dictionary from SignalEngine
             trade_info: Optional trade execution info
+            market_intelligence: Optional market intelligence data for enhanced formatting
+                - fear_greed_value: int (0-100)
+                - fear_greed_classification: str
+                - news_sentiment: float (-1 to +1)
+                - market_breadth: float (0-100)
+                - mtf_alignment: float (0-100)
+                - confirming_timeframes: List[str]
+                - ai_confidence: float (0-1)
+                - order_flow_score: float (-1 to +1)
+                - manipulation_score: float (0-1)
             
         Returns:
             True if sent successfully
         """
-        message = self._format_signal_message(signal)
+        message = self._format_signal_message(signal, market_intelligence)
         
         if trade_info:
             message += self._format_trade_execution(trade_info)
@@ -411,6 +660,98 @@ Reason: {reason}
         """Send bot shutdown notification"""
         message = self._format_shutdown_message(reason)
         return await self.send_message(message)
+    
+    async def send_market_intelligence_update(self, intelligence_data: Dict[str, Any],
+                                               symbol: str = "ETH/USDT") -> bool:
+        """
+        Send periodic market intelligence summary
+        
+        Args:
+            intelligence_data: Market intelligence data:
+                - fear_greed_value: int (0-100)
+                - fear_greed_classification: str
+                - news_sentiment: float (-1 to +1)
+                - market_breadth: float (0-100)
+                - mtf_alignment: float (0-100)
+                - confirming_timeframes: List[str]
+                - ai_confidence: float (0-1)
+                - order_flow_score: float (-1 to +1)
+                - manipulation_score: float (0-1)
+                - market_trend: str ("bullish", "bearish", "neutral")
+                - volatility: float
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if sent successfully
+        """
+        if not intelligence_data:
+            return False
+        
+        fear_value = intelligence_data.get('fear_greed_value', 0)
+        fear_class = intelligence_data.get('fear_greed_classification', '')
+        news_score = intelligence_data.get('news_sentiment', 0)
+        market_breadth = intelligence_data.get('market_breadth', 50)
+        mtf_alignment = intelligence_data.get('mtf_alignment', 0)
+        confirming_tfs = intelligence_data.get('confirming_timeframes', [])
+        ai_confidence = intelligence_data.get('ai_confidence', 0)
+        order_flow = intelligence_data.get('order_flow_score', 0)
+        manipulation = intelligence_data.get('manipulation_score', 0)
+        market_trend = intelligence_data.get('market_trend', 'neutral')
+        volatility = intelligence_data.get('volatility', 0)
+        
+        trend_emoji = "📈" if market_trend == "bullish" else "📉" if market_trend == "bearish" else "➡️"
+        trend_str = market_trend.upper()
+        
+        conf_value = ai_confidence * 100 if ai_confidence <= 1 else ai_confidence
+        
+        overall_emoji = "🟢" if market_breadth > 60 and news_score > 0.1 else \
+                       "🔴" if market_breadth < 40 and news_score < -0.1 else "🟡"
+        
+        vol_status = "High ⚡" if volatility > 2 else "Normal 📊" if volatility > 0.5 else "Low 😴"
+        
+        fear_line = self._format_fear_greed(fear_value, fear_class) if fear_value > 0 else ""
+        news_line = self._format_news_sentiment(news_score) if news_score != 0 else ""
+        mtf_line = self._format_mtf_alignment(mtf_alignment, confirming_tfs) if mtf_alignment > 0 else ""
+        
+        order_flow_dir = "Bullish" if order_flow > 0 else "Bearish" if order_flow < 0 else "Neutral"
+        order_flow_sign = "+" if order_flow >= 0 else ""
+        
+        manipulation_warning = " ⚡ CAUTION" if manipulation > 0.5 else ""
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+        
+        message = f"""
+{overall_emoji} <b>MARKET INTELLIGENCE UPDATE</b> {overall_emoji}
+
+💱 <b>Symbol:</b> {symbol}
+{trend_emoji} <b>Market Trend:</b> {trend_str}
+
+━━━━━ SENTIMENT ANALYSIS ━━━━━
+
+{fear_line}
+{news_line}
+📊 Market Breadth: {market_breadth:.0f}% {"Bullish" if market_breadth > 50 else "Bearish" if market_breadth < 50 else "Neutral"}
+
+━━━━━ TECHNICAL CONTEXT ━━━━━
+
+{mtf_line}
+🧠 AI Confidence: {conf_value:.0f}%
+📉 Volatility: {vol_status}
+
+━━━━━━ FLOW ANALYSIS ━━━━━━
+
+📈 Order Flow: {order_flow_dir} ({order_flow_sign}{order_flow:.2f})
+⚠️ Manipulation Score: {manipulation:.2f}{manipulation_warning}
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🕐 <i>{timestamp}</i>
+
+<b>#MarketIntelligence #CryptoAnalysis</b>
+"""
+        message = "\n".join([line for line in message.split("\n") if line.strip()])
+        
+        return await self.send_message(message.strip(), disable_notification=True)
     
     def send_signal_sync(self, signal: Dict) -> bool:
         """Synchronous wrapper for send_signal"""

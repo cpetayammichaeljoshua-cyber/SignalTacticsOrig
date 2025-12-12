@@ -6,7 +6,7 @@ All configurable parameters for the trading bot.
 
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 
 
 @dataclass
@@ -71,17 +71,51 @@ class BotConfig:
 
 
 @dataclass
+class ExternalDataConfig:
+    """External data sources configuration"""
+    fear_greed_enabled: bool = True
+    coingecko_enabled: bool = True
+    cryptopanic_enabled: bool = True
+    refresh_interval_minutes: int = 5
+
+
+@dataclass
+class MultiAssetConfig:
+    """Multi-asset scanning configuration"""
+    enabled: bool = False
+    scan_interval_minutes: int = 10
+    top_n_opportunities: int = 5
+    default_symbols: List[str] = field(default_factory=lambda: [
+        'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+        'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT'
+    ])
+
+
+@dataclass
+class MultiTimeframeConfig:
+    """Multi-timeframe confirmation configuration"""
+    enabled: bool = True
+    timeframes: List[str] = field(default_factory=lambda: ['1m', '5m', '15m', '1h', '4h'])
+    min_alignment_score: float = 0.6
+
+
+@dataclass
 class Config:
     """Complete configuration container"""
     ut_bot: UTBotConfig = field(default_factory=UTBotConfig)
     stc: STCConfig = field(default_factory=STCConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
     bot: BotConfig = field(default_factory=BotConfig)
+    external_data: ExternalDataConfig = field(default_factory=ExternalDataConfig)
+    multi_asset: MultiAssetConfig = field(default_factory=MultiAssetConfig)
+    multi_timeframe: MultiTimeframeConfig = field(default_factory=MultiTimeframeConfig)
     
     binance_api_key: str = field(default_factory=lambda: os.getenv('BINANCE_API_KEY', ''))
     binance_api_secret: str = field(default_factory=lambda: os.getenv('BINANCE_API_SECRET', ''))
     telegram_bot_token: str = field(default_factory=lambda: os.getenv('TELEGRAM_BOT_TOKEN', ''))
     telegram_chat_id: str = field(default_factory=lambda: os.getenv('TELEGRAM_CHAT_ID', ''))
+    coingecko_api_key: str = field(default_factory=lambda: os.getenv('COINGECKO_API_KEY', ''))
+    cryptopanic_api_key: str = field(default_factory=lambda: os.getenv('CRYPTOPANIC_API_KEY', ''))
     
     def validate(self) -> bool:
         """Validate that all required configuration is present"""
@@ -131,6 +165,23 @@ class Config:
                 'signal_cooldown_minutes': self.bot.signal_cooldown_minutes,
                 'send_market_updates': self.bot.send_market_updates,
                 'log_level': self.bot.log_level
+            },
+            'external_data': {
+                'fear_greed_enabled': self.external_data.fear_greed_enabled,
+                'coingecko_enabled': self.external_data.coingecko_enabled,
+                'cryptopanic_enabled': self.external_data.cryptopanic_enabled,
+                'refresh_interval_minutes': self.external_data.refresh_interval_minutes
+            },
+            'multi_asset': {
+                'enabled': self.multi_asset.enabled,
+                'scan_interval_minutes': self.multi_asset.scan_interval_minutes,
+                'top_n_opportunities': self.multi_asset.top_n_opportunities,
+                'default_symbols': self.multi_asset.default_symbols
+            },
+            'multi_timeframe': {
+                'enabled': self.multi_timeframe.enabled,
+                'timeframes': self.multi_timeframe.timeframes,
+                'min_alignment_score': self.multi_timeframe.min_alignment_score
             }
         }
 

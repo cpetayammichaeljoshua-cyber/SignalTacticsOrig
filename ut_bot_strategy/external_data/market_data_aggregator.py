@@ -238,7 +238,10 @@ class MarketDataAggregator:
         """
         if not force_refresh and self._is_cache_valid(self._market_cache_time):
             if coin_ids:
-                cached = [self._market_cache.get(cid) for cid in coin_ids if cid in self._market_cache]
+                cached: List[CoinMarketData] = [
+                    self._market_cache[cid] for cid in coin_ids 
+                    if cid in self._market_cache and self._market_cache[cid] is not None
+                ]
                 if len(cached) == len(coin_ids):
                     logger.debug("Returning cached market data")
                     return cached
@@ -261,7 +264,11 @@ class MarketDataAggregator:
         data = await self._make_request("/coins/markets", params)
         if not data:
             if coin_ids:
-                return [self._market_cache.get(cid) for cid in coin_ids if cid in self._market_cache]
+                cached_fallback: List[CoinMarketData] = [
+                    self._market_cache[cid] for cid in coin_ids 
+                    if cid in self._market_cache and self._market_cache[cid] is not None
+                ]
+                return cached_fallback if cached_fallback else None
             return list(self._market_cache.values()) if self._market_cache else None
         
         try:

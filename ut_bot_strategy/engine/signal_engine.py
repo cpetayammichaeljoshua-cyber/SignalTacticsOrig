@@ -13,6 +13,20 @@ Enhanced with Order Flow Analysis:
 - Manipulation detection filtering
 - Institutional activity scoring
 - Enhanced confidence calculation
+
+Multi-Source Market Intelligence:
+- Fear & Greed Index integration (extreme fear favors LONG, extreme greed favors SHORT)
+- News sentiment analysis
+- Market breadth (how many top coins moving in same direction)
+- Multi-timeframe confirmation
+
+Confidence Weight Distribution:
+- Base indicator confidence: 40%
+- Order flow alignment: 20%
+- Fear/Greed alignment: 10%
+- News sentiment: 10%
+- Multi-timeframe confirmation: 15%
+- Market breadth: 5%
 """
 
 import logging
@@ -97,6 +111,10 @@ class SignalEngine:
         
         self._order_flow_metrics_service: Optional[Any] = None
         
+        self._fear_greed_client: Optional[Any] = None
+        self._news_client: Optional[Any] = None
+        self._market_aggregator: Optional[Any] = None
+        
         self._last_signal_time: Optional[datetime] = None
         self._last_signal_type: Optional[str] = None
         self._signal_history: List[Dict] = []
@@ -114,6 +132,30 @@ class SignalEngine:
         """
         self._order_flow_metrics_service = metrics_service
         logger.info("OrderFlowMetricsService connected to SignalEngine")
+    
+    def set_market_intelligence(self, 
+                                fear_greed_client: Optional[Any] = None,
+                                news_client: Optional[Any] = None,
+                                market_aggregator: Optional[Any] = None) -> None:
+        """
+        Connect external data sources for multi-source market intelligence
+        
+        Args:
+            fear_greed_client: FearGreedClient instance for Fear & Greed index
+            news_client: NewsSentimentClient instance for news sentiment
+            market_aggregator: MarketDataAggregator instance for market breadth
+        """
+        if fear_greed_client is not None:
+            self._fear_greed_client = fear_greed_client
+            logger.info("FearGreedClient connected to SignalEngine")
+        
+        if news_client is not None:
+            self._news_client = news_client
+            logger.info("NewsSentimentClient connected to SignalEngine")
+        
+        if market_aggregator is not None:
+            self._market_aggregator = market_aggregator
+            logger.info("MarketDataAggregator connected to SignalEngine")
     
     def _get_order_flow_data(self) -> Optional[Dict[str, Any]]:
         """
@@ -248,6 +290,227 @@ class SignalEngine:
         enhanced = (base_confidence * base_weight) + (of_alignment * of_weight)
         
         return max(0.0, min(1.0, enhanced))
+    
+    def _calculate_fear_greed_alignment(self, fear_greed_value: float, signal_type: str) -> float:
+        """
+        Calculate Fear & Greed alignment score
+        
+        Extreme Fear (0-30) favors LONG positions
+        Extreme Greed (70-100) favors SHORT positions
+        
+        Args:
+            fear_greed_value: Fear & Greed index value (0-100)
+            signal_type: 'LONG' or 'SHORT'
+            
+        Returns:
+            Alignment score (0 to 1)
+        """
+        if signal_type == 'LONG':
+            if fear_greed_value <= 30:
+                return 1.0 - (fear_greed_value / 30) * 0.3
+            elif fear_greed_value <= 50:
+                return 0.7 - ((fear_greed_value - 30) / 20) * 0.2
+            elif fear_greed_value <= 70:
+                return 0.5 - ((fear_greed_value - 50) / 20) * 0.2
+            else:
+                return 0.3 - ((fear_greed_value - 70) / 30) * 0.3
+        elif signal_type == 'SHORT':
+            if fear_greed_value >= 70:
+                return 0.7 + ((fear_greed_value - 70) / 30) * 0.3
+            elif fear_greed_value >= 50:
+                return 0.5 + ((fear_greed_value - 50) / 20) * 0.2
+            elif fear_greed_value >= 30:
+                return 0.3 + ((fear_greed_value - 30) / 20) * 0.2
+            else:
+                return 0.3 - (fear_greed_value / 30) * 0.3
+        
+        return 0.5
+    
+    def _calculate_news_sentiment_alignment(self, news_sentiment: float, signal_type: str) -> float:
+        """
+        Calculate news sentiment alignment score
+        
+        Args:
+            news_sentiment: News sentiment score (-1 to 1, where positive = bullish)
+            signal_type: 'LONG' or 'SHORT'
+            
+        Returns:
+            Alignment score (0 to 1)
+        """
+        if signal_type == 'LONG':
+            return (news_sentiment + 1) / 2
+        elif signal_type == 'SHORT':
+            return (-news_sentiment + 1) / 2
+        
+        return 0.5
+    
+    def _calculate_market_breadth_alignment(self, market_breadth: float, signal_type: str) -> float:
+        """
+        Calculate market breadth alignment score
+        
+        Args:
+            market_breadth: Percentage of top coins moving in bullish direction (0-100)
+            signal_type: 'LONG' or 'SHORT'
+            
+        Returns:
+            Alignment score (0 to 1)
+        """
+        normalized_breadth = market_breadth / 100.0
+        
+        if signal_type == 'LONG':
+            return normalized_breadth
+        elif signal_type == 'SHORT':
+            return 1.0 - normalized_breadth
+        
+        return 0.5
+    
+    def _calculate_multi_source_confidence(self,
+                                           base_confidence: float,
+                                           signal_type: str,
+                                           order_flow_bias: float = 0.0,
+                                           market_context: Optional[Dict] = None,
+                                           mtf_confirmation: Optional[Dict] = None) -> Tuple[float, Dict]:
+        """
+        Calculate multi-source confidence by weighing all market intelligence factors
+        
+        Weight distribution:
+        - Base indicator confidence: 40%
+        - Order flow alignment: 20%
+        - Fear/Greed alignment: 10%
+        - News sentiment: 10%
+        - Multi-timeframe confirmation: 15%
+        - Market breadth: 5%
+        
+        Args:
+            base_confidence: Base signal confidence (0 to 1)
+            signal_type: 'LONG' or 'SHORT'
+            order_flow_bias: Order flow bias (-1 to 1)
+            market_context: Dict containing fear_greed, news_sentiment, market_breadth
+            mtf_confirmation: Dict containing alignment_score from multi-timeframe analysis
+            
+        Returns:
+            Tuple of (multi_source_confidence, component_scores_dict)
+        """
+        WEIGHT_BASE = 0.40
+        WEIGHT_ORDER_FLOW = 0.20
+        WEIGHT_FEAR_GREED = 0.10
+        WEIGHT_NEWS = 0.10
+        WEIGHT_MTF = 0.15
+        WEIGHT_BREADTH = 0.05
+        
+        component_scores = {
+            'base_indicator': base_confidence,
+            'order_flow_alignment': 0.5,
+            'fear_greed_alignment': 0.5,
+            'news_sentiment_alignment': 0.5,
+            'mtf_alignment': 0.5,
+            'market_breadth_alignment': 0.5
+        }
+        
+        if signal_type == 'LONG':
+            of_alignment = (order_flow_bias + 1) / 2
+        elif signal_type == 'SHORT':
+            of_alignment = (-order_flow_bias + 1) / 2
+        else:
+            of_alignment = 0.5
+        component_scores['order_flow_alignment'] = of_alignment
+        
+        if market_context:
+            fear_greed_value = market_context.get('fear_greed_value', 50.0)
+            component_scores['fear_greed_alignment'] = self._calculate_fear_greed_alignment(
+                fear_greed_value, signal_type
+            )
+            
+            news_sentiment = market_context.get('news_sentiment_score', 0.0)
+            component_scores['news_sentiment_alignment'] = self._calculate_news_sentiment_alignment(
+                news_sentiment, signal_type
+            )
+            
+            market_breadth = market_context.get('market_breadth_score', 50.0)
+            component_scores['market_breadth_alignment'] = self._calculate_market_breadth_alignment(
+                market_breadth, signal_type
+            )
+        
+        if mtf_confirmation:
+            mtf_score = mtf_confirmation.get('alignment_score', 0.5)
+            component_scores['mtf_alignment'] = mtf_score
+        
+        multi_source_confidence = (
+            component_scores['base_indicator'] * WEIGHT_BASE +
+            component_scores['order_flow_alignment'] * WEIGHT_ORDER_FLOW +
+            component_scores['fear_greed_alignment'] * WEIGHT_FEAR_GREED +
+            component_scores['news_sentiment_alignment'] * WEIGHT_NEWS +
+            component_scores['mtf_alignment'] * WEIGHT_MTF +
+            component_scores['market_breadth_alignment'] * WEIGHT_BREADTH
+        )
+        
+        multi_source_confidence = max(0.0, min(1.0, multi_source_confidence))
+        
+        return multi_source_confidence, component_scores
+    
+    def _build_market_intelligence(self,
+                                   market_context: Optional[Dict],
+                                   mtf_confirmation: Optional[Dict],
+                                   component_scores: Dict,
+                                   overall_score: float) -> Dict[str, Any]:
+        """
+        Build the market_intelligence field for signal output
+        
+        Args:
+            market_context: Dict containing fear_greed, news_sentiment, market_breadth
+            mtf_confirmation: Dict containing alignment_score from multi-timeframe analysis
+            component_scores: Component scores from multi-source confidence calculation
+            overall_score: Overall multi-source confidence score
+            
+        Returns:
+            market_intelligence dictionary
+        """
+        intelligence = {
+            'fear_greed_value': 50.0,
+            'fear_greed_classification': 'Neutral',
+            'news_sentiment_score': 0.0,
+            'news_bias': 'neutral',
+            'market_breadth_score': 50.0,
+            'mtf_alignment_score': 0.5,
+            'overall_intelligence_score': overall_score,
+            'component_scores': component_scores
+        }
+        
+        if market_context:
+            fear_greed_value = market_context.get('fear_greed_value', 50.0)
+            intelligence['fear_greed_value'] = fear_greed_value
+            
+            if fear_greed_value <= 20:
+                intelligence['fear_greed_classification'] = 'Extreme Fear'
+            elif fear_greed_value <= 40:
+                intelligence['fear_greed_classification'] = 'Fear'
+            elif fear_greed_value <= 60:
+                intelligence['fear_greed_classification'] = 'Neutral'
+            elif fear_greed_value <= 80:
+                intelligence['fear_greed_classification'] = 'Greed'
+            else:
+                intelligence['fear_greed_classification'] = 'Extreme Greed'
+            
+            news_sentiment = market_context.get('news_sentiment_score', 0.0)
+            intelligence['news_sentiment_score'] = news_sentiment
+            
+            if news_sentiment >= 0.3:
+                intelligence['news_bias'] = 'bullish'
+            elif news_sentiment <= -0.3:
+                intelligence['news_bias'] = 'bearish'
+            else:
+                intelligence['news_bias'] = 'neutral'
+            
+            intelligence['market_breadth_score'] = market_context.get('market_breadth_score', 50.0)
+        
+        if mtf_confirmation:
+            intelligence['mtf_alignment_score'] = mtf_confirmation.get('alignment_score', 0.5)
+            intelligence['mtf_recommendation'] = mtf_confirmation.get('recommendation', 'NEUTRAL')
+            intelligence['higher_tf_bias'] = mtf_confirmation.get('higher_timeframe_bias', 'neutral')
+            intelligence['confirming_timeframes'] = mtf_confirmation.get('confirming_timeframes', [])
+            intelligence['conflicting_timeframes'] = mtf_confirmation.get('conflicting_timeframes', [])
+        
+        return intelligence
     
     def _enhance_with_order_flow(self, signal: Dict) -> Tuple[Optional[Dict], Optional[str]]:
         """
@@ -544,12 +807,26 @@ class SignalEngine:
             return 'All conditions met'
         return ', '.join(failed)
     
-    def generate_signal(self, df: pd.DataFrame) -> Optional[Dict]:
+    def generate_signal(self, 
+                        df: pd.DataFrame,
+                        market_context: Optional[Dict] = None,
+                        mtf_confirmation: Optional[Dict] = None) -> Optional[Dict]:
         """
         Generate trading signal based on strategy rules with order flow enhancement
+        and multi-source market intelligence
         
         Args:
             df: DataFrame with OHLCV data
+            market_context: Optional[Dict] containing:
+                - fear_greed_value: Fear & Greed index (0-100)
+                - news_sentiment_score: News sentiment (-1 to 1)
+                - market_breadth_score: Market breadth (0-100)
+            mtf_confirmation: Optional[Dict] containing:
+                - alignment_score: Multi-timeframe alignment (0-1)
+                - recommendation: MTF recommendation string
+                - higher_timeframe_bias: 'bullish', 'bearish', or 'neutral'
+                - confirming_timeframes: List of confirming timeframes
+                - conflicting_timeframes: List of conflicting timeframes
             
         Returns:
             Signal dictionary or None if no valid signal
@@ -566,10 +843,12 @@ class SignalEngine:
             current_time = index_value
         elif isinstance(index_value, pd.Timestamp):
             current_time = index_value.to_pydatetime()
-        elif hasattr(index_value, 'timestamp') and callable(getattr(index_value, 'timestamp', None)):
-            current_time = datetime.fromtimestamp(index_value.timestamp())
         else:
-            current_time = datetime.now()
+            timestamp_method = getattr(index_value, 'timestamp', None)
+            if timestamp_method is not None and callable(timestamp_method):
+                current_time = datetime.fromtimestamp(timestamp_method())
+            else:
+                current_time = datetime.now()
         entry_price = float(latest['close'])
         
         long_check = self.check_long_conditions(df_calculated)
@@ -655,6 +934,27 @@ class SignalEngine:
             
             signal = enhanced_signal
             
+            base_confidence = signal.get('confidence', 0.7)
+            order_flow_bias = signal.get('order_flow_bias', 0.0)
+            signal_type = signal.get('type', '')
+            
+            multi_source_confidence, component_scores = self._calculate_multi_source_confidence(
+                base_confidence=base_confidence,
+                signal_type=signal_type,
+                order_flow_bias=order_flow_bias,
+                market_context=market_context,
+                mtf_confirmation=mtf_confirmation
+            )
+            
+            signal['multi_source_confidence'] = multi_source_confidence
+            
+            signal['market_intelligence'] = self._build_market_intelligence(
+                market_context=market_context,
+                mtf_confirmation=mtf_confirmation,
+                component_scores=component_scores,
+                overall_score=multi_source_confidence
+            )
+            
             if (self._last_signal_time == current_time and 
                 self._last_signal_type == signal['type']):
                 logger.debug("Duplicate signal detected, skipping")
@@ -671,7 +971,9 @@ class SignalEngine:
             if 'order_flow_bias' in signal:
                 of_info = f" (OF bias: {signal['order_flow_bias']:.2f}, confidence: {signal.get('enhanced_confidence', 0.7):.2f})"
             
-            logger.info(f"Generated {signal['type']} signal at {entry_price}{of_info}")
+            mi_info = f", multi-source: {multi_source_confidence:.2f}"
+            
+            logger.info(f"Generated {signal['type']} signal at {entry_price}{of_info}{mi_info}")
         
         return signal
     
@@ -731,4 +1033,20 @@ class SignalEngine:
             'service_connected': self._order_flow_metrics_service is not None,
             'manipulation_threshold': self.MANIPULATION_THRESHOLD,
             'divergence_threshold': self.ORDER_FLOW_DIVERGENCE_THRESHOLD
+        }
+    
+    def get_market_intelligence_status(self) -> Dict[str, Any]:
+        """Get market intelligence integration status"""
+        return {
+            'fear_greed_connected': self._fear_greed_client is not None,
+            'news_client_connected': self._news_client is not None,
+            'market_aggregator_connected': self._market_aggregator is not None,
+            'confidence_weights': {
+                'base_indicator': 0.40,
+                'order_flow_alignment': 0.20,
+                'fear_greed_alignment': 0.10,
+                'news_sentiment': 0.10,
+                'mtf_confirmation': 0.15,
+                'market_breadth': 0.05
+            }
         }

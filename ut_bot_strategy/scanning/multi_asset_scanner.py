@@ -326,19 +326,22 @@ class MultiAssetScanner:
         
         idx = 0
         if self._fear_greed_client:
-            if not isinstance(results[idx], Exception):
-                self._fear_greed_data = results[idx]
+            result = results[idx]
+            if not isinstance(result, BaseException) and result is not None:
+                self._fear_greed_data = result
             idx += 1
         
         if self._news_client:
-            if not isinstance(results[idx], Exception):
-                self._news_sentiment = results[idx]
+            result = results[idx]
+            if not isinstance(result, BaseException) and result is not None:
+                self._news_sentiment = result
             idx += 1
         
         if self._market_data_client and idx < len(results):
-            if not isinstance(results[idx], Exception):
-                global_data = results[idx]
-                if global_data:
+            result = results[idx]
+            if not isinstance(result, BaseException) and result is not None:
+                global_data = result
+                if hasattr(global_data, 'market_cap_change_percentage_24h'):
                     change = global_data.market_cap_change_percentage_24h
                     self._market_breadth = 0.5 + (change / 20)
                     self._market_breadth = max(0.0, min(1.0, self._market_breadth))
@@ -426,7 +429,7 @@ class MultiAssetScanner:
             
             signal = engine.generate_signal(df_with_indicators)
             
-            if signal['type'] == 'NONE':
+            if signal is None or signal.get('type') == 'NONE':
                 return ScanResult(
                     symbol=symbol,
                     signal_type='NONE',
@@ -441,7 +444,8 @@ class MultiAssetScanner:
                     market_breadth_score=self._market_breadth
                 )
             
-            fear_greed_aligned = self._check_fear_greed_alignment(signal['type'])
+            signal_type = signal.get('type', 'NONE')
+            fear_greed_aligned = self._check_fear_greed_alignment(signal_type)
             news_sentiment = self._get_news_sentiment_score(symbol)
             
             volume_24h = float(df['volume'].tail(288).sum()) if len(df) >= 288 else float(df['volume'].sum())
@@ -451,7 +455,7 @@ class MultiAssetScanner:
             
             result = ScanResult(
                 symbol=symbol,
-                signal_type=signal['type'],
+                signal_type=signal_type,
                 confidence=confidence,
                 entry_price=signal.get('entry_price', float(df['close'].iloc[-1])),
                 stop_loss=signal.get('stop_loss', 0.0),

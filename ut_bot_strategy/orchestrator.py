@@ -7,6 +7,8 @@ Coordinates all components:
 - Signal generation
 - Auto-leverage trading execution
 - Telegram notifications
+- External data (Fear/Greed, CoinGecko, News Sentiment)
+- Multi-timeframe confirmation
 - Continuous monitoring loop
 """
 
@@ -16,7 +18,7 @@ import asyncio
 import logging
 import signal
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 from .config import Config, load_config
 from .data.binance_fetcher import BinanceDataFetcher
@@ -24,6 +26,10 @@ from .engine.signal_engine import SignalEngine
 from .telegram.telegram_bot import TelegramSignalBot
 from .trading.leverage_calculator import LeverageCalculator
 from .trading.futures_executor import FuturesExecutor
+from .external_data.fear_greed_client import FearGreedClient
+from .external_data.market_data_aggregator import MarketDataAggregator
+from .external_data.news_sentiment_client import NewsSentimentClient
+from .confirmation.multi_timeframe import MultiTimeframeConfirmation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -111,6 +117,40 @@ class TradingOrchestrator:
         self._current_position = None
         self._trade_count = 0
         
+        self.fear_greed_client: Optional[FearGreedClient] = None
+        self.market_data_client: Optional[MarketDataAggregator] = None
+        self.news_client: Optional[NewsSentimentClient] = None
+        self.mtf_confirmation: Optional[MultiTimeframeConfirmation] = None
+        
+        if self.config.external_data.fear_greed_enabled:
+            self.fear_greed_client = FearGreedClient()
+        
+        if self.config.external_data.coingecko_enabled:
+            self.market_data_client = MarketDataAggregator(
+                api_key=self.config.coingecko_api_key
+            )
+        
+        if self.config.external_data.cryptopanic_enabled:
+            self.news_client = NewsSentimentClient(
+                api_key=self.config.cryptopanic_api_key
+            )
+        
+        if self.config.multi_timeframe.enabled:
+            self.mtf_confirmation = MultiTimeframeConfirmation(
+                api_key=self.config.binance_api_key,
+                api_secret=self.config.binance_api_secret,
+                primary_timeframe=self.config.trading.timeframe,
+                ut_key_value=self.config.ut_bot.key_value,
+                ut_atr_period=self.config.ut_bot.atr_period,
+                ut_use_heikin_ashi=self.config.ut_bot.use_heikin_ashi,
+                stc_length=self.config.stc.length,
+                stc_fast_length=self.config.stc.fast_length,
+                stc_slow_length=self.config.stc.slow_length
+            )
+        
+        self._last_external_data_refresh: Optional[datetime] = None
+        self._market_intelligence: Dict[str, Any] = {}
+        
         logger.info("Trading Orchestrator initialized")
         logger.info(f"Symbol: {self.config.trading.symbol}")
         logger.info(f"Timeframe: {self.config.trading.timeframe}")
@@ -119,6 +159,10 @@ class TradingOrchestrator:
         logger.info(f"Auto-trading: {'ENABLED' if self.auto_trading_enabled else 'DISABLED'}")
         if self.auto_trading_enabled:
             logger.info(f"Leverage range: {leverage_config.min_leverage}x-{leverage_config.max_leverage}x")
+        logger.info(f"Fear/Greed Index: {'ENABLED' if self.fear_greed_client else 'DISABLED'}")
+        logger.info(f"CoinGecko Market Data: {'ENABLED' if self.market_data_client else 'DISABLED'}")
+        logger.info(f"News Sentiment: {'ENABLED' if self.news_client else 'DISABLED'}")
+        logger.info(f"Multi-Timeframe Confirmation: {'ENABLED' if self.mtf_confirmation else 'DISABLED'}")
     
     def _can_send_signal(self) -> bool:
         """Check if we can send a new signal (respecting cooldown)"""
@@ -139,6 +183,114 @@ class TradingOrchestrator:
         interval = timedelta(minutes=self.config.bot.market_update_interval_minutes)
         return datetime.now() - self._last_market_update > interval
     
+    def _should_refresh_external_data(self) -> bool:
+        """Check if external data should be refreshed"""
+        if self._last_external_data_refresh is None:
+            return True
+        
+        interval = timedelta(minutes=self.config.external_data.refresh_interval_minutes)
+        return datetime.now() - self._last_external_data_refresh > interval
+    
+    async def refresh_external_data(self) -> Dict[str, Any]:
+        """
+        Refresh external market intelligence data
+        
+        Returns:
+            Dictionary with market intelligence data
+        """
+        if not self._should_refresh_external_data():
+            return self._market_intelligence
+        
+        try:
+            fear_greed_data = None
+            if self.fear_greed_client:
+                try:
+                    fear_greed_data = await self.fear_greed_client.get_current()
+                    if fear_greed_data:
+                        self._market_intelligence['fear_greed'] = {
+                            'value': fear_greed_data.value,
+                            'classification': fear_greed_data.value_classification,
+                            'timestamp': fear_greed_data.timestamp.isoformat() if fear_greed_data.timestamp else None
+                        }
+                        logger.info(f"Fear/Greed Index: {fear_greed_data.value} ({fear_greed_data.value_classification})")
+                except Exception as e:
+                    logger.warning(f"Error fetching Fear/Greed data: {e}")
+            
+            if self.market_data_client:
+                try:
+                    global_data = await self.market_data_client.get_global_market_data()
+                    if global_data:
+                        self._market_intelligence['global_market'] = {
+                            'total_market_cap_usd': global_data.total_market_cap_usd,
+                            'btc_dominance': global_data.btc_dominance,
+                            'eth_dominance': global_data.eth_dominance,
+                            'market_cap_change_24h': global_data.market_cap_change_percentage_24h
+                        }
+                        logger.info(f"Global Market Cap: ${global_data.total_market_cap_usd:,.0f}")
+                except Exception as e:
+                    logger.warning(f"Error fetching CoinGecko data: {e}")
+            
+            if self.news_client:
+                try:
+                    news_summary = await self.news_client.get_sentiment_summary()
+                    if news_summary:
+                        self._market_intelligence['news_sentiment'] = {
+                            'average_sentiment': news_summary.average_sentiment,
+                            'sentiment_label': news_summary.sentiment_label,
+                            'total_articles': news_summary.total_articles
+                        }
+                        logger.info(f"News Sentiment: {news_summary.sentiment_label} ({news_summary.average_sentiment:.2f})")
+                except Exception as e:
+                    logger.warning(f"Error fetching news sentiment: {e}")
+            
+            self._last_external_data_refresh = datetime.now()
+            logger.debug("External data refreshed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error refreshing external data: {e}")
+        
+        return self._market_intelligence
+    
+    def get_mtf_confirmation(self, signal_type: str) -> tuple:
+        """
+        Get multi-timeframe confirmation for a signal
+        
+        Args:
+            signal_type: LONG or SHORT
+            
+        Returns:
+            Tuple of (should_trade, alignment_score, recommendation)
+        """
+        if not self.mtf_confirmation:
+            return True, 1.0, 'NO_MTF'
+        
+        try:
+            mtf_result = self.mtf_confirmation.analyze(self.config.trading.symbol)
+            
+            alignment_score = mtf_result.alignment_score
+            recommendation = mtf_result.recommendation
+            
+            should_trade = (
+                alignment_score >= self.config.multi_timeframe.min_alignment_score and
+                recommendation in ['STRONG_CONFIRM', 'CONFIRM']
+            )
+            
+            self._market_intelligence['mtf_confirmation'] = {
+                'alignment_score': alignment_score,
+                'recommendation': recommendation,
+                'higher_tf_bias': mtf_result.higher_timeframe_bias,
+                'confirming_timeframes': mtf_result.confirming_timeframes,
+                'conflicting_timeframes': mtf_result.conflicting_timeframes
+            }
+            
+            logger.info(f"MTF Confirmation: score={alignment_score:.2f}, recommendation={recommendation}")
+            
+            return should_trade, alignment_score, recommendation
+            
+        except Exception as e:
+            logger.warning(f"Error getting MTF confirmation: {e}")
+            return True, 1.0, 'ERROR'
+    
     async def fetch_and_process(self) -> tuple:
         """
         Fetch data and process for signals
@@ -147,6 +299,8 @@ class TradingOrchestrator:
             Tuple of (signal, dataframe) if valid signal found, (None, None) otherwise
         """
         try:
+            await self.refresh_external_data()
+            
             df = self.data_fetcher.fetch_historical_data(
                 limit=max(200, self.config.trading.min_candles_required + 50)
             )
@@ -160,7 +314,21 @@ class TradingOrchestrator:
             signal = self.signal_engine.generate_signal(df)
             
             if signal and self._can_send_signal():
-                logger.info(f"Valid {signal['type']} signal generated!")
+                signal_type = signal.get('type', 'NEUTRAL')
+                
+                if self.config.multi_timeframe.enabled:
+                    should_trade, alignment_score, recommendation = self.get_mtf_confirmation(signal_type)
+                    
+                    signal['mtf_alignment_score'] = alignment_score
+                    signal['mtf_recommendation'] = recommendation
+                    
+                    if not should_trade:
+                        logger.info(f"Signal {signal_type} filtered by MTF: alignment={alignment_score:.2f}, recommendation={recommendation}")
+                        return None, df
+                
+                signal['market_intelligence'] = self._market_intelligence.copy()
+                
+                logger.info(f"Valid {signal_type} signal generated with market intelligence!")
                 return signal, df
             elif signal:
                 logger.info(f"Signal generated but in cooldown period")
@@ -374,6 +542,27 @@ class TradingOrchestrator:
             await self.data_fetcher.close()
         except Exception as e:
             logger.warning(f"Error closing data fetcher: {e}")
+        
+        if self.fear_greed_client:
+            try:
+                await self.fear_greed_client.close()
+                logger.info("Fear/Greed client closed")
+            except Exception as e:
+                logger.warning(f"Error closing fear/greed client: {e}")
+        
+        if self.market_data_client:
+            try:
+                await self.market_data_client.close()
+                logger.info("CoinGecko client closed")
+            except Exception as e:
+                logger.warning(f"Error closing market data client: {e}")
+        
+        if self.news_client:
+            try:
+                await self.news_client.close()
+                logger.info("News sentiment client closed")
+            except Exception as e:
+                logger.warning(f"Error closing news client: {e}")
         
         await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")

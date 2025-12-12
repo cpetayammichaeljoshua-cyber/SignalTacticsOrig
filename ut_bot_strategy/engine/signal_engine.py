@@ -43,6 +43,7 @@ import numpy as np
 from ..indicators.ut_bot_alerts import UTBotAlerts
 from ..indicators.stc_indicator import STCIndicator
 from ..external_data.derivatives_client import BinanceDerivativesClient, DerivativesData
+from ..strategies.scalping_strategy import ScalpingStrategy, ScalpingSignal, ScalpingConfig, ScalpingMode, create_scalping_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,10 @@ class SignalEngine:
         self._last_signal_time: Optional[datetime] = None
         self._last_signal_type: Optional[str] = None
         self._signal_history: List[Dict] = []
+        
+        self._scalping_strategy: Optional[ScalpingStrategy] = None
+        self._scalping_enabled = False
+        self._scalping_mode = ScalpingMode.BALANCED
         
         logger.info(f"SignalEngine initialized with order_flow_enabled={order_flow_enabled}, "
                    f"manipulation_filter_enabled={manipulation_filter_enabled}, "
@@ -1370,3 +1375,78 @@ class SignalEngine:
                 'market_breadth': 0.05
             }
         }
+    
+    def enable_scalping_mode(self, mode: str = "balanced") -> None:
+        """
+        Enable scalping mode for ultra-fast signal generation
+        
+        Args:
+            mode: 'conservative', 'balanced', 'aggressive', or 'ultra_fast'
+        """
+        try:
+            self._scalping_mode = ScalpingMode(mode.lower())
+        except ValueError:
+            self._scalping_mode = ScalpingMode.BALANCED
+            logger.warning(f"Invalid scalping mode '{mode}', defaulting to balanced")
+        
+        self._scalping_strategy = create_scalping_strategy(
+            mode=self._scalping_mode.value,
+            order_flow_service=self._order_flow_metrics_service
+        )
+        self._scalping_enabled = True
+        logger.info(f"Scalping mode ENABLED: {self._scalping_mode.value}")
+    
+    def disable_scalping_mode(self) -> None:
+        """Disable scalping mode and return to swing trading"""
+        self._scalping_enabled = False
+        logger.info("Scalping mode DISABLED")
+    
+    def is_scalping_enabled(self) -> bool:
+        """Check if scalping mode is enabled"""
+        return self._scalping_enabled
+    
+    def get_scalping_mode(self) -> str:
+        """Get current scalping mode"""
+        return self._scalping_mode.value if self._scalping_enabled else "disabled"
+    
+    def generate_scalping_signal(
+        self,
+        df: pd.DataFrame,
+        symbol: str = "BTCUSDT"
+    ) -> Optional[ScalpingSignal]:
+        """
+        Generate scalping signal using the ScalpingStrategy
+        
+        Args:
+            df: DataFrame with OHLCV data (1-minute timeframe recommended)
+            symbol: Trading pair symbol
+            
+        Returns:
+            ScalpingSignal or None
+        """
+        if not self._scalping_enabled or not self._scalping_strategy:
+            logger.warning("Scalping mode not enabled. Call enable_scalping_mode() first.")
+            return None
+        
+        return self._scalping_strategy.generate_signal(df, symbol)
+    
+    async def generate_scalping_signal_async(
+        self,
+        df: pd.DataFrame,
+        symbol: str = "BTCUSDT"
+    ) -> Optional[ScalpingSignal]:
+        """Async version of scalping signal generation"""
+        if not self._scalping_enabled or not self._scalping_strategy:
+            return None
+        
+        return await self._scalping_strategy.generate_signal_async(df, symbol)
+    
+    def get_scalping_statistics(self) -> Dict[str, Any]:
+        """Get scalping strategy statistics"""
+        if not self._scalping_strategy:
+            return {'enabled': False}
+        
+        stats = self._scalping_strategy.get_statistics()
+        stats['enabled'] = self._scalping_enabled
+        stats['mode'] = self._scalping_mode.value
+        return stats

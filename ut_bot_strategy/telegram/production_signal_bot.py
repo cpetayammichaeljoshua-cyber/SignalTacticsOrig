@@ -825,6 +825,34 @@ Stay disciplined, next opportunity awaits!
         """Reset performance statistics"""
         self._performance_stats = PerformanceStats()
         logger.info("Performance statistics reset")
+    
+    async def send_scalping_signal(self, scalping_signal) -> Dict[str, Any]:
+        """
+        Send a scalping signal formatted for ultra-fast trading
+        
+        Args:
+            scalping_signal: ScalpingSignal instance with format_telegram_message method
+            
+        Returns:
+            Dict with success status and signal_id
+        """
+        if not self.can_send_signal():
+            return {'success': False, 'error': 'Rate limit exceeded'}
+        
+        try:
+            message = scalping_signal.format_telegram_message()
+            success = await self._send_telegram_message(message, parse_mode="Markdown")
+            
+            if success:
+                self._signal_timestamps.append(datetime.now())
+                self._performance_stats.total_signals += 1
+                logger.info(f"Scalping signal sent: {scalping_signal.signal_id}")
+                return {'success': True, 'signal_id': scalping_signal.signal_id}
+            
+            return {'success': False, 'error': 'Failed to send to Telegram'}
+        except Exception as e:
+            logger.error(f"Error sending scalping signal: {e}")
+            return {'success': False, 'error': str(e)}
 
 
 async def main():

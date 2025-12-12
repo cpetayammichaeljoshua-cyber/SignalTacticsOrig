@@ -189,7 +189,7 @@ class OrderFlowStream:
         self._trade_count_window: Deque[float] = deque(maxlen=10000)
         
         self._running = False
-        self._ws_session: Optional[aiohttp.ClientSession] = None
+        self._ws_session: Optional[Any] = None
         self._trade_ws: Optional[Any] = None
         self._depth_ws: Optional[Any] = None
         self._reconnect_delay = 1.0

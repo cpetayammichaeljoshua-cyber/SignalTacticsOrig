@@ -39,6 +39,10 @@ from ut_bot_strategy.external_data.market_data_aggregator import MarketDataAggre
 from ut_bot_strategy.external_data.news_sentiment_client import NewsSentimentClient
 from ut_bot_strategy.external_data.derivatives_client import BinanceDerivativesClient, DerivativesData
 from ut_bot_strategy.external_data.liquidation_monitor import LiquidationMonitor, LiquidationMetrics
+from ut_bot_strategy.external_data.dynamic_pairs_fetcher import DynamicPairsFetcher, create_pairs_fetcher
+from ut_bot_strategy.external_data.whale_tracker import WhaleTracker, WhaleMetrics, create_whale_tracker_from_order_flow
+from ut_bot_strategy.external_data.economic_calendar import EconomicCalendarClient, EventImpact
+from ut_bot_strategy.external_data.intelligence_manager import ExternalIntelligenceManager, create_intelligence_manager
 from ut_bot_strategy.confirmation.multi_timeframe import MultiTimeframeConfirmation
 
 logging.basicConfig(
@@ -230,11 +234,72 @@ class AITradingOrchestrator:
         self.derivatives_client: Optional[BinanceDerivativesClient] = BinanceDerivativesClient()
         self.liquidation_monitor: Optional[LiquidationMonitor] = LiquidationMonitor()
         
+        self.pairs_fetcher: Optional[DynamicPairsFetcher] = None
+        self.whale_tracker: Optional[WhaleTracker] = None
+        self.economic_calendar: Optional[EconomicCalendarClient] = None
+        self.multi_asset_mode: bool = False
+        
+        try:
+            self.pairs_fetcher = DynamicPairsFetcher(
+                min_volume_usd=10_000_000,
+                cache_ttl_seconds=3600
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create DynamicPairsFetcher: {e}")
+        
+        try:
+            self.whale_tracker = create_whale_tracker_from_order_flow(
+                order_flow_stream=self.order_flow_stream,
+                whale_threshold_usd=100_000.0,
+                window_minutes=15
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create WhaleTracker: {e}")
+        
+        try:
+            self.economic_calendar = EconomicCalendarClient()
+        except Exception as e:
+            logger.warning(f"Failed to create EconomicCalendarClient: {e}")
+        
         if self.derivatives_client:
             self.signal_engine.set_derivatives_client(self.derivatives_client)
         
+        if self.whale_tracker:
+            self.signal_engine.set_whale_tracker(self.whale_tracker)
+        
+        if self.economic_calendar:
+            self.signal_engine.set_economic_calendar(self.economic_calendar)
+        
         self._last_external_data_refresh: Optional[datetime] = None
         self._market_intelligence: Dict[str, Any] = {}
+        
+        self.intelligence_manager: Optional[ExternalIntelligenceManager] = None
+        self._intelligence_manager_enabled = False
+        try:
+            self.intelligence_manager = ExternalIntelligenceManager(
+                symbol=self.config.trading.symbol,
+                enable_websocket_sources=False
+            )
+            if self.fear_greed_client:
+                self.intelligence_manager.fear_greed_client = self.fear_greed_client
+            if self.market_data_client:
+                self.intelligence_manager.market_data_client = self.market_data_client
+            if self.news_client:
+                self.intelligence_manager.news_sentiment_client = self.news_client
+            if self.derivatives_client:
+                self.intelligence_manager.derivatives_client = self.derivatives_client
+            if self.whale_tracker:
+                self.intelligence_manager.whale_tracker = self.whale_tracker
+                self.intelligence_manager.source_configs['whale_tracker'].enabled = True
+            if self.economic_calendar:
+                self.intelligence_manager.economic_calendar_client = self.economic_calendar
+            if self.liquidation_monitor:
+                self.intelligence_manager.liquidation_monitor = self.liquidation_monitor
+                self.intelligence_manager.source_configs['liquidation'].enabled = True
+            logger.info("ExternalIntelligenceManager created successfully")
+        except Exception as e:
+            logger.warning(f"Failed to create ExternalIntelligenceManager: {e} - continuing with direct integrations")
+            self.intelligence_manager = None
         
         self.auto_trading_enabled = self.config.trading.leverage.enabled
         self._current_trade_id: Optional[int] = None
@@ -259,6 +324,10 @@ class AITradingOrchestrator:
         logger.info(f"CoinGecko Market Data: {'ENABLED' if self.market_data_client else 'DISABLED'}")
         logger.info(f"News Sentiment: {'ENABLED' if self.news_client else 'DISABLED'}")
         logger.info(f"Multi-Timeframe Confirmation: {'ENABLED' if self.mtf_confirmation else 'DISABLED'}")
+        logger.info(f"Dynamic Pairs Fetcher: {'ENABLED' if self.pairs_fetcher else 'DISABLED'}")
+        logger.info(f"Whale Tracker: {'ENABLED ($100K+ threshold)' if self.whale_tracker else 'DISABLED'}")
+        logger.info(f"Economic Calendar: {'ENABLED' if self.economic_calendar else 'DISABLED'}")
+        logger.info(f"Intelligence Manager: {'ENABLED' if self.intelligence_manager else 'DISABLED'}")
         logger.info("=" * 60)
     
     def _should_refresh_external_data(self) -> bool:
@@ -404,6 +473,34 @@ class AITradingOrchestrator:
             
             if self.derivatives_client:
                 logger.info("Derivatives Client: ENABLED (funding rates, OI, L/S ratio)")
+            
+            if self.pairs_fetcher:
+                try:
+                    pairs_list = await self.pairs_fetcher.get_all_pairs()
+                    pairs_count = len(pairs_list) if pairs_list else 0
+                    self.multi_asset_mode = pairs_count > 0
+                    logger.info(f"Dynamic Pairs Fetcher: ENABLED ({pairs_count} liquid pairs found)")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch initial pairs list: {e}")
+            
+            if self.whale_tracker:
+                try:
+                    await self.whale_tracker.start()
+                    logger.info("Whale Tracker: ENABLED ($100K+ threshold)")
+                except Exception as e:
+                    logger.warning(f"Failed to start Whale Tracker: {e}")
+            
+            if self.economic_calendar:
+                logger.info("Economic Calendar: ENABLED")
+            
+            if self.intelligence_manager:
+                try:
+                    await self.intelligence_manager.start()
+                    self._intelligence_manager_enabled = True
+                    logger.info("ExternalIntelligenceManager started - multi-source intelligence active")
+                except Exception as e:
+                    logger.warning(f"Failed to start ExternalIntelligenceManager: {e} - continuing with direct integrations")
+                    self._intelligence_manager_enabled = False
             
             logger.info("All components initialized successfully")
             return True
@@ -762,6 +859,37 @@ class AITradingOrchestrator:
             if signal and self._can_send_signal():
                 signal_type = signal.get('type', 'NEUTRAL')
                 
+                intel_signal = None
+                if self._intelligence_manager_enabled and self.intelligence_manager:
+                    try:
+                        intel_signal = self.intelligence_manager.get_signal_for_engine()
+                        signal['intelligence_manager'] = intel_signal
+                        
+                        if intel_signal.get('should_avoid_trading', False):
+                            warnings = intel_signal.get('warnings', [])
+                            logger.warning(f"Signal {signal_type} filtered by intelligence manager: {', '.join(warnings)}")
+                            return None, df
+                        
+                        direction_bias = intel_signal.get('direction_bias', 0.0)
+                        signal_is_long = signal_type == 'LONG'
+                        signal_is_short = signal_type == 'SHORT'
+                        
+                        if signal_is_long and direction_bias < -0.5:
+                            logger.info(f"LONG signal conflicts with bearish direction bias ({direction_bias:.2f}), reducing confidence")
+                            signal['confidence_penalty'] = 0.15
+                        elif signal_is_short and direction_bias > 0.5:
+                            logger.info(f"SHORT signal conflicts with bullish direction bias ({direction_bias:.2f}), reducing confidence")
+                            signal['confidence_penalty'] = 0.15
+                        elif (signal_is_long and direction_bias > 0.3) or (signal_is_short and direction_bias < -0.3):
+                            signal['confidence_boost'] = intel_signal.get('confidence_adjustment', 0.0)
+                            logger.info(f"Signal {signal_type} confirmed by intelligence manager (bias={direction_bias:.2f}, boost={signal['confidence_boost']:.2f})")
+                        
+                        if intel_signal.get('warnings'):
+                            signal['intelligence_warnings'] = intel_signal['warnings']
+                            
+                    except Exception as e:
+                        logger.warning(f"Error getting intelligence manager signal: {e}")
+                
                 if self.config.multi_timeframe.enabled and self.mtf_confirmation:
                     should_trade, alignment_score, recommendation = self.get_mtf_confirmation(signal_type)
                     
@@ -777,13 +905,18 @@ class AITradingOrchestrator:
                 ai_recommendation = signal.get('ai_recommendation', 'EXECUTE')
                 ai_confidence = signal.get('ai_confidence', 0)
                 
-                if ai_recommendation == 'SKIP' and ai_confidence < 0.4:
-                    logger.info(f"Signal skipped due to low AI confidence: {ai_confidence:.2f}")
+                confidence_boost = signal.get('confidence_boost', 0.0)
+                confidence_penalty = signal.get('confidence_penalty', 0.0)
+                adjusted_confidence = max(0.0, min(1.0, ai_confidence + confidence_boost - confidence_penalty))
+                signal['ai_confidence'] = adjusted_confidence
+                
+                if ai_recommendation == 'SKIP' and adjusted_confidence < 0.4:
+                    logger.info(f"Signal skipped due to low AI confidence: {adjusted_confidence:.2f}")
                     return None, df
                 
                 signal['market_intelligence'] = self._market_intelligence.copy()
                 
-                logger.info(f"Valid {signal_type} signal generated with AI confidence: {ai_confidence:.2f}")
+                logger.info(f"Valid {signal_type} signal generated with AI confidence: {adjusted_confidence:.2f}")
                 return signal, df
             elif signal:
                 logger.info(f"Signal generated but in cooldown period")
@@ -914,6 +1047,14 @@ class AITradingOrchestrator:
         except Exception as e:
             logger.warning(f"Error stopping order flow stream: {e}")
         
+        if self.intelligence_manager and self._intelligence_manager_enabled:
+            try:
+                await self.intelligence_manager.stop()
+                self._intelligence_manager_enabled = False
+                logger.info("ExternalIntelligenceManager stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping intelligence manager: {e}")
+        
         if self.fear_greed_client:
             try:
                 await self.fear_greed_client.close()
@@ -949,6 +1090,27 @@ class AITradingOrchestrator:
             except Exception as e:
                 logger.warning(f"Error stopping liquidation monitor: {e}")
         
+        if self.whale_tracker:
+            try:
+                await self.whale_tracker.stop()
+                logger.info("Whale tracker stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping whale tracker: {e}")
+        
+        if self.economic_calendar:
+            try:
+                await self.economic_calendar.close()
+                logger.info("Economic calendar closed")
+            except Exception as e:
+                logger.warning(f"Error closing economic calendar: {e}")
+        
+        if self.pairs_fetcher:
+            try:
+                await self.pairs_fetcher.close()
+                logger.info("Pairs fetcher closed")
+            except Exception as e:
+                logger.warning(f"Error closing pairs fetcher: {e}")
+        
         await asyncio.sleep(0.5)
         logger.info("Bot shutdown complete")
     
@@ -959,16 +1121,25 @@ class AITradingOrchestrator:
     
     def get_status(self) -> Dict[str, Any]:
         """Get current bot status"""
-        return {
+        status = {
             'running': self.running,
             'signal_count': self._signal_count,
             'error_count': self._error_count,
             'last_signal_time': self._last_signal_time,
             'ai_brain_active': self.ai_brain.ai_available,
             'order_flow_active': self._order_flow_active,
+            'intelligence_manager_active': self._intelligence_manager_enabled,
             'rate_limit_status': self.telegram_bot.get_rate_limit_status(),
             'performance_stats': self.telegram_bot.get_performance_stats()
         }
+        
+        if self._intelligence_manager_enabled and self.intelligence_manager:
+            try:
+                status['intelligence_health'] = self.intelligence_manager.get_health_report()
+            except Exception:
+                status['intelligence_health'] = None
+        
+        return status
 
 
 def setup_signal_handlers(orchestrator: AITradingOrchestrator):

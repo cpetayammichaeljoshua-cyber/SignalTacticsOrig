@@ -15,10 +15,39 @@ Advanced cryptocurrency trading signal bot for ETH/USDT on 5-minute timeframe co
 
 ## Recent Changes (Latest) - December 12, 2025
 
+### ✅ Binance Derivatives Data Integration (FREE - No API Key Required)
+Added real-time derivatives market structure analysis for enhanced signal quality:
+
+**New Files in `ut_bot_strategy/external_data/`:**
+- `derivatives_client.py` - Binance Futures public API integration
+  - Funding rates (8h intervals, contrarian sentiment)
+  - Open interest changes (position flow detection)
+  - Long/Short account ratios (crowd positioning)
+  - Taker buy/sell volume ratios (aggression analysis)
+  - Composite derivatives score (-1 to +1)
+  - 60-second caching for rate limit compliance
+
+- `liquidation_monitor.py` - Real-time liquidation WebSocket stream
+  - `wss://fstream.binance.com/ws/!forceOrder@arr` stream
+  - 15-minute rolling window metrics
+  - Long vs short liquidation imbalance tracking
+  - Large liquidation detection ($100K+ threshold)
+  - Intensity classification (low/medium/high/extreme)
+  - Cascade risk assessment
+
+**Signal Engine Confidence Weights (Updated):**
+- Base indicators: 35% (was 40%)
+- Order flow: 18% (was 20%)
+- Multi-timeframe: 14% (was 15%)
+- Derivatives data: 10% (NEW)
+- Fear/Greed: 9% (was 10%)
+- News sentiment: 9% (was 10%)
+- Market breadth: 5%
+
 ### ✅ Multi-Source Market Intelligence Integration
 Added comprehensive external data sources for enhanced signal quality:
 
-**New Package Created: `ut_bot_strategy/external_data/`**
+**Additional Files in `ut_bot_strategy/external_data/`:**
 - `fear_greed_client.py` - Alternative.me Fear & Greed Index API (FREE, no key required)
   - Current fear/greed value (0-100)
   - Historical data support

@@ -537,8 +537,8 @@ class AITradingOrchestrator:
             low_close = (low - close.shift(1)).abs()
             
             ranges_df = pd.DataFrame({'hl': high_low, 'hc': high_close, 'lc': low_close})
-            true_range = ranges_df.max(axis=1)
-            atr_series = true_range.rolling(window=period).mean()
+            true_range: pd.Series = ranges_df.max(axis=1)  # type: ignore[assignment]
+            atr_series: pd.Series = true_range.rolling(window=period).mean()  # type: ignore[assignment]
             atr_value = float(atr_series.iloc[-1])
             
             if pd.isna(atr_value) or atr_value <= 0:

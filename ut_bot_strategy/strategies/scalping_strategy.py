@@ -269,9 +269,10 @@ class ScalpingStrategy:
         avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
         avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
         
-        rs = avg_gain / avg_loss.replace(0, np.inf)
-        rsi = 100 - (100 / (1 + rs))
-        return rsi.fillna(50)
+        avg_loss_safe: pd.Series = avg_loss.where(avg_loss != 0, np.inf)  # type: ignore[assignment]
+        rs = avg_gain / avg_loss_safe
+        rsi: pd.Series = 100 - (100 / (1 + rs))  # type: ignore[assignment]
+        return pd.Series(rsi.fillna(50))
     
     def _calculate_macd(
         self, 
@@ -335,16 +336,18 @@ class ScalpingStrategy:
         tr2 = abs(high - prev_close)
         tr3 = abs(low - prev_close)
         
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        true_range_df = pd.concat([tr1, tr2, tr3], axis=1)
+        true_range: pd.Series = true_range_df.max(axis=1)  # type: ignore[assignment]
         atr = true_range.ewm(span=period, adjust=False).mean()
         
-        return atr.fillna(0)
+        return pd.Series(atr.fillna(0))
     
     def _calculate_volume_ratio(self, volume: pd.Series, lookback: int = 20) -> pd.Series:
         """Calculate volume ratio compared to moving average"""
-        avg_volume = volume.rolling(window=lookback).mean()
-        ratio = volume / avg_volume.replace(0, 1)
-        return ratio.fillna(1.0)
+        avg_volume: pd.Series = volume.rolling(window=lookback).mean()  # type: ignore[assignment]
+        avg_volume_safe = avg_volume.where(avg_volume != 0, 1.0)
+        ratio = volume / avg_volume_safe
+        return pd.Series(ratio.fillna(1.0))
     
     def _calculate_trend_strength(
         self,
@@ -358,9 +361,9 @@ class ScalpingStrategy:
         
         diff = (ema_fast - ema_slow) / ema_slow
         trend_strength = diff.abs().clip(upper=1.0)
-        trend_direction = np.sign(diff)
+        trend_direction = pd.Series(np.sign(diff.values), index=diff.index)
         
-        return trend_strength.fillna(0), trend_direction.fillna(0)
+        return pd.Series(trend_strength.fillna(0)), trend_direction.fillna(0)
     
     def _detect_pattern(
         self,
@@ -626,11 +629,11 @@ class ScalpingStrategy:
             return None
         
         try:
-            open_ = df['open'].astype(float)
-            high = df['high'].astype(float)
-            low = df['low'].astype(float)
-            close = df['close'].astype(float)
-            volume = df['volume'].astype(float)
+            open_: pd.Series = pd.Series(df['open'].astype(float).values, index=df.index)
+            high: pd.Series = pd.Series(df['high'].astype(float).values, index=df.index)
+            low: pd.Series = pd.Series(df['low'].astype(float).values, index=df.index)
+            close: pd.Series = pd.Series(df['close'].astype(float).values, index=df.index)
+            volume: pd.Series = pd.Series(df['volume'].astype(float).values, index=df.index)
             
             rsi = self._calculate_rsi(close, self.config.rsi_period)
             macd_line, signal_line, macd_hist = self._calculate_macd(

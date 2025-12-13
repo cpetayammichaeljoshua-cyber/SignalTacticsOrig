@@ -1,6 +1,12 @@
 # UT Bot + STC Trading Signal Bot
 
-## Recent Changes (December 12, 2025)
+## Recent Changes (December 13, 2025)
+- **Scalping Strategy Optimization**: Added numba JIT compilation for 9 core numeric functions, new TURBO mode for ultra-low-latency signals, LRU caching, and optimized config presets
+- **Railway Deployment**: Configured Procfile, railway.json (NIXPACKS), runtime.txt, and .python-version for Railway.com deployment
+- **Requirements Updated**: Added numba and llvmlite dependencies for JIT acceleration
+- **Multi-Asset Scanning**: Bot now scans 135 liquid USDM futures pairs dynamically
+
+## Previous Changes (December 12, 2025)
 - Fixed all 21 LSP type warnings in scalping_strategy.py and main.py
 - Added proper pandas Series type annotations
 - Bot running successfully with all components active

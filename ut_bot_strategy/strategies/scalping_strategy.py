@@ -13,6 +13,8 @@ Features:
 - Tight risk management with ATR-based stops
 - Trend strength filtering to avoid choppy markets
 - Parallel data processing for speed
+- Numba JIT compilation for maximum performance
+- LRU caching for repeated calculations
 
 Signal Generation Logic:
 1. Detect momentum shift using fast indicators
@@ -29,11 +31,214 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
+from functools import lru_cache
 from typing import Optional, Dict, List, Any, Tuple
 import numpy as np
 import pandas as pd
 
+try:
+    from numba import jit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    prange = range
+
 logger = logging.getLogger(__name__)
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_rsi_core(prices: np.ndarray, period: int) -> np.ndarray:
+    """JIT-compiled RSI calculation core"""
+    n = len(prices)
+    rsi = np.full(n, 50.0)
+    
+    if n < period + 1:
+        return rsi
+    
+    deltas = np.diff(prices)
+    gains = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+    
+    alpha = 1.0 / period
+    avg_gain = np.sum(gains[:period]) / period
+    avg_loss = np.sum(losses[:period]) / period
+    
+    for i in range(period, n - 1):
+        avg_gain = alpha * gains[i] + (1 - alpha) * avg_gain
+        avg_loss = alpha * losses[i] + (1 - alpha) * avg_loss
+        
+        if avg_loss == 0:
+            rsi[i + 1] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi[i + 1] = 100.0 - (100.0 / (1.0 + rs))
+    
+    return rsi
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_ema(prices: np.ndarray, period: int) -> np.ndarray:
+    """JIT-compiled EMA calculation"""
+    n = len(prices)
+    ema = np.zeros(n)
+    
+    if n < period:
+        return ema
+    
+    alpha = 2.0 / (period + 1)
+    ema[period - 1] = np.mean(prices[:period])
+    
+    for i in range(period, n):
+        ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
+    
+    return ema
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_macd_core(prices: np.ndarray, fast: int, slow: int, signal: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """JIT-compiled MACD calculation"""
+    ema_fast = _jit_calculate_ema(prices, fast)
+    ema_slow = _jit_calculate_ema(prices, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = _jit_calculate_ema(macd_line, signal)
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_stochastic_core(high: np.ndarray, low: np.ndarray, close: np.ndarray, k_period: int, d_period: int, smooth: int) -> Tuple[np.ndarray, np.ndarray]:
+    """JIT-compiled Stochastic calculation"""
+    n = len(close)
+    stoch_k_raw = np.zeros(n)
+    
+    for i in range(k_period - 1, n):
+        highest = np.max(high[i - k_period + 1:i + 1])
+        lowest = np.min(low[i - k_period + 1:i + 1])
+        range_val = highest - lowest
+        if range_val > 1e-10:
+            stoch_k_raw[i] = 100.0 * (close[i] - lowest) / range_val
+        else:
+            stoch_k_raw[i] = 50.0
+    
+    stoch_k = np.zeros(n)
+    for i in range(smooth - 1, n):
+        stoch_k[i] = np.mean(stoch_k_raw[i - smooth + 1:i + 1])
+    
+    stoch_d = np.zeros(n)
+    for i in range(d_period - 1, n):
+        stoch_d[i] = np.mean(stoch_k[i - d_period + 1:i + 1])
+    
+    stoch_k = np.where(stoch_k == 0, 50.0, stoch_k)
+    stoch_d = np.where(stoch_d == 0, 50.0, stoch_d)
+    
+    return stoch_k, stoch_d
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_williams_r_core(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
+    """JIT-compiled Williams %R calculation"""
+    n = len(close)
+    williams_r = np.full(n, -50.0)
+    
+    for i in range(period - 1, n):
+        highest = np.max(high[i - period + 1:i + 1])
+        lowest = np.min(low[i - period + 1:i + 1])
+        range_val = highest - lowest
+        if range_val > 1e-10:
+            williams_r[i] = -100.0 * (highest - close[i]) / range_val
+    
+    return williams_r
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_atr_core(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
+    """JIT-compiled ATR calculation"""
+    n = len(close)
+    atr = np.zeros(n)
+    
+    if n < 2:
+        return atr
+    
+    true_range = np.zeros(n)
+    true_range[0] = high[0] - low[0]
+    
+    for i in range(1, n):
+        tr1 = high[i] - low[i]
+        tr2 = abs(high[i] - close[i - 1])
+        tr3 = abs(low[i] - close[i - 1])
+        true_range[i] = max(tr1, tr2, tr3)
+    
+    alpha = 2.0 / (period + 1)
+    atr[period - 1] = np.mean(true_range[:period])
+    
+    for i in range(period, n):
+        atr[i] = alpha * true_range[i] + (1 - alpha) * atr[i - 1]
+    
+    return atr
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_volume_ratio_core(volume: np.ndarray, lookback: int) -> np.ndarray:
+    """JIT-compiled volume ratio calculation"""
+    n = len(volume)
+    ratio = np.ones(n)
+    
+    for i in range(lookback, n):
+        avg_vol = np.mean(volume[i - lookback:i])
+        if avg_vol > 0:
+            ratio[i] = volume[i] / avg_vol
+    
+    return ratio
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _jit_calculate_trend_strength_core(close: np.ndarray, fast_period: int, slow_period: int) -> Tuple[np.ndarray, np.ndarray]:
+    """JIT-compiled trend strength calculation"""
+    ema_fast = _jit_calculate_ema(close, fast_period)
+    ema_slow = _jit_calculate_ema(close, slow_period)
+    
+    n = len(close)
+    trend_strength = np.zeros(n)
+    trend_direction = np.zeros(n)
+    
+    for i in range(slow_period, n):
+        if ema_slow[i] != 0:
+            diff = (ema_fast[i] - ema_slow[i]) / ema_slow[i]
+            trend_strength[i] = min(abs(diff), 1.0)
+            trend_direction[i] = 1.0 if diff > 0 else (-1.0 if diff < 0 else 0.0)
+    
+    return trend_strength, trend_direction
+
+
+@jit(nopython=True, cache=True)
+def _jit_calculate_confidence_core(
+    momentum_score: float,
+    pattern_strength: float,
+    volume_score: float,
+    of_score: float,
+    trend_score: float,
+    volatility_score: float,
+    momentum_weight: float,
+    pattern_weight: float,
+    volume_weight: float,
+    order_flow_weight: float,
+    trend_weight: float,
+    volatility_weight: float
+) -> float:
+    """JIT-compiled confidence calculation"""
+    confidence = (
+        momentum_score * momentum_weight +
+        pattern_strength * pattern_weight +
+        volume_score * volume_weight +
+        of_score * order_flow_weight +
+        trend_score * trend_weight +
+        volatility_score * volatility_weight
+    )
+    return max(0.0, min(1.0, confidence))
 
 
 class ScalpingMode(str, Enum):
@@ -42,6 +247,7 @@ class ScalpingMode(str, Enum):
     BALANCED = "balanced"
     AGGRESSIVE = "aggressive"
     ULTRA_FAST = "ultra_fast"
+    TURBO = "turbo"
 
 
 class MomentumType(str, Enum):
@@ -65,6 +271,80 @@ class PatternType(str, Enum):
     BEARISH_MOMENTUM = "bearish_momentum"
     DOJI = "doji"
     NONE = "none"
+
+
+MODE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "conservative": {
+        "rsi_period": 14,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "stoch_k": 14,
+        "stoch_d": 3,
+        "stoch_smooth": 3,
+        "atr_period": 14,
+        "min_confidence": 0.75,
+        "volume_spike_threshold": 2.0,
+        "cooldown_seconds": 60,
+        "max_signals_per_hour": 10,
+    },
+    "balanced": {
+        "rsi_period": 7,
+        "macd_fast": 6,
+        "macd_slow": 13,
+        "macd_signal": 4,
+        "stoch_k": 5,
+        "stoch_d": 3,
+        "stoch_smooth": 3,
+        "atr_period": 7,
+        "min_confidence": 0.65,
+        "volume_spike_threshold": 1.5,
+        "cooldown_seconds": 30,
+        "max_signals_per_hour": 20,
+    },
+    "aggressive": {
+        "rsi_period": 6,
+        "macd_fast": 5,
+        "macd_slow": 11,
+        "macd_signal": 4,
+        "stoch_k": 4,
+        "stoch_d": 3,
+        "stoch_smooth": 2,
+        "atr_period": 6,
+        "min_confidence": 0.55,
+        "volume_spike_threshold": 1.2,
+        "cooldown_seconds": 15,
+        "max_signals_per_hour": 40,
+    },
+    "ultra_fast": {
+        "rsi_period": 5,
+        "macd_fast": 4,
+        "macd_slow": 9,
+        "macd_signal": 3,
+        "stoch_k": 3,
+        "stoch_d": 2,
+        "stoch_smooth": 2,
+        "atr_period": 5,
+        "min_confidence": 0.50,
+        "volume_spike_threshold": 1.0,
+        "cooldown_seconds": 10,
+        "max_signals_per_hour": 60,
+    },
+    "turbo": {
+        "rsi_period": 5,
+        "macd_fast": 4,
+        "macd_slow": 9,
+        "macd_signal": 3,
+        "stoch_k": 3,
+        "stoch_d": 2,
+        "stoch_smooth": 2,
+        "atr_period": 5,
+        "min_confidence": 0.45,
+        "volume_spike_threshold": 0.8,
+        "cooldown_seconds": 10,
+        "max_signals_per_hour": 40,
+    },
+}
 
 
 @dataclass
@@ -100,6 +380,27 @@ class ScalpingConfig:
     volatility_weight: float = 0.10
     cooldown_seconds: int = 30
     max_signals_per_hour: int = 20
+
+    @classmethod
+    def from_mode(cls, mode: ScalpingMode) -> 'ScalpingConfig':
+        """Create config from mode preset"""
+        mode_key = mode.value
+        preset = MODE_CONFIGS.get(mode_key, MODE_CONFIGS["balanced"])
+        return cls(
+            mode=mode,
+            rsi_period=preset["rsi_period"],
+            macd_fast=preset["macd_fast"],
+            macd_slow=preset["macd_slow"],
+            macd_signal=preset["macd_signal"],
+            stoch_k=preset["stoch_k"],
+            stoch_d=preset["stoch_d"],
+            stoch_smooth=preset["stoch_smooth"],
+            atr_period=preset["atr_period"],
+            min_confidence=preset["min_confidence"],
+            volume_spike_threshold=preset["volume_spike_threshold"],
+            cooldown_seconds=preset["cooldown_seconds"],
+            max_signals_per_hour=preset["max_signals_per_hour"],
+        )
 
 
 @dataclass
@@ -226,6 +527,8 @@ class ScalpingStrategy:
     - Order flow integration
     - Pattern recognition
     - Trend filtering
+    - Numba JIT compilation for speed
+    - LRU caching for repeated calculations
     """
     
     def __init__(
@@ -251,28 +554,44 @@ class ScalpingStrategy:
         self._cache_ttl = timedelta(seconds=5)
         self._last_cache_update: Optional[datetime] = None
         
+        self._indicator_cache: Dict[str, Tuple[np.ndarray, datetime]] = {}
+        self._indicator_cache_ttl = 2.0
+        
         self._initialized = False
         
-        logger.info(f"ScalpingStrategy initialized in {self.config.mode.value} mode")
+        logger.info(f"ScalpingStrategy initialized in {self.config.mode.value} mode (Numba: {NUMBA_AVAILABLE})")
     
     def set_order_flow_service(self, service: Any) -> None:
         """Connect order flow service for real-time data"""
         self._order_flow_service = service
         logger.info("Order flow service connected to ScalpingStrategy")
     
+    def _get_cached_indicator(self, key: str) -> Optional[np.ndarray]:
+        """Get cached indicator if still valid"""
+        if key in self._indicator_cache:
+            data, timestamp = self._indicator_cache[key]
+            if (datetime.now() - timestamp).total_seconds() < self._indicator_cache_ttl:
+                return data
+        return None
+    
+    def _set_cached_indicator(self, key: str, data: np.ndarray) -> None:
+        """Cache indicator result"""
+        self._indicator_cache[key] = (data, datetime.now())
+        if len(self._indicator_cache) > 50:
+            oldest_key = min(self._indicator_cache, key=lambda k: self._indicator_cache[k][1])
+            del self._indicator_cache[oldest_key]
+    
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
-        """Calculate RSI indicator"""
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0.0)
-        loss = (-delta).where(delta < 0, 0.0)
+        """Calculate RSI indicator with JIT optimization"""
+        cache_key = f"rsi_{period}_{len(prices)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            return pd.Series(cached, index=prices.index)
         
-        avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
-        avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
-        
-        avg_loss_safe: pd.Series = avg_loss.where(avg_loss != 0, np.inf)  # type: ignore[assignment]
-        rs = avg_gain / avg_loss_safe
-        rsi: pd.Series = 100 - (100 / (1 + rs))  # type: ignore[assignment]
-        return pd.Series(rsi.fillna(50))
+        prices_arr = prices.values.astype(np.float64)
+        rsi_arr = _jit_calculate_rsi_core(prices_arr, period)
+        self._set_cached_indicator(cache_key, rsi_arr)
+        return pd.Series(rsi_arr, index=prices.index)
     
     def _calculate_macd(
         self, 
@@ -281,13 +600,24 @@ class ScalpingStrategy:
         slow: int,
         signal: int
     ) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD indicator"""
-        ema_fast = prices.ewm(span=fast, adjust=False).mean()
-        ema_slow = prices.ewm(span=slow, adjust=False).mean()
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-        histogram = macd_line - signal_line
-        return macd_line, signal_line, histogram
+        """Calculate MACD indicator with JIT optimization"""
+        cache_key = f"macd_{fast}_{slow}_{signal}_{len(prices)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            macd_line = pd.Series(cached[0], index=prices.index)
+            signal_line = pd.Series(cached[1], index=prices.index)
+            histogram = pd.Series(cached[2], index=prices.index)
+            return macd_line, signal_line, histogram
+        
+        prices_arr = prices.values.astype(np.float64)
+        macd_arr, signal_arr, hist_arr = _jit_calculate_macd_core(prices_arr, fast, slow, signal)
+        self._set_cached_indicator(cache_key, np.array([macd_arr, signal_arr, hist_arr]))
+        
+        return (
+            pd.Series(macd_arr, index=prices.index),
+            pd.Series(signal_arr, index=prices.index),
+            pd.Series(hist_arr, index=prices.index)
+        )
     
     def _calculate_stochastic(
         self,
@@ -298,15 +628,22 @@ class ScalpingStrategy:
         d_period: int,
         smooth: int
     ) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Stochastic oscillator"""
-        lowest_low = low.rolling(window=k_period).min()
-        highest_high = high.rolling(window=k_period).max()
+        """Calculate Stochastic oscillator with JIT optimization"""
+        cache_key = f"stoch_{k_period}_{d_period}_{smooth}_{len(close)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            return pd.Series(cached[0], index=close.index), pd.Series(cached[1], index=close.index)
         
-        stoch_k = 100 * (close - lowest_low) / (highest_high - lowest_low + 1e-10)
-        stoch_k = stoch_k.rolling(window=smooth).mean()
-        stoch_d = stoch_k.rolling(window=d_period).mean()
+        high_arr = high.values.astype(np.float64)
+        low_arr = low.values.astype(np.float64)
+        close_arr = close.values.astype(np.float64)
         
-        return stoch_k.fillna(50), stoch_d.fillna(50)
+        stoch_k_arr, stoch_d_arr = _jit_calculate_stochastic_core(
+            high_arr, low_arr, close_arr, k_period, d_period, smooth
+        )
+        self._set_cached_indicator(cache_key, np.array([stoch_k_arr, stoch_d_arr]))
+        
+        return pd.Series(stoch_k_arr, index=close.index), pd.Series(stoch_d_arr, index=close.index)
     
     def _calculate_williams_r(
         self,
@@ -315,12 +652,20 @@ class ScalpingStrategy:
         close: pd.Series,
         period: int
     ) -> pd.Series:
-        """Calculate Williams %R indicator"""
-        highest_high = high.rolling(window=period).max()
-        lowest_low = low.rolling(window=period).min()
+        """Calculate Williams %R indicator with JIT optimization"""
+        cache_key = f"williams_{period}_{len(close)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            return pd.Series(cached, index=close.index)
         
-        williams_r = -100 * (highest_high - close) / (highest_high - lowest_low + 1e-10)
-        return williams_r.fillna(-50)
+        high_arr = high.values.astype(np.float64)
+        low_arr = low.values.astype(np.float64)
+        close_arr = close.values.astype(np.float64)
+        
+        williams_arr = _jit_calculate_williams_r_core(high_arr, low_arr, close_arr, period)
+        self._set_cached_indicator(cache_key, williams_arr)
+        
+        return pd.Series(williams_arr, index=close.index)
     
     def _calculate_atr(
         self,
@@ -329,25 +674,33 @@ class ScalpingStrategy:
         close: pd.Series,
         period: int
     ) -> pd.Series:
-        """Calculate Average True Range"""
-        prev_close = close.shift(1)
+        """Calculate Average True Range with JIT optimization"""
+        cache_key = f"atr_{period}_{len(close)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            return pd.Series(cached, index=close.index)
         
-        tr1 = high - low
-        tr2 = abs(high - prev_close)
-        tr3 = abs(low - prev_close)
+        high_arr = high.values.astype(np.float64)
+        low_arr = low.values.astype(np.float64)
+        close_arr = close.values.astype(np.float64)
         
-        true_range_df = pd.concat([tr1, tr2, tr3], axis=1)
-        true_range: pd.Series = true_range_df.max(axis=1)  # type: ignore[assignment]
-        atr = true_range.ewm(span=period, adjust=False).mean()
+        atr_arr = _jit_calculate_atr_core(high_arr, low_arr, close_arr, period)
+        self._set_cached_indicator(cache_key, atr_arr)
         
-        return pd.Series(atr.fillna(0))
+        return pd.Series(atr_arr, index=close.index)
     
     def _calculate_volume_ratio(self, volume: pd.Series, lookback: int = 20) -> pd.Series:
-        """Calculate volume ratio compared to moving average"""
-        avg_volume: pd.Series = volume.rolling(window=lookback).mean()  # type: ignore[assignment]
-        avg_volume_safe = avg_volume.where(avg_volume != 0, 1.0)
-        ratio = volume / avg_volume_safe
-        return pd.Series(ratio.fillna(1.0))
+        """Calculate volume ratio with JIT optimization"""
+        cache_key = f"volume_ratio_{lookback}_{len(volume)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            return pd.Series(cached, index=volume.index)
+        
+        volume_arr = volume.values.astype(np.float64)
+        ratio_arr = _jit_calculate_volume_ratio_core(volume_arr, lookback)
+        self._set_cached_indicator(cache_key, ratio_arr)
+        
+        return pd.Series(ratio_arr, index=volume.index)
     
     def _calculate_trend_strength(
         self,
@@ -355,15 +708,65 @@ class ScalpingStrategy:
         fast_period: int,
         slow_period: int
     ) -> Tuple[pd.Series, pd.Series]:
-        """Calculate trend strength using EMA crossover"""
-        ema_fast = close.ewm(span=fast_period, adjust=False).mean()
-        ema_slow = close.ewm(span=slow_period, adjust=False).mean()
+        """Calculate trend strength with JIT optimization"""
+        cache_key = f"trend_{fast_period}_{slow_period}_{len(close)}"
+        cached = self._get_cached_indicator(cache_key)
+        if cached is not None:
+            return pd.Series(cached[0], index=close.index), pd.Series(cached[1], index=close.index)
         
-        diff = (ema_fast - ema_slow) / ema_slow
-        trend_strength = diff.abs().clip(upper=1.0)
-        trend_direction = pd.Series(np.sign(diff.values), index=diff.index)
+        close_arr = close.values.astype(np.float64)
+        strength_arr, direction_arr = _jit_calculate_trend_strength_core(close_arr, fast_period, slow_period)
+        self._set_cached_indicator(cache_key, np.array([strength_arr, direction_arr]))
         
-        return pd.Series(trend_strength.fillna(0)), trend_direction.fillna(0)
+        return pd.Series(strength_arr, index=close.index), pd.Series(direction_arr, index=close.index)
+    
+    @lru_cache(maxsize=128)
+    def _detect_pattern_cached(
+        self,
+        curr_open: float,
+        curr_high: float,
+        curr_low: float,
+        curr_close: float,
+        prev_open: float,
+        prev_close: float
+    ) -> Tuple[str, float]:
+        """Cached pattern detection"""
+        body = abs(curr_close - curr_open)
+        upper_wick = curr_high - max(curr_open, curr_close)
+        lower_wick = min(curr_open, curr_close) - curr_low
+        total_range = curr_high - curr_low
+        
+        if total_range == 0:
+            return PatternType.NONE.value, 0.0
+        
+        body_ratio = body / total_range
+        
+        if body_ratio < 0.1:
+            return PatternType.DOJI.value, 0.3
+        
+        prev_body = abs(prev_close - prev_open)
+        if body > prev_body * 1.5:
+            if curr_close > curr_open and prev_close < prev_open:
+                if curr_close > prev_open and curr_open < prev_close:
+                    return PatternType.BULLISH_ENGULFING.value, 0.8
+            elif curr_close < curr_open and prev_close > prev_open:
+                if curr_close < prev_open and curr_open > prev_close:
+                    return PatternType.BEARISH_ENGULFING.value, 0.8
+        
+        if lower_wick > body * 2 and upper_wick < body * 0.5:
+            if curr_close > curr_open:
+                return PatternType.BULLISH_PIN_BAR.value, 0.7
+        elif upper_wick > body * 2 and lower_wick < body * 0.5:
+            if curr_close < curr_open:
+                return PatternType.BEARISH_PIN_BAR.value, 0.7
+        
+        if body_ratio > 0.6:
+            if curr_close > curr_open:
+                return PatternType.BULLISH_MOMENTUM.value, 0.6
+            else:
+                return PatternType.BEARISH_MOMENTUM.value, 0.6
+        
+        return PatternType.NONE.value, 0.0
     
     def _detect_pattern(
         self,
@@ -372,54 +775,20 @@ class ScalpingStrategy:
         low: pd.Series,
         close: pd.Series
     ) -> Tuple[PatternType, float]:
-        """Detect price action patterns"""
+        """Detect price action patterns with caching"""
         if len(close) < 3:
             return PatternType.NONE, 0.0
         
-        curr_open = open_.iloc[-1]
-        curr_high = high.iloc[-1]
-        curr_low = low.iloc[-1]
-        curr_close = close.iloc[-1]
+        pattern_str, strength = self._detect_pattern_cached(
+            round(open_.iloc[-1], 8),
+            round(high.iloc[-1], 8),
+            round(low.iloc[-1], 8),
+            round(close.iloc[-1], 8),
+            round(open_.iloc[-2], 8),
+            round(close.iloc[-2], 8)
+        )
         
-        prev_open = open_.iloc[-2]
-        prev_close = close.iloc[-2]
-        
-        body = abs(curr_close - curr_open)
-        upper_wick = curr_high - max(curr_open, curr_close)
-        lower_wick = min(curr_open, curr_close) - curr_low
-        total_range = curr_high - curr_low
-        
-        if total_range == 0:
-            return PatternType.NONE, 0.0
-        
-        body_ratio = body / total_range
-        
-        if body_ratio < 0.1:
-            return PatternType.DOJI, 0.3
-        
-        prev_body = abs(prev_close - prev_open)
-        if body > prev_body * 1.5:
-            if curr_close > curr_open and prev_close < prev_open:
-                if curr_close > prev_open and curr_open < prev_close:
-                    return PatternType.BULLISH_ENGULFING, 0.8
-            elif curr_close < curr_open and prev_close > prev_open:
-                if curr_close < prev_open and curr_open > prev_close:
-                    return PatternType.BEARISH_ENGULFING, 0.8
-        
-        if lower_wick > body * 2 and upper_wick < body * 0.5:
-            if curr_close > curr_open:
-                return PatternType.BULLISH_PIN_BAR, 0.7
-        elif upper_wick > body * 2 and lower_wick < body * 0.5:
-            if curr_close < curr_open:
-                return PatternType.BEARISH_PIN_BAR, 0.7
-        
-        if body_ratio > 0.6:
-            if curr_close > curr_open:
-                return PatternType.BULLISH_MOMENTUM, 0.6
-            else:
-                return PatternType.BEARISH_MOMENTUM, 0.6
-        
-        return PatternType.NONE, 0.0
+        return PatternType(pattern_str), strength
     
     def _detect_momentum_type(
         self,
@@ -532,7 +901,7 @@ class ScalpingStrategy:
         order_flow_score: float,
         direction: str
     ) -> float:
-        """Calculate overall signal confidence"""
+        """Calculate overall signal confidence with JIT optimization"""
         momentum_score = 0.0
         
         if direction == "LONG":
@@ -555,23 +924,26 @@ class ScalpingStrategy:
                 momentum_score = 0.1
         
         volume_score = min(volume_ratio / self.config.volume_spike_threshold, 1.0)
-        
         of_score = order_flow_score if direction == "LONG" else (1 - order_flow_score)
-        
         trend_score = trend_strength
-        
         volatility_score = 0.5
         
-        confidence = (
-            momentum_score * self.config.momentum_weight +
-            pattern_strength * self.config.pattern_weight +
-            volume_score * self.config.volume_weight +
-            of_score * self.config.order_flow_weight +
-            trend_score * self.config.trend_weight +
-            volatility_score * self.config.volatility_weight
+        confidence = _jit_calculate_confidence_core(
+            momentum_score,
+            pattern_strength,
+            volume_score,
+            of_score,
+            trend_score,
+            volatility_score,
+            self.config.momentum_weight,
+            self.config.pattern_weight,
+            self.config.volume_weight,
+            self.config.order_flow_weight,
+            self.config.trend_weight,
+            self.config.volatility_weight
         )
         
-        return max(0.0, min(1.0, confidence))
+        return confidence
     
     def _calculate_targets(
         self,
@@ -744,7 +1116,8 @@ class ScalpingStrategy:
                     'mode': self.config.mode.value,
                     'pattern_strength': pattern_strength,
                     'trend_direction': current_trend_direction,
-                    'of_direction': of_direction
+                    'of_direction': of_direction,
+                    'numba_enabled': NUMBA_AVAILABLE
                 }
             )
             
@@ -789,7 +1162,8 @@ class ScalpingStrategy:
                 'avg_confidence': 0.0,
                 'avg_execution_time_ms': 0.0,
                 'long_signals': 0,
-                'short_signals': 0
+                'short_signals': 0,
+                'numba_enabled': NUMBA_AVAILABLE
             }
         
         confidences = [s.confidence for s in self._signal_history]
@@ -804,8 +1178,15 @@ class ScalpingStrategy:
             'avg_execution_time_ms': sum(exec_times) / len(exec_times),
             'long_signals': long_count,
             'short_signals': short_count,
-            'mode': self.config.mode.value
+            'mode': self.config.mode.value,
+            'numba_enabled': NUMBA_AVAILABLE
         }
+    
+    def clear_cache(self) -> None:
+        """Clear indicator cache"""
+        self._indicator_cache.clear()
+        self._detect_pattern_cached.cache_clear()
+        logger.info("Indicator cache cleared")
 
 
 def create_scalping_strategy(
@@ -816,43 +1197,13 @@ def create_scalping_strategy(
     Factory function to create a ScalpingStrategy
     
     Args:
-        mode: 'conservative', 'balanced', 'aggressive', or 'ultra_fast'
+        mode: 'conservative', 'balanced', 'aggressive', 'ultra_fast', or 'turbo'
         order_flow_service: Optional OrderFlowMetricsService
         
     Returns:
         Configured ScalpingStrategy instance
     """
     mode_enum = ScalpingMode(mode.lower())
-    
-    if mode_enum == ScalpingMode.CONSERVATIVE:
-        config = ScalpingConfig(
-            mode=mode_enum,
-            min_confidence=0.75,
-            volume_spike_threshold=2.0,
-            cooldown_seconds=60,
-            max_signals_per_hour=10
-        )
-    elif mode_enum == ScalpingMode.AGGRESSIVE:
-        config = ScalpingConfig(
-            mode=mode_enum,
-            min_confidence=0.55,
-            volume_spike_threshold=1.2,
-            cooldown_seconds=15,
-            max_signals_per_hour=40
-        )
-    elif mode_enum == ScalpingMode.ULTRA_FAST:
-        config = ScalpingConfig(
-            mode=mode_enum,
-            min_confidence=0.50,
-            volume_spike_threshold=1.0,
-            cooldown_seconds=10,
-            max_signals_per_hour=60,
-            rsi_period=5,
-            macd_fast=4,
-            macd_slow=9,
-            macd_signal=3
-        )
-    else:
-        config = ScalpingConfig(mode=mode_enum)
+    config = ScalpingConfig.from_mode(mode_enum)
     
     return ScalpingStrategy(config=config, order_flow_service=order_flow_service)

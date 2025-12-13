@@ -104,13 +104,16 @@ class BinanceDataFetcher:
         
         if CCXT_AVAILABLE and ccxt:
             try:
-                self.ccxt_client = ccxt.binance({
+                self.ccxt_client = ccxt.binanceusdm({
                     'apiKey': self.api_key,
                     'secret': self.api_secret,
                     'enableRateLimit': True,
-                    'options': {'defaultType': 'spot'}
+                    'options': {
+                        'defaultType': 'future',
+                        'adjustForTimeDifference': True
+                    }
                 })
-                logger.info("CCXT Binance client initialized successfully")
+                logger.info("CCXT Binance USDM Futures client initialized successfully")
             except Exception as e:
                 logger.warning(f"Failed to initialize CCXT client: {e}")
                 self.ccxt_client = None
@@ -137,15 +140,29 @@ class BinanceDataFetcher:
             logger.error(f"Error fetching historical data: {e}")
             raise
     
+    def _get_futures_symbol(self) -> str:
+        """Convert symbol to CCXT futures format (e.g., BTCUSDT -> BTC/USDT:USDT)"""
+        symbol = self.symbol.upper()
+        if ':' in symbol:
+            return symbol
+        if '/' in symbol:
+            base = symbol.replace('/USDT', '')
+            return f"{base}/USDT:USDT"
+        if symbol.endswith('USDT'):
+            base = symbol[:-4]
+            return f"{base}/USDT:USDT"
+        return f"{symbol}/USDT:USDT"
+    
     def _fetch_with_ccxt(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
-        """Fetch data using CCXT library"""
+        """Fetch data using CCXT library for USDM Futures"""
         try:
             since = None
             if start_time:
                 since = int(start_time.timestamp() * 1000)
             
+            futures_symbol = self._get_futures_symbol()
             ohlcv = self.ccxt_client.fetch_ohlcv(
-                symbol=self.symbol.replace('USDT', '/USDT'),
+                symbol=futures_symbol,
                 timeframe=self.interval,
                 since=since,
                 limit=limit
@@ -169,9 +186,9 @@ class BinanceDataFetcher:
             raise
     
     def _fetch_with_binance_python(self, limit: int, start_time: Optional[datetime] = None) -> Optional[DataFrame]:
-        """Fetch data using python-binance library"""
+        """Fetch data using python-binance library for USDM Futures"""
         try:
-            klines = self.client.get_klines(
+            klines = self.client.futures_klines(
                 symbol=self.symbol,
                 interval=self.interval,
                 limit=limit
@@ -228,13 +245,14 @@ class BinanceDataFetcher:
             return None
     
     def get_current_price(self) -> Optional[float]:
-        """Get current market price"""
+        """Get current futures market price"""
         try:
             if self.ccxt_client:
-                ticker = self.ccxt_client.fetch_ticker(self.symbol.replace('USDT', '/USDT'))
+                futures_symbol = self._get_futures_symbol()
+                ticker = self.ccxt_client.fetch_ticker(futures_symbol)
                 return float(ticker['last'])
             elif self.client:
-                ticker = self.client.get_symbol_ticker(symbol=self.symbol)
+                ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
                 return float(ticker['price'])
             return None
         except Exception as e:

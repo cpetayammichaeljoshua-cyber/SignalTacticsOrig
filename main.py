@@ -72,9 +72,10 @@ def print_banner():
 ║  - Manipulation Detection (Stop Hunts, Spoofing, Sweeps)     ║
 ║  - External Data (Fear/Greed, CoinGecko, News Sentiment)     ║
 ║  - Multi-Timeframe Confirmation (1m, 5m, 15m, 1h, 4h)        ║
+║  - Multi-Asset Mode: 175+ USDM Futures Pairs                 ║
 ║                                                              ║
 ║  Strategy: UT Bot Alerts + Schaff Trend Cycle                ║
-║  Pair: ETH/USDT | Timeframe: 5 minutes                       ║
+║  Timeframe: 5 minutes | Multi-Asset Scanning Enabled         ║
 ║                                                              ║
 ║  Indicator Settings:                                          ║
 ║  - UT Bot: Key=2, ATR=6, Heikin Ashi=ON                      ║
@@ -958,12 +959,133 @@ class AITradingOrchestrator:
             logger.error(f"Error processing signal: {e}")
             return False
     
+    async def fetch_and_process_for_symbol(self, symbol: str) -> tuple:
+        """
+        Fetch data and process for signals for a specific symbol
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            
+        Returns:
+            Tuple of (signal, symbol) if valid signal found, (None, symbol) otherwise
+        """
+        temp_fetcher = None
+        try:
+            temp_fetcher = BinanceDataFetcher(
+                api_key=self.config.binance_api_key,
+                api_secret=self.config.binance_api_secret,
+                symbol=symbol,
+                interval=self.config.trading.timeframe
+            )
+            
+            df = temp_fetcher.fetch_historical_data(
+                limit=max(200, self.config.trading.min_candles_required + 50)
+            )
+            
+            if df is None or len(df) < self.config.trading.min_candles_required:
+                return None, symbol
+            
+            signal = self.signal_engine.generate_signal(df)
+            
+            if signal and signal.get('type') in ['LONG', 'SHORT']:
+                signal['symbol'] = symbol
+                
+                signal = await self._enhance_signal_with_ai(signal, df)
+                
+                ai_confidence = signal.get('ai_confidence', 0)
+                ai_recommendation = signal.get('ai_recommendation', 'EXECUTE')
+                
+                if ai_recommendation == 'SKIP' and ai_confidence < 0.4:
+                    return None, symbol
+                
+                logger.debug(f"Valid {signal.get('type')} signal for {symbol} (confidence: {ai_confidence:.2f})")
+                return signal, symbol
+            
+            return None, symbol
+            
+        except Exception as e:
+            logger.debug(f"Error processing {symbol}: {e}")
+            return None, symbol
+        finally:
+            if temp_fetcher:
+                try:
+                    await temp_fetcher.close()
+                except Exception:
+                    pass
+    
+    async def scan_all_pairs(self, max_pairs: int = 50) -> list:
+        """
+        Scan multiple pairs for trading signals in parallel
+        
+        Args:
+            max_pairs: Maximum number of pairs to scan (default 50 for performance)
+            
+        Returns:
+            List of valid signals found across all pairs
+        """
+        if not self.pairs_fetcher:
+            logger.warning("Pairs fetcher not available, falling back to single symbol mode")
+            signal, df = await self.fetch_and_process()
+            return [signal] if signal else []
+        
+        try:
+            pairs = await self.pairs_fetcher.get_top_pairs(n=max_pairs)
+            if not pairs:
+                logger.warning("No pairs fetched, falling back to single symbol mode")
+                signal, df = await self.fetch_and_process()
+                return [signal] if signal else []
+            
+            total_pairs = len(pairs)
+            logger.info(f"Starting multi-asset scan of {total_pairs} pairs...")
+            
+            semaphore = asyncio.Semaphore(10)
+            signals_found = []
+            processed_count = 0
+            
+            async def process_with_semaphore(symbol: str, idx: int) -> tuple:
+                nonlocal processed_count
+                async with semaphore:
+                    result = await self.fetch_and_process_for_symbol(symbol)
+                    processed_count += 1
+                    if processed_count % 10 == 0 or processed_count == total_pairs:
+                        logger.info(f"Scanning {processed_count}/{total_pairs} pairs...")
+                    return result
+            
+            tasks = [
+                process_with_semaphore(pair.symbol, idx) 
+                for idx, pair in enumerate(pairs)
+            ]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.debug(f"Pair scan exception: {result}")
+                    continue
+                signal, symbol = result
+                if signal:
+                    signals_found.append(signal)
+            
+            logger.info(f"Multi-asset scan complete: {len(signals_found)} signals found from {total_pairs} pairs")
+            return signals_found
+            
+        except Exception as e:
+            logger.error(f"Error in scan_all_pairs: {e}")
+            return []
+    
     async def run_cycle(self):
         """Run a single monitoring cycle"""
-        signal, df = await self.fetch_and_process()
-        
-        if signal:
-            await self.process_signal(signal, df)
+        if self.multi_asset_mode and self.pairs_fetcher:
+            signals = await self.scan_all_pairs(max_pairs=50)
+            
+            for signal in signals:
+                if signal and self._can_send_signal():
+                    await self.process_signal(signal)
+        else:
+            signal, df = await self.fetch_and_process()
+            
+            if signal:
+                await self.process_signal(signal, df)
     
     async def run(self):
         """
